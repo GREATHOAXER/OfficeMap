@@ -1,0 +1,80 @@
+/* 디자인(Claude Design) 색·글꼴 기준 */
+:root {
+  --ink: #1c1c1c;
+  --bg: #f4f4f2;
+  --surface: #ffffff;
+  --surface-sunken: #fafaf8;
+  --muted: #5e5e5a;
+  --muted-on-dark: #c9c9c4;
+  --faint-on-dark: #a8a8a3;
+  --border: #bdbdb8;
+  --divider: #d4d4d0;
+  --link: #1d4ed8;
+  --link-hover: #1e3a8a;
+  --danger: #b42318;
+  --danger-bg: #fef3f2;
+  --danger-text: #912018;
+  --info-bg: #eef2ff;
+
+  /* 팀 구역 색 (t1~t4, t0 = 공용) */
+  --t1: #3b5b92;
+  --t1-fill: #e3eaf6;
+  --t2: #9a5b1e;
+  --t2-fill: #f7e9d7;
+  --t3: #4c7a34;
+  --t3-fill: #e5f0dc;
+  --t4: #6e4a86;
+  --t4-fill: #eee4f4;
+  --t0: #6e6e69;
+  --t0-fill: #efefec;
+
+  --radius: 8px;
+  --font-body: var(--font-sans), "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --font-code: var(--font-mono), ui-monospace, monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  word-break: keep-all; /* 한글을 단어 중간에서 끊지 않는다 */
+  overflow-wrap: break-word;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: var(--link);
+}
+
+a:hover {
+  color: var(--link-hover);
+}
+
+:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+.mono {
+  font-family: var(--font-code);
+}

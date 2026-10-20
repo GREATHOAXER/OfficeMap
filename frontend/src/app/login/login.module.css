@@ -1,0 +1,318 @@
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-wrap: wrap;
+}
+
+/* 왼쪽: 서비스 소개 */
+.intro {
+  flex: 1 1 420px;
+  min-width: 0;
+  background: var(--ink);
+  color: #fff;
+  padding: 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.brand {
+  font-size: 18px;
+}
+
+.introBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 20px;
+  max-width: 520px;
+}
+
+.headline {
+  margin: 0;
+  font-size: 40px;
+  line-height: 1.3;
+  font-weight: 700;
+}
+
+.lead {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--muted-on-dark);
+}
+
+.illustration {
+  margin-top: 16px;
+  width: 100%;
+  height: auto;
+}
+
+.introFoot {
+  margin: 0;
+  font-size: 12px;
+  color: var(--faint-on-dark);
+}
+
+/* 오른쪽: 로그인 */
+.formSide {
+  flex: 1 1 480px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+}
+
+.formBox {
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.logo {
+  height: 48px;
+  width: auto;
+  align-self: flex-start;
+  mix-blend-mode: multiply; /* 로고 이미지의 흰 배경을 화면 배경에 녹인다 */
+}
+
+.title {
+  margin: 0 0 6px;
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.ssoButton,
+.primaryButton,
+.secondaryButton {
+  height: 52px;
+  border-radius: var(--radius);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.ssoButton {
+  border: 0;
+  background: var(--ink);
+  color: #fff;
+}
+
+.ssoButton:disabled {
+  background: transparent;
+  border: 1.5px dashed var(--border);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.ssoPending {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+
+.primaryButton {
+  border: 0;
+  background: var(--ink);
+  color: #fff;
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: #000;
+}
+
+.secondaryButton {
+  border: 1.5px solid var(--ink);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.secondaryButton:hover:not(:disabled) {
+  background: var(--bg);
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.divider span {
+  flex: 1;
+  height: 1px;
+  background: var(--divider);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.field input {
+  height: 48px;
+  padding: 0 14px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 15px;
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.field input:focus {
+  outline: none;
+  border-color: var(--ink);
+}
+
+.field input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.alert {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  background: var(--danger-bg);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--danger-text);
+}
+
+.alertIcon {
+  flex: none;
+  margin-top: 2px;
+}
+
+.remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  min-height: 32px;
+  cursor: pointer;
+}
+
+.remember input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--ink);
+}
+
+.help {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+  margin-top: -8px;
+}
+
+.linkButton {
+  padding: 0;
+  min-height: 32px;
+  border: 0;
+  background: none;
+  color: var(--link);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.linkButton:hover {
+  color: var(--link-hover);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.resetHelp {
+  margin: -12px 0 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--info-bg);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.notices {
+  border-top: 1px solid var(--divider);
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.noticeHeading {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.noticeList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.noticeEmpty {
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .intro {
+    padding: 32px 20px;
+    gap: 16px;
+  }
+
+  .headline {
+    font-size: 28px;
+  }
+
+  .illustration {
+    display: none;
+  }
+
+  .formSide {
+    padding: 32px 16px 48px;
+  }
+}
