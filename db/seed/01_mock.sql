@@ -1,6 +1,7 @@
 -- 01_mock.sql
 -- 화면 흐름 순서대로 넣는 목업 데이터: 서울 본사 7F·10F 시나리오
--- 이름·사번·연락처는 모두 가짜이고, 비밀번호 해시도 실제 값이 아니다
+-- 이름·사번·연락처는 모두 가짜다
+-- 목업 계정의 비밀번호는 모두 officemap1234 (개발용. 운영 DB에 넣지 말 것)
 -- 실행 순서: db/schema/01~08 → 이 파일
 
 -- ⓪ 로그인 ------------------------------------------------------------------
@@ -38,7 +39,7 @@ JOIN departments d ON d.dept_code = v.dept_code;
 -- 신규 입사자만 임시 비밀번호 상태
 INSERT INTO user_accounts (employee_id, password_hash, role, must_change_password, password_changed_at)
 SELECT id,
-       '$2b$12$MOCKMOCKMOCKMOCKMOCKMOuMOCKMOCKMOCKMOCKMOCKMOCKMOCKMOC',
+       '$2b$12$YQWCooIW9V1YrWJ5vD7EDujBSKuP2HW49Z852NdLGSIWLnTG5B7b2',  -- officemap1234
        CASE WHEN emp_no = '20090001' THEN 'ADMIN' ELSE 'USER' END,
        emp_no = '20260006',
        CASE WHEN emp_no = '20260006' THEN NULL ELSE timestamptz '2026-09-01 09:00+09' END

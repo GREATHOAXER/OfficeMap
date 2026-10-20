@@ -1,0 +1,9 @@
+# Python (server)
+.venv/
+__pycache__/
+*.pyc
+server/.env
+
+# OS
+.DS_Store
+Thumbs.db

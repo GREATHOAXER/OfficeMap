@@ -1,0 +1,17 @@
+# 로컬 개발용 PostgreSQL 16 (+ pgvector)
+#   docker compose up -d db
+# 테이블과 목업 데이터는 server 디렉토리에서 python -m scripts.init_db 로 넣는다
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: officemap
+      POSTGRES_USER: officemap
+      POSTGRES_PASSWORD: officemap
+    ports:
+      - "5432:5432"
+    volumes:
+      - officemap-db:/var/lib/postgresql/data
+
+volumes:
+  officemap-db:
