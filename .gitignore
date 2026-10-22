@@ -7,3 +7,6 @@ server/.env
 # OS
 .DS_Store
 Thumbs.db
+
+# 클라우드 데모 (scripts/cloud-demo.sh)
+.demo/

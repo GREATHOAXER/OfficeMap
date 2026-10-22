@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { LogoutIcon } from "./icons";
 
 export default function LogoutButton({ className }: { className?: string }) {
   const router = useRouter();
@@ -19,6 +20,7 @@ export default function LogoutButton({ className }: { className?: string }) {
 
   return (
     <button type="button" className={className} onClick={logout} disabled={pending}>
+      <LogoutIcon size={18} />
       {pending ? "로그아웃 중…" : "로그아웃"}
     </button>
   );

@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 // 서버 컴포넌트에서 FastAPI를 직접 부를 때 쓰는 함수들.
 // 브라우저(클라이언트 컴포넌트)에서는 상대 경로 /api/... 를 쓴다 (next.config.ts 참고)
 
@@ -50,4 +52,99 @@ export async function fetchLoginInfo(): Promise<LoginInfo> {
   } catch {
     return DEFAULT_LOGIN_INFO;
   }
+}
+
+// 자리·재실 현황 ----------------------------------------------------------------
+
+export type PresenceStatus = "AVAILABLE" | "DO_NOT_DISTURB" | "IN_MEETING" | "AWAY";
+
+/** 도면 위 영역. 모두 도면 너비·높이 대비 비율(0~1) */
+export type Rect = { x: number; y: number; w: number; h: number };
+
+export type FloorSummary = { id: number; name: string; teams: string[] };
+export type SiteSummary = { id: number; name: string; floors: FloorSummary[] };
+export type SitesResponse = { sites: SiteSummary[]; my_floor_id: number | null };
+
+export type PlanSpace = Rect & { kind: string; label: string };
+
+export type Zone = {
+  id: number;
+  code: string;
+  name: string;
+  department: string | null; // 공용 구역이면 null
+  color_key: string; // t0~t4
+  shape: Rect;
+};
+
+export type Room = {
+  id: number;
+  name: string;
+  capacity: number;
+  equipment: string[];
+  requires_approval: boolean;
+  shape: Rect | null;
+  busy_until: string | null;
+  current_title: string | null;
+  next_start: string | null; // 오늘 안에 시작하는 다음 예약
+};
+
+export type Occupant = {
+  emp_no: string;
+  name: string;
+  rank: string | null;
+  department: string;
+  extension: string | null;
+  email: string | null;
+  kind: "FIXED" | "DAILY";
+  presence: { status: PresenceStatus; message: string | null } | null;
+};
+
+export type Seat = {
+  id: number;
+  code: string;
+  zone_id: number | null;
+  seat_type: "FIXED" | "FLEX";
+  x: number; // 좌석 중심
+  y: number;
+  rotation: 0 | 90 | 180 | 270; // 의자 방향. 180 = 위쪽
+  status: "ACTIVE" | "OUT_OF_SERVICE";
+  occupant: Occupant | null;
+};
+
+export type FloorMap = {
+  floor: { id: number; name: string; site: { id: number; name: string } };
+  plan: {
+    version: number;
+    width_m: number;
+    height_m: number;
+    geometry: { walls?: Rect[]; pillars?: { x: number; y: number }[]; spaces?: PlanSpace[] } | null;
+    published_at: string | null;
+  } | null;
+  zones: Zone[];
+  rooms: Room[];
+  seats: Seat[];
+};
+
+export class ApiError extends Error {
+  constructor(readonly status: number) {
+    super(`API ${status}`);
+  }
+}
+
+async function apiGet<T>(path: string, cookieHeader: string | null): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    headers: cookieHeader ? { cookie: cookieHeader } : {},
+    cache: "no-store",
+  });
+  if (!res.ok) throw new ApiError(res.status);
+  return (await res.json()) as T;
+}
+
+/** 레이아웃(왼쪽 메뉴)과 페이지가 같은 요청 안에서 한 번만 부르도록 cache로 감싼다 */
+export const fetchSites = cache((cookieHeader: string | null) =>
+  apiGet<SitesResponse>("/api/office/sites", cookieHeader),
+);
+
+export function fetchFloor(cookieHeader: string | null, floorId: number): Promise<FloorMap> {
+  return apiGet<FloorMap>(`/api/office/floors/${floorId}`, cookieHeader);
 }
