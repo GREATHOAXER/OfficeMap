@@ -449,7 +449,9 @@
 .planScroll {
   overflow: auto;
   max-height: max(360px, calc(100vh - 260px)); /* 확대하면 이 안에서 위아래·좌우로 스크롤 */
-  overscroll-behavior: contain;
+  /* 위아래는 도면 끝에 닿으면 페이지가 이어서 스크롤된다 (막으면 좁은 창에서 아래 내용에 못 내려간다).
+     좌우만 막아서 트랙패드로 옆으로 밀 때 브라우저 '뒤로 가기'가 되지 않게 한다 */
+  overscroll-behavior-x: contain;
 }
 
 .noPlan {

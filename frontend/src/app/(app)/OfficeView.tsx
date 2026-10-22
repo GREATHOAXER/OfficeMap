@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { SparkleIcon } from "@/components/icons";
 import type { FloorMap, FloorSummary, MyPresence, PresenceStatus } from "@/lib/api";
+import { useLivePresence, useRefreshAtExpiry, withLiveMine, withLivePresence } from "@/lib/livePresence";
 import { PRESENCE_LABEL, PRESENCE_ORDER } from "@/lib/presence";
 import AiPanel from "./AiPanel";
 import FloorPlan, { clampZoom, ZOOM_MAX, ZOOM_MIN } from "./FloorPlan";
@@ -16,11 +17,18 @@ const ZOOM_STEP = 1.25; // − / + 버튼 한 번에 바뀌는 배율
 type Props = {
   floors: FloorSummary[];
   myFloorId: number | null;
+  myEmpNo: string;
   myPresence: MyPresence;
   map: FloorMap;
 };
 
-export default function OfficeView({ floors, myFloorId, myPresence, map }: Props) {
+export default function OfficeView({ floors, myFloorId, myEmpNo, myPresence, map: fetchedMap }: Props) {
+  // 다른 사람이 상태를 바꾸면 새로고침 없이 바로 반영한다
+  const live = useLivePresence();
+  const map = useMemo(() => withLivePresence(fetchedMap, live), [fetchedMap, live]);
+  const mine = withLiveMine(myPresence, live.get(myEmpNo), fetchedMap.fetched_at);
+  useRefreshAtExpiry(map, mine);
+
   const floorId = map.floor.id;
   const [aiOpen, setAiOpen] = useState(false);
   const [zoom, setZoom] = useState(1);
@@ -68,7 +76,7 @@ export default function OfficeView({ floors, myFloorId, myPresence, map }: Props
           <SparkleIcon size={18} />
           AI에게 묻기
         </button>
-        <MyStatus presence={myPresence} />
+        <MyStatus presence={mine} />
       </header>
 
       <div className={styles.body}>

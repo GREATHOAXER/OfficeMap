@@ -4,13 +4,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.db import pool
+from app.realtime import hub
 from app.routers import auth, office, presence
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     pool.open()
-    yield
+    hub.start()
+    with hub.close_streams_on_exit():
+        yield
+    hub.stop()
     pool.close()
 
 
