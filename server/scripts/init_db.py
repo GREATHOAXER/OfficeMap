@@ -26,16 +26,34 @@ def main() -> None:
     if not args.no_seed:
         files += sorted((DB_DIR / "seed").glob("*.sql"))
 
-    # 파일 하나라도 실패하면 전부 되돌린다
-    with psycopg.connect(settings.database_url) as conn:
+    try:
+        conn = psycopg.connect(settings.database_url)
+    except psycopg.OperationalError as error:
+        raise SystemExit(
+            f"DB에 연결하지 못했습니다: {error}\n"
+            "DB가 켜져 있는지(docker compose up -d db), server/.env의 DATABASE_URL이 맞는지 확인하세요."
+        ) from None
+
+    # 파일 하나라도 실패하면 전부 되돌린다 (with 블록을 예외로 빠져나가면 롤백)
+    with conn:
+        tables = [t for (t,) in conn.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")]
+        if tables and not args.reset:
+            raise SystemExit(
+                f"이미 테이블이 {len(tables)}개 있어서 아무것도 바꾸지 않고 멈췄습니다.\n"
+                "목업 데이터를 처음 상태로 다시 넣으려면 기존 데이터를 지우는 --reset을 붙이세요:\n"
+                "    python -m scripts.init_db --reset"
+            )
         if args.reset:
-            tables = conn.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'public'").fetchall()
-            for (table,) in tables:
+            for table in tables:
                 conn.execute(f'DROP TABLE IF EXISTS "{table}" CASCADE')
             print(f"기존 테이블 {len(tables)}개 삭제")
         for path in files:
-            conn.execute(path.read_text(encoding="utf-8"))
-            print(f"실행: {path.relative_to(DB_DIR.parent)}")
+            name = path.relative_to(DB_DIR.parent)
+            try:
+                conn.execute(path.read_text(encoding="utf-8"))
+            except psycopg.Error as error:
+                raise SystemExit(f"{name} 실행 중 오류가 나서 모든 변경을 되돌렸습니다:\n{error}") from None
+            print(f"실행: {name}")
     print("완료")
 
 
