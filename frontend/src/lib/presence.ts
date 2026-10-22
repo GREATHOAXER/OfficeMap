@@ -8,3 +8,10 @@ export const PRESENCE_LABEL: Record<PresenceStatus, string> = {
   IN_MEETING: "회의 중",
   AWAY: "부재",
 };
+
+export const PRESENCE_HINT: Record<PresenceStatus, string> = {
+  AVAILABLE: "자리로 찾아와도 돼요",
+  DO_NOT_DISTURB: "메신저로만 연락",
+  IN_MEETING: "회의·외부 미팅 중",
+  AWAY: "휴가·외근·재택",
+};

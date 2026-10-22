@@ -16,11 +16,12 @@ _LIVE_PRESENCE = "(p.expires_at IS NULL OR p.expires_at > now())"
 
 @router.get("/sites")
 def sites(user: CurrentUser) -> dict[str, Any]:
-    """사업장과 층 목록. 층마다 입주 팀 이름(층 버튼 아래 작은 글씨)을 붙인다."""
+    """사업장과 층 목록. 층마다 용도(로비 등)와 입주 팀 이름을 붙인다 (층 버튼 아래 작은 글씨)."""
     with pool.connection() as conn:
         rows = conn.execute(
             """
             SELECT s.id AS site_id, s.name AS site_name, f.id AS floor_id, f.name AS floor_name,
+                   f.description,
                    coalesce(array_agg(z.name ORDER BY z.sort_order) FILTER (WHERE z.id IS NOT NULL), '{}') AS teams
             FROM sites s
             JOIN floors f ON f.site_id = s.id AND f.is_active
@@ -46,7 +47,9 @@ def sites(user: CurrentUser) -> dict[str, Any]:
     for row in rows:
         if not result or result[-1]["id"] != row["site_id"]:
             result.append({"id": row["site_id"], "name": row["site_name"], "floors": []})
-        result[-1]["floors"].append({"id": row["floor_id"], "name": row["floor_name"], "teams": row["teams"]})
+        result[-1]["floors"].append(
+            {"id": row["floor_id"], "name": row["floor_name"], "description": row["description"], "teams": row["teams"]}
+        )
     return {"sites": result, "my_floor_id": my_seat["floor_id"] if my_seat else None}
 
 

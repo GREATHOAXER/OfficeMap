@@ -61,7 +61,12 @@ export type PresenceStatus = "AVAILABLE" | "DO_NOT_DISTURB" | "IN_MEETING" | "AW
 /** 도면 위 영역. 모두 도면 너비·높이 대비 비율(0~1) */
 export type Rect = { x: number; y: number; w: number; h: number };
 
-export type FloorSummary = { id: number; name: string; teams: string[] };
+export type FloorSummary = {
+  id: number;
+  name: string;
+  description: string | null; // 사무실이 아닌 층의 용도 (로비, 대강당 …)
+  teams: string[];
+};
 export type SiteSummary = { id: number; name: string; floors: FloorSummary[] };
 export type SitesResponse = { sites: SiteSummary[]; my_floor_id: number | null };
 
@@ -125,6 +130,16 @@ export type FloorMap = {
   seats: Seat[];
 };
 
+export type MyPresence = {
+  status: PresenceStatus;
+  message: string | null;
+  expires_at: string | null;
+  updated_at: string;
+} | null;
+
+/** 재실 상태 자동 해제: 계속 / 30분 / 1시간 / 퇴근 시 */
+export type PresenceDuration = "NONE" | "30M" | "1H" | "END_OF_DAY";
+
 export class ApiError extends Error {
   constructor(readonly status: number) {
     super(`API ${status}`);
@@ -147,4 +162,8 @@ export const fetchSites = cache((cookieHeader: string | null) =>
 
 export function fetchFloor(cookieHeader: string | null, floorId: number): Promise<FloorMap> {
   return apiGet<FloorMap>(`/api/office/floors/${floorId}`, cookieHeader);
+}
+
+export async function fetchMyPresence(cookieHeader: string | null): Promise<MyPresence> {
+  return (await apiGet<{ presence: MyPresence }>("/api/presence/me", cookieHeader)).presence;
 }

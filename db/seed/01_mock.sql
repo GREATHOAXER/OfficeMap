@@ -1,5 +1,6 @@
 -- 01_mock.sql
--- 화면 흐름 순서대로 넣는 목업 데이터: 서울 본사 1F~5F, 11개 팀
+-- 화면 흐름 순서대로 넣는 목업 데이터: 서울 본사 1F~10F, 11개 팀
+--   1F 로비 · 2F 대강당 · 3F 식당 · 4F~9F 사무실(11개 팀) · 10F 임원실
 -- 이름·사번·연락처는 모두 가짜다
 -- 목업 계정의 비밀번호는 모두 officemap1234 (개발용. 운영 DB에 넣지 말 것)
 -- 실행 순서: db/schema/01~08 → 이 파일
@@ -11,6 +12,30 @@
 CREATE FUNCTION pg_temp.kst(day_offset int, t time) RETURNS timestamptz
 LANGUAGE sql STABLE AS $$
     SELECT ((now() AT TIME ZONE 'Asia/Seoul')::date + day_offset + t) AT TIME ZONE 'Asia/Seoul'
+$$;
+
+-- 도면 칸 좌표 (도면 너비·높이 대비 비율). 모든 층이 같은 골격이다:
+--   위쪽 띠   slot 1, 2 (회의실 자리) | 코어·EV·계단 | 탕비실 | 화장실
+--   아래쪽    4칸(col 0~3) × full(전체 높이) 또는 top/bottom(절반 높이), span칸만큼 이어 붙인다
+CREATE FUNCTION pg_temp.cell(col int, band text, span int DEFAULT 1) RETURNS jsonb
+LANGUAGE sql IMMUTABLE AS $$
+    SELECT jsonb_build_object(
+        'type', 'rect',
+        'x', xs[col + 1],
+        'y', CASE band WHEN 'bottom' THEN 0.6444 ELSE 0.3667 END,
+        'w', round(xs[col + span] + 0.1833 - xs[col + 1], 4),
+        'h', CASE band WHEN 'full' THEN 0.4611 ELSE 0.2139 END)
+    FROM (SELECT ARRAY[0.0567, 0.2983, 0.5317, 0.7567]::numeric[] AS xs) c
+$$;
+
+-- 위쪽 띠의 회의실 자리: 1 = 큰 방, 2 = 작은 방, 12 = 둘을 합친 자리
+CREATE FUNCTION pg_temp.slot(n int) RETURNS jsonb
+LANGUAGE sql IMMUTABLE AS $$
+    SELECT jsonb_build_object('type', 'rect', 'y', 0.0694, 'h', 0.2194) || CASE n
+        WHEN 1 THEN '{"x": 0.0417, "w": 0.2167}'::jsonb
+        WHEN 2 THEN '{"x": 0.2583, "w": 0.1250}'::jsonb
+        ELSE '{"x": 0.0417, "w": 0.3416}'::jsonb
+    END
 $$;
 
 -- ⓪ 로그인: 부서 · 직원 · 계정 ------------------------------------------------
@@ -43,8 +68,8 @@ SELECT v.emp_no, v.name, d.id, v.rank_name, v.position_name, v.email, v.extensio
 FROM (VALUES
     ('20090001', '한도윤', 'D110', '부장', '팀장', 'doyun.han@example.com',   '1001', '2009-03-02'),  -- 전사 관리자
     ('20120002', '강지아', 'D110', '차장', NULL,   'jia.kang@example.com',    '1002', '2012-01-02'),  -- 사업장 관리자. 고정석 없이 자율석 사용
-    ('20100009', '윤하은', 'D110', '차장', NULL,   'haeun.yoon@example.com',  '1003', '2010-03-02'),  -- 임원 회의실 승인자
-    ('20130003', '정민호', 'D210', '차장', NULL,   'minho.jung@example.com',  '4001', '2013-07-01'),  -- 3F 층 관리자
+    ('20100009', '윤하은', 'D110', '차장', NULL,   'haeun.yoon@example.com',  '1003', '2010-03-02'),  -- 10F 비서석, 임원 회의실 승인자
+    ('20130003', '정민호', 'D210', '차장', NULL,   'minho.jung@example.com',  '4001', '2013-07-01'),  -- 7F 층 관리자
     ('20170008', '김민준', 'D210', '과장', NULL,   'mj.kim@example.com',      '4002', '2017-01-02'),
     ('20150004', '오서연', 'D120', '과장', NULL,   'seoyeon.oh@example.com',  '3001', '2015-01-05'),  -- 재무팀 B구역 관리자
     ('20190005', '조시우', 'D120', '대리', NULL,   'siwoo.cho@example.com',   '3002', '2019-07-01'),  -- 법인카드 정산 정담당
@@ -55,7 +80,7 @@ JOIN departments d ON d.dept_code = v.dept_code;
 
 -- 나머지 직원은 팀별 인원수만큼 만든다 (사번 21000001~). 인원수는 각 팀 구역의 좌석 수에 맞춘 값
 WITH team_size(dept_code, n) AS (
-    VALUES ('D110', 14), ('D120', 14), ('D130', 4), ('D140', 5), ('D210', 14), ('D220', 16),
+    VALUES ('D110', 15), ('D120', 14), ('D130', 4), ('D140', 5), ('D210', 14), ('D220', 16),
            ('D230', 16), ('D240', 16), ('D310', 16), ('D320', 16), ('D330', 16)
 ), gen AS (
     SELECT t.dept_code, row_number() OVER (ORDER BY t.dept_code, i) AS k
@@ -107,15 +132,15 @@ FROM employees WHERE emp_no = '20090001';
 INSERT INTO files (original_name, stored_path, mime_type, size_bytes, uploaded_by)
 SELECT v.original_name, v.stored_path, v.mime_type, v.size_bytes, e.id
 FROM (VALUES
-    ('서울본사_1F_평면도.pdf', 'plans/seoul/1f-v1.pdf', 'application/pdf', 2211042, '20120002'),
-    ('서울본사_2F_평면도.pdf', 'plans/seoul/2f-v1.pdf', 'application/pdf', 2304518, '20120002'),
-    ('서울본사_3F_평면도.pdf', 'plans/seoul/3f-v1.pdf', 'application/pdf', 2483021, '20120002'),
-    ('서울본사_4F_평면도.pdf', 'plans/seoul/4f-v1.pdf', 'application/pdf', 2398870, '20120002'),
-    ('서울본사_5F_평면도.pdf', 'plans/seoul/5f-v1.pdf', 'application/pdf', 1904112, '20120002'),
-    ('조직도_20261001.xlsx',   'org/20261001.xlsx',     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 88213, '20090001'),
+    ('조직도_20261001.xlsx',        'org/20261001.xlsx',      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 88213, '20090001'),
     ('2026_업무분장표_재무팀.xlsx', 'duty/2026-finance.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 45120, '20150004')
 ) AS v(original_name, stored_path, mime_type, size_bytes, uploader)
 JOIN employees e ON e.emp_no = v.uploader;
+
+INSERT INTO files (original_name, stored_path, mime_type, size_bytes, uploaded_by)
+SELECT '서울본사_' || n || 'F_평면도.pdf', 'plans/seoul/' || n || 'f-v1.pdf', 'application/pdf', 1800000 + n * 61231, e.id
+FROM generate_series(1, 10) AS n, employees e
+WHERE e.emp_no = '20120002';
 
 INSERT INTO app_settings (key, value, description) VALUES
     ('login.max_failed_count',     '5',                                 '로그인 실패 허용 횟수'),
@@ -124,7 +149,8 @@ INSERT INTO app_settings (key, value, description) VALUES
     ('room.max_minutes',           '120',                               '1회 최대 예약 시간'),
     ('room.checkin_grace_minutes', '15',                                '체크인 없으면 자동 반납까지'),
     ('room.open_hours',            '{"start": "08:00", "end": "20:00"}', '예약 가능 시간'),
-    ('support.contact',            '"정보보호팀 내선 0000"',              '로그인 화면 계정 문의');
+    ('support.contact',            '"정보보호팀 내선 0000"',              '로그인 화면 계정 문의'),
+    ('presence.workday_end',       '"18:00"',                           '재실 상태 "퇴근 시" 자동 해제 시각');
 
 INSERT INTO org_sync_runs (source, file_id, status, created_count, run_by, started_at, finished_at)
 VALUES ('EXCEL', (SELECT id FROM files WHERE stored_path = 'org/20261001.xlsx'), 'SUCCESS',
@@ -132,20 +158,51 @@ VALUES ('EXCEL', (SELECT id FROM files WHERE stored_path = 'org/20261001.xlsx'),
         (SELECT id FROM employees WHERE emp_no = '20090001'), '2026-10-01 10:00+09', '2026-10-01 10:00:04+09');
 
 -- ① 공간: 사업장 · 층 · 도면 · 구역 · 좌석 -------------------------------------
---
--- 모든 층이 같은 골격 (좌표는 도면 너비·높이 대비 비율):
---   위쪽 띠      회의실 2개 | 코어·EV·계단 | 탕비실 | 화장실
---   아래쪽 4칸   x = 0.0567 / 0.2983 / 0.5317 / 0.7567, 칸 너비 0.1833
---                full(전체 높이) 또는 top/bottom(절반 높이)에 팀 구역이나 공용 공간을 둔다
 
 INSERT INTO sites (kind, name, address, sort_order) VALUES ('HQ', '서울 본사', '[서울 주소]', 1);
 
-INSERT INTO floors (site_id, name, sort_order)
-SELECT s.id, n || 'F', n
-FROM sites s, generate_series(1, 5) AS n
+INSERT INTO floors (site_id, name, description, sort_order)
+SELECT s.id, n || 'F',
+       CASE n WHEN 1 THEN '로비' WHEN 2 THEN '대강당' WHEN 3 THEN '식당' WHEN 10 THEN '임원실' END,
+       n
+FROM sites s, generate_series(1, 10) AS n
 WHERE s.name = '서울 본사';
 
--- 도면 게시본. 벽·기둥·공용 공간은 geometry에 넣는다 (회의실·구역·좌석은 각자 테이블)
+-- 층마다 다른 공용 공간. 회의실·팀 구역·좌석은 각자 테이블에 넣는다
+WITH extra(floor_name, kind, label, shape) AS (
+    VALUES
+    ('1F',  'lounge',     '로비 라운지',               pg_temp.cell(0, 'full', 2)),
+    ('1F',  'lounge',     '방문객 대기석',             pg_temp.cell(2, 'top', 2)),
+    ('1F',  'service',    '안내 데스크 · 보안 게이트', pg_temp.cell(2, 'bottom')),
+    ('1F',  'storage',    '택배 · 우편실',             pg_temp.cell(3, 'bottom')),
+    ('2F',  'storage',    '준비실',                    pg_temp.slot(2)),
+    ('2F',  'restricted', '음향 · 영상 조정실',        pg_temp.cell(3, 'full')),
+    ('3F',  'restricted', '주방',                      pg_temp.slot(12)),
+    ('3F',  'lounge',     '구내식당',                  pg_temp.cell(0, 'full', 3)),
+    ('3F',  'lounge',     '카페 라운지',               pg_temp.cell(3, 'full')),
+    ('4F',  'service',    '복합기 · 사물함',           pg_temp.cell(2, 'bottom')),
+    ('4F',  'storage',    '문서고',                    pg_temp.cell(3, 'full')),
+    ('5F',  'storage',    '포커스룸',                  pg_temp.cell(2, 'bottom')),
+    ('5F',  'lounge',     '휴게 공간',                 pg_temp.cell(3, 'full')),
+    ('6F',  'restricted', '서버실 (출입 제한)',        pg_temp.cell(2, 'full', 2)),
+    ('7F',  'lounge',     '휴게 공간',                 pg_temp.cell(2, 'full')),
+    ('7F',  'storage',    '포커스룸',                  pg_temp.cell(3, 'top')),
+    ('8F',  'lounge',     '프로젝트룸',                pg_temp.cell(1, 'full')),
+    ('8F',  'storage',    '포커스룸',                  pg_temp.cell(2, 'bottom')),
+    ('8F',  'storage',    '교육장',                    pg_temp.cell(3, 'full')),
+    ('9F',  'storage',    '분석 랩',                   pg_temp.cell(1, 'bottom')),
+    ('9F',  'restricted', '데이터 운영실 (출입 제한)', pg_temp.cell(2, 'full', 2)),
+    ('10F', 'restricted', '사장실',                    pg_temp.cell(0, 'full')),
+    ('10F', 'restricted', '부사장실',                  pg_temp.cell(1, 'top')),
+    ('10F', 'restricted', '전무실',                    pg_temp.cell(1, 'bottom')),
+    ('10F', 'lounge',     '비서실 응접',               pg_temp.cell(2, 'bottom')),
+    ('10F', 'lounge',     '임원 라운지',               pg_temp.cell(3, 'full'))
+), per_floor AS (
+    SELECT floor_name, jsonb_agg(jsonb_build_object('kind', kind, 'label', label) || (shape - 'type')) AS spaces
+    FROM extra
+    GROUP BY floor_name
+)
+-- 도면 게시본. 벽·기둥·공용 공간은 geometry에 넣는다
 INSERT INTO floor_plans (floor_id, version, status, background_file_id, width_m, height_m, geometry,
                          created_by, created_at, updated_by, updated_at, published_by, published_at)
 SELECT f.id, 1, 'PUBLISHED', fi.id, 50.0, 30.0,
@@ -157,56 +214,44 @@ SELECT f.id, 1, 'PUBLISHED', fi.id, 50.0, 30.0,
            'spaces', '[{"kind": "core",     "label": "코어 · EV · 계단", "x": 0.4333, "y": 0.0694, "w": 0.1417, "h": 0.2194},
                        {"kind": "pantry",   "label": "탕비실",           "x": 0.5917, "y": 0.0694, "w": 0.1250, "h": 0.2194},
                        {"kind": "restroom", "label": "화장실",           "x": 0.7167, "y": 0.0694, "w": 0.2417, "h": 0.2194}]'::jsonb
-                     || v.extra::jsonb),
-       e.id, v.at::timestamptz, e.id, v.at::timestamptz, e.id, v.at::timestamptz
-FROM (VALUES
-    ('1F', '[{"kind": "lounge",     "label": "로비 · 안내 데스크", "x": 0.5317, "y": 0.3667, "w": 0.4083, "h": 0.4611}]', '2026-09-05 17:00+09'),
-    ('2F', '[{"kind": "service",    "label": "복합기 · 사물함",    "x": 0.5317, "y": 0.6444, "w": 0.1833, "h": 0.2139},
-             {"kind": "storage",    "label": "문서고",             "x": 0.7567, "y": 0.3667, "w": 0.1833, "h": 0.4611}]', '2026-09-08 17:00+09'),
-    ('3F', '[{"kind": "lounge",     "label": "휴게 공간",          "x": 0.5317, "y": 0.3667, "w": 0.1833, "h": 0.4611},
-             {"kind": "storage",    "label": "포커스룸",           "x": 0.7567, "y": 0.3667, "w": 0.1833, "h": 0.2139}]', '2026-09-12 17:00+09'),
-    ('4F', '[{"kind": "restricted", "label": "서버실 (출입 제한)", "x": 0.5317, "y": 0.3667, "w": 0.4083, "h": 0.4611}]', '2026-09-15 17:00+09'),
-    ('5F', '[{"kind": "storage",    "label": "교육장",             "x": 0.5317, "y": 0.6444, "w": 0.1833, "h": 0.2139},
-             {"kind": "restricted", "label": "임원실",             "x": 0.7567, "y": 0.3667, "w": 0.1833, "h": 0.4611}]', '2026-09-28 11:00+09')
-) AS v(floor_name, extra, at)
-JOIN floors f ON f.name = v.floor_name
-JOIN files fi ON fi.stored_path = 'plans/seoul/' || lower(v.floor_name) || '-v1.pdf'
+                     || coalesce(pf.spaces, '[]'::jsonb)),
+       e.id, published, e.id, published, e.id, published
+FROM floors f
+CROSS JOIN LATERAL (SELECT timestamptz '2026-09-01 17:00+09' + f.sort_order * interval '2 days' AS published) p
+JOIN files fi ON fi.stored_path = 'plans/seoul/' || lower(f.name) || '-v1.pdf'
+LEFT JOIN per_floor pf ON pf.floor_name = f.name
 JOIN employees e ON e.emp_no = '20120002';
 
--- 3F는 도면을 고치는 중 (사업장 화면의 "수정 중")
+-- 7F는 도면을 고치는 중 (사업장 화면의 "수정 중")
 INSERT INTO floor_plans (floor_id, version, status, background_file_id, width_m, height_m, geometry,
                          created_by, created_at, updated_by, updated_at)
 SELECT p.floor_id, 2, 'DRAFT', p.background_file_id, p.width_m, p.height_m, p.geometry,
        e.id, pg_temp.kst(0, '09:30'), e.id, pg_temp.kst(0, '09:30')
 FROM floor_plans p
-JOIN floors f ON f.id = p.floor_id AND f.name = '3F'
+JOIN floors f ON f.id = p.floor_id AND f.name = '7F'
 JOIN employees e ON e.emp_no = '20130003';
 
--- 팀 구역. 색(t0~t4)은 층 안에서만 겹치지 않으면 된다
+-- 팀 구역 (4F~9F 사무실 + 10F 비서석). 색(t0~t4)은 층 안에서만 겹치지 않으면 된다
 INSERT INTO zones (floor_id, code, name, department_id, color_key, shape, sort_order)
-SELECT f.id, v.code, v.name, d.id, v.color_key,
-       jsonb_build_object(
-           'type', 'rect',
-           'x', (ARRAY[0.0567, 0.2983, 0.5317, 0.7567])[v.col + 1],
-           'y', CASE v.band WHEN 'bottom' THEN 0.6444 ELSE 0.3667 END,
-           'w', 0.1833,
-           'h', CASE v.band WHEN 'full' THEN 0.4611 ELSE 0.2139 END),
-       v.sort_order
+SELECT f.id, v.code, v.name, d.id, v.color_key, pg_temp.cell(v.col, v.band), v.sort_order
 FROM (VALUES
-    ('1F', 'A', '고객지원팀',   'D330', 't1', 0, 'full',   1),
-    ('1F', 'B', '총무팀',       'D110', 't2', 1, 'full',   2),
-    ('2F', 'A', '결제서비스팀', 'D310', 't1', 0, 'full',   1),
-    ('2F', 'B', '정산팀',       'D320', 't2', 1, 'full',   2),
-    ('2F', 'Z', '공용 자율석',  NULL,   't0', 2, 'top',    3),
-    ('3F', 'A', '경영기획팀',   'D130', 't1', 0, 'top',    1),
-    ('3F', 'B', '재무팀',       'D120', 't2', 1, 'full',   2),
-    ('3F', 'C', '인사팀',       'D140', 't3', 0, 'bottom', 3),
-    ('3F', 'Z', '공용 자율석',  NULL,   't0', 3, 'bottom', 4),
-    ('4F', 'A', 'IT운영팀',     'D210', 't4', 0, 'full',   1),
-    ('4F', 'B', '보안팀',       'D220', 't3', 1, 'full',   2),
-    ('5F', 'A', '디지털혁신팀', 'D230', 't1', 0, 'full',   1),
-    ('5F', 'B', '데이터팀',     'D240', 't3', 1, 'full',   2),
-    ('5F', 'Z', '공용 자율석',  NULL,   't0', 2, 'top',    3)
+    ('4F',  'A', '고객지원팀',   'D330', 't1', 0, 'full',   1),
+    ('4F',  'B', '총무팀',       'D110', 't2', 1, 'full',   2),
+    ('4F',  'Z', '공용 자율석',  NULL,   't0', 2, 'top',    3),
+    ('5F',  'A', '결제서비스팀', 'D310', 't1', 0, 'full',   1),
+    ('5F',  'B', '정산팀',       'D320', 't2', 1, 'full',   2),
+    ('5F',  'Z', '공용 자율석',  NULL,   't0', 2, 'top',    3),
+    ('6F',  'A', 'IT운영팀',     'D210', 't4', 0, 'full',   1),
+    ('6F',  'B', '보안팀',       'D220', 't3', 1, 'full',   2),
+    ('7F',  'A', '경영기획팀',   'D130', 't1', 0, 'top',    1),
+    ('7F',  'B', '재무팀',       'D120', 't2', 1, 'full',   2),
+    ('7F',  'C', '인사팀',       'D140', 't3', 0, 'bottom', 3),
+    ('7F',  'Z', '공용 자율석',  NULL,   't0', 3, 'bottom', 4),
+    ('8F',  'A', '디지털혁신팀', 'D230', 't1', 0, 'full',   1),
+    ('8F',  'Z', '공용 자율석',  NULL,   't0', 2, 'top',    2),
+    ('9F',  'A', '데이터팀',     'D240', 't3', 0, 'full',   1),
+    ('9F',  'Z', '공용 자율석',  NULL,   't0', 1, 'top',    2),
+    ('10F', 'S', '비서석',       'D110', 't2', 2, 'top',    1)
 ) AS v(floor_name, code, name, dept_code, color_key, col, band, sort_order)
 JOIN floors f ON f.name = v.floor_name
 LEFT JOIN departments d ON d.dept_code = v.dept_code;
@@ -224,26 +269,29 @@ FROM zones z
 CROSS JOIN LATERAL generate_series(0, CASE WHEN (z.shape->>'h')::numeric > 0.3 THEN 5 ELSE 1 END) AS r
 CROSS JOIN generate_series(0, 2) AS c;
 
--- ② 회의실 (권한·예약보다 먼저). 층마다 위쪽 띠 왼쪽에 2개
+-- ② 회의실 (권한·예약보다 먼저). 대부분 위쪽 띠의 slot 1, 2. 2F 대강당은 아래쪽 세 칸
 INSERT INTO meeting_rooms (floor_id, name, capacity, equipment, requires_approval, shape, sort_order)
-SELECT f.id, v.name, v.capacity, v.equipment::text[], v.requires_approval,
-       CASE v.slot
-           WHEN 1 THEN '{"type": "rect", "x": 0.0417, "y": 0.0694, "w": 0.2167, "h": 0.2194}'::jsonb
-           ELSE '{"type": "rect", "x": 0.2583, "y": 0.0694, "w": 0.1250, "h": 0.2194}'::jsonb
-       END,
-       v.slot
+SELECT f.id, v.name, v.capacity, v.equipment::text[], v.requires_approval, v.shape, v.sort_order
 FROM (VALUES
-    ('1F', '대회의실 101',     12, '{VIDEO}', false, 1),
-    ('1F', '소회의실 102',      6, '{TV}',    false, 2),
-    ('2F', '회의실 201',        8, '{VIDEO}', false, 1),
-    ('2F', '회의실 202',        6, '{TV}',    false, 2),
-    ('3F', '대회의실 301',     12, '{VIDEO}', false, 1),
-    ('3F', '소회의실 302',      6, '{TV}',    false, 2),
-    ('4F', '회의실 401',        8, '{VIDEO}', false, 1),
-    ('4F', '회의실 402',        6, '{TV}',    false, 2),
-    ('5F', '임원 회의실 501',  10, '{VIDEO}', true,  1),
-    ('5F', '회의실 502',        6, '{TV}',    false, 2)
-) AS v(floor_name, name, capacity, equipment, requires_approval, slot)
+    ('1F',  '접견실 101',       8, '{TV}',              false, pg_temp.slot(1),            1),
+    ('1F',  '접견실 102',       6, '{TV}',              false, pg_temp.slot(2),            2),
+    ('2F',  '대강당 201',     200, '{VIDEO,PROJECTOR}', true,  pg_temp.cell(0, 'full', 3), 1),
+    ('2F',  '세미나실 202',    30, '{PROJECTOR}',       false, pg_temp.slot(1),            2),
+    ('4F',  '회의실 401',      12, '{VIDEO}',           false, pg_temp.slot(1),            1),
+    ('4F',  '회의실 402',       6, '{TV}',              false, pg_temp.slot(2),            2),
+    ('5F',  '회의실 501',       8, '{VIDEO}',           false, pg_temp.slot(1),            1),
+    ('5F',  '회의실 502',       6, '{TV}',              false, pg_temp.slot(2),            2),
+    ('6F',  '회의실 601',       8, '{VIDEO}',           false, pg_temp.slot(1),            1),
+    ('6F',  '회의실 602',       6, '{TV}',              false, pg_temp.slot(2),            2),
+    ('7F',  '대회의실 701',    12, '{VIDEO}',           false, pg_temp.slot(1),            1),
+    ('7F',  '소회의실 702',     6, '{TV}',              false, pg_temp.slot(2),            2),
+    ('8F',  '회의실 801',       8, '{VIDEO}',           false, pg_temp.slot(1),            1),
+    ('8F',  '회의실 802',       6, '{TV}',              false, pg_temp.slot(2),            2),
+    ('9F',  '회의실 901',       8, '{VIDEO}',           false, pg_temp.slot(1),            1),
+    ('9F',  '회의실 902',       6, '{TV}',              false, pg_temp.slot(2),            2),
+    ('10F', '임원 회의실 1001', 10, '{VIDEO}',          true,  pg_temp.slot(1),            1),
+    ('10F', '회의실 1002',      6, '{TV}',              false, pg_temp.slot(2),            2)
+) AS v(floor_name, name, capacity, equipment, requires_approval, shape, sort_order)
 JOIN floors f ON f.name = v.floor_name;
 
 -- ⑤ 권한: 위 단계가 바로 아래 단계를 지정 --------------------------------------
@@ -254,15 +302,18 @@ INSERT INTO admin_grants (employee_id, role, site_id, granted_by, granted_at)
 VALUES ((SELECT id FROM employees WHERE emp_no = '20120002'), 'SITE_ADMIN', (SELECT id FROM sites WHERE name = '서울 본사'),
         (SELECT id FROM employees WHERE emp_no = '20090001'), '2026-09-01 09:10+09');
 INSERT INTO admin_grants (employee_id, role, floor_id, granted_by, granted_at)
-VALUES ((SELECT id FROM employees WHERE emp_no = '20130003'), 'FLOOR_ADMIN', (SELECT id FROM floors WHERE name = '3F'),
+VALUES ((SELECT id FROM employees WHERE emp_no = '20130003'), 'FLOOR_ADMIN', (SELECT id FROM floors WHERE name = '7F'),
         (SELECT id FROM employees WHERE emp_no = '20120002'), '2026-09-02 10:00+09');
 INSERT INTO admin_grants (employee_id, role, zone_id, apply_mode, granted_by, granted_at)
 VALUES ((SELECT id FROM employees WHERE emp_no = '20150004'), 'ZONE_ADMIN',
-        (SELECT z.id FROM zones z JOIN floors f ON f.id = z.floor_id WHERE f.name = '3F' AND z.code = 'B'),
+        (SELECT z.id FROM zones z JOIN floors f ON f.id = z.floor_id WHERE f.name = '7F' AND z.code = 'B'),
         'NEEDS_APPROVAL', (SELECT id FROM employees WHERE emp_no = '20130003'), '2026-09-03 10:00+09');
 INSERT INTO admin_grants (employee_id, role, room_id, granted_by, granted_at)
-VALUES ((SELECT id FROM employees WHERE emp_no = '20100009'), 'ROOM_APPROVER', (SELECT id FROM meeting_rooms WHERE name = '임원 회의실 501'),
-        (SELECT id FROM employees WHERE emp_no = '20120002'), '2026-09-03 11:00+09');
+SELECT e.id, 'ROOM_APPROVER', m.id, (SELECT id FROM employees WHERE emp_no = v.granted_by), '2026-09-03 11:00+09'
+FROM (VALUES ('20100009', '임원 회의실 1001', '20120002'),
+             ('20120002', '대강당 201',       '20090001')) AS v(emp_no, room, granted_by)
+JOIN employees e ON e.emp_no = v.emp_no
+JOIN meeting_rooms m ON m.name = v.room;
 
 -- ④ 좌석 배정 ----------------------------------------------------------------
 
@@ -270,21 +321,21 @@ VALUES ((SELECT id FROM employees WHERE emp_no = '20100009'), 'ROOM_APPROVER', (
 INSERT INTO seat_assignments (seat_id, employee_id, kind, starts_at, ends_at, assigned_by)
 SELECT s.id, e.id, 'FIXED', v.starts_at::timestamptz, v.ends_at::timestamptz, a.id
 FROM (VALUES
-    ('1F', 'B-01', '20090001', '2024-01-02 09:00+09', NULL),
-    ('1F', 'B-02', '20100009', '2024-01-02 09:00+09', NULL),
-    ('3F', 'A-01', '20200007', '2024-01-02 09:00+09', NULL),
-    ('3F', 'B-11', '20190005', '2023-03-02 09:00+09', '2025-03-01 09:00+09'),
-    ('3F', 'B-01', '20190005', '2025-03-01 09:00+09', NULL),
-    ('3F', 'B-02', '20150004', '2025-03-01 09:00+09', NULL),
-    ('4F', 'A-01', '20130003', '2024-01-02 09:00+09', NULL),
-    ('4F', 'A-05', '20170008', '2024-01-02 09:00+09', NULL)
+    ('4F',  'B-01', '20090001', '2024-01-02 09:00+09', NULL),
+    ('10F', 'S-01', '20100009', '2024-01-02 09:00+09', NULL),
+    ('7F',  'A-01', '20200007', '2024-01-02 09:00+09', NULL),
+    ('7F',  'B-11', '20190005', '2023-03-02 09:00+09', '2025-03-01 09:00+09'),
+    ('7F',  'B-01', '20190005', '2025-03-01 09:00+09', NULL),
+    ('7F',  'B-02', '20150004', '2025-03-01 09:00+09', NULL),
+    ('6F',  'A-01', '20130003', '2024-01-02 09:00+09', NULL),
+    ('6F',  'A-05', '20170008', '2024-01-02 09:00+09', NULL)
 ) AS v(floor_name, seat_code, emp_no, starts_at, ends_at)
 JOIN floors f ON f.name = v.floor_name
 JOIN seats s ON s.floor_id = f.id AND s.code = v.seat_code
 JOIN employees e ON e.emp_no = v.emp_no
 JOIN employees a ON a.emp_no = '20130003';
 
--- 나머지는 팀 구역의 빈 좌석에 순서대로 앉힌다.
+-- 나머지는 팀 구역의 빈 좌석에 순서대로 앉힌다 (좌석번호 순. 총무팀은 4F B구역이 10F 비서석보다 먼저 찬다)
 -- 구역 끝의 좌석은 비워 둔다 (18석 구역은 2석, 6석 구역은 1석): 미배치 인원·빈 자리 확인용
 WITH zone_seat AS (
     SELECT s.id AS seat_id, s.code, z.department_id,
@@ -313,7 +364,7 @@ JOIN free_employee fe ON fe.department_id = fs.department_id AND fe.rn = fs.rn;
 INSERT INTO seat_assignments (seat_id, employee_id, kind, starts_at, ends_at, assigned_by)
 SELECT s.id, e.id, 'DAILY', pg_temp.kst(0, '09:00'), pg_temp.kst(0, '18:00'), e.id
 FROM (VALUES ('Z-01', '20120002'), ('Z-02', '20260006')) AS v(seat_code, emp_no)
-JOIN floors f ON f.name = '3F'
+JOIN floors f ON f.name = '7F'
 JOIN seats s ON s.floor_id = f.id AND s.code = v.seat_code
 JOIN employees e ON e.emp_no = v.emp_no;
 
@@ -324,7 +375,7 @@ FROM (VALUES
     ('SEAT_ASSIGNMENT', 'DRAFT',   '신규 입사자 배치',              NULL::timestamptz,        pg_temp.kst(0, '10:05')),
     ('ZONE_CHANGE',     'PENDING', '공용 자율석 Z-02를 B구역으로', pg_temp.kst(-1, '16:00'), pg_temp.kst(-1, '15:40'))
 ) AS v(request_type, status, note, submitted_at, created_at)
-JOIN floors f ON f.name = '3F'
+JOIN floors f ON f.name = '7F'
 JOIN zones z ON z.floor_id = f.id AND z.code = 'B'
 JOIN employees e ON e.emp_no = '20150004';
 
@@ -350,12 +401,12 @@ INSERT INTO presence_status (employee_id, status, message, expires_at, updated_a
 SELECT e.id, v.status, v.message, v.expires_at, pg_temp.kst(0, '09:00')
 FROM (VALUES
     ('20190005', 'AVAILABLE',      '편하게 자리로 찾아오세요',       NULL::timestamptz),
-    ('20150004', 'IN_MEETING',     '대회의실 301 · 14:30 종료 예정', pg_temp.kst(0, '14:30')),
+    ('20150004', 'IN_MEETING',     '대회의실 701 · 14:30 종료 예정', pg_temp.kst(0, '14:30')),
     ('20170008', 'DO_NOT_DISTURB', '장애 대응 중 · 메신저로 연락',   pg_temp.kst(0, '18:00')),
     ('20130003', 'AWAY',           '연차 휴가 · 내일 복귀',          pg_temp.kst(1, '00:00')),
     ('20200007', 'AVAILABLE',      NULL,                            pg_temp.kst(0, '19:00')),   -- 퇴근 시 자동 해제
     ('20090001', 'AVAILABLE',      NULL,                            NULL),
-    ('20120002', 'AVAILABLE',      '오늘은 3F 자율석에 있어요',      pg_temp.kst(0, '18:00')),
+    ('20120002', 'AVAILABLE',      '오늘은 7F 자율석에 있어요',      pg_temp.kst(0, '18:00')),
     ('20100009', 'DO_NOT_DISTURB', '임원 일정 조율 중',              NULL)
 ) AS v(emp_no, status, message, expires_at)
 JOIN employees e ON e.emp_no = v.emp_no;
@@ -373,7 +424,7 @@ WHERE e.emp_no LIKE '21%' AND e.id % 9 <> 0;
 
 -- 재무팀 주간회의: 오늘부터 3주 동안 같은 요일 15:00–16:00, 회차마다 예약 행
 INSERT INTO reservation_series (room_id, organizer_id, title, repeat_rule, start_time, end_time, first_date, last_date)
-SELECT (SELECT id FROM meeting_rooms WHERE name = '소회의실 302'), (SELECT id FROM employees WHERE emp_no = '20190005'),
+SELECT (SELECT id FROM meeting_rooms WHERE name = '소회의실 702'), (SELECT id FROM employees WHERE emp_no = '20190005'),
        '재무팀 주간회의', 'WEEKLY', '15:00', '16:00', today, today + 14
 FROM (SELECT (now() AT TIME ZONE 'Asia/Seoul')::date AS today) t;
 
@@ -384,18 +435,22 @@ FROM reservation_series s,
      generate_series(s.first_date, s.last_date, interval '7 days') AS d
 WHERE s.title = '재무팀 주간회의';
 
-INSERT INTO reservations (room_id, organizer_id, title, starts_at, ends_at, status, checked_in_at)
+-- 승인제 회의실(대강당, 임원 회의실)은 승인자가 승인해야 확정. 이사회 준비는 아직 승인 대기
+INSERT INTO reservations (room_id, organizer_id, title, starts_at, ends_at, status, checked_in_at, decided_by, decided_at)
 SELECT m.id, e.id, v.title, pg_temp.kst(v.day, v.starts), pg_temp.kst(v.day, v.ends), v.status,
-       CASE WHEN v.checked_in THEN pg_temp.kst(v.day, v.starts) + interval '4 minutes' END
+       CASE WHEN v.checked_in THEN pg_temp.kst(v.day, v.starts) + interval '4 minutes' END,
+       a.id, CASE WHEN a.id IS NOT NULL THEN pg_temp.kst(-1, '17:00') END
 FROM (VALUES
-    ('대회의실 101',    '20120002', '신규 입사자 교육', 0, time '10:00', time '12:00', 'CONFIRMED',        true),
-    ('대회의실 301',    '20150004', '분기 결산 보고',   0, time '13:00', time '14:30', 'CONFIRMED',        true),
-    ('회의실 401',      '20170008', '장애 대응 상황실', 0, time '09:00', time '18:00', 'CONFIRMED',        true),
-    ('회의실 201',      '20190005', '정산 시스템 점검', 0, time '16:00', time '17:00', 'CONFIRMED',        false),
-    ('임원 회의실 501', '20090001', '이사회 준비',      1, time '14:00', time '16:00', 'PENDING_APPROVAL', false)
-) AS v(room, organizer, title, day, starts, ends, status, checked_in)
+    ('대강당 201',       '20090001', '신규 입사자 교육', 0, time '10:00', time '12:00', 'CONFIRMED',        true,  '20120002'),
+    ('대회의실 701',     '20150004', '분기 결산 보고',   0, time '13:00', time '14:30', 'CONFIRMED',        true,  NULL),
+    ('회의실 601',       '20170008', '장애 대응 상황실', 0, time '09:00', time '18:00', 'CONFIRMED',        true,  NULL),
+    ('회의실 501',       '20190005', '정산 시스템 점검', 0, time '16:00', time '17:00', 'CONFIRMED',        false, NULL),
+    ('접견실 101',       '20120002', '협력사 방문 미팅', 0, time '11:00', time '12:00', 'CONFIRMED',        false, NULL),
+    ('임원 회의실 1001', '20090001', '이사회 준비',      1, time '14:00', time '16:00', 'PENDING_APPROVAL', false, NULL)
+) AS v(room, organizer, title, day, starts, ends, status, checked_in, approver)
 JOIN meeting_rooms m ON m.name = v.room
-JOIN employees e ON e.emp_no = v.organizer;
+JOIN employees e ON e.emp_no = v.organizer
+LEFT JOIN employees a ON a.emp_no = v.approver;
 
 -- 참석자: 주간회의 전 회차에 재무팀 2명 + 경영기획팀 김민준
 INSERT INTO reservation_attendees (reservation_id, employee_id)
@@ -444,8 +499,8 @@ SELECT c.id, v.role, v.content, v.tool_name, v.tool_args::jsonb,
        pg_temp.kst(0, '13:45') + v.after
 FROM (VALUES
     ('USER',      '법인카드 사용 내역 정산은 누구한테 물어봐야 해?', NULL,         NULL,                           interval '0 s'),
-    ('TOOL',      '{"task": "법인카드 정산", "primary": "조시우", "seat": "3F B-01"}', 'find_owner', '{"query": "법인카드 정산"}', interval '1 s'),
-    ('ASSISTANT', '법인카드 정산은 재무팀 조시우 님 담당이에요. 지금 방문 가능 상태이고 3F B-01 자리에 있어요.', NULL, NULL, interval '2 s')
+    ('TOOL',      '{"task": "법인카드 정산", "primary": "조시우", "seat": "7F B-01"}', 'find_owner', '{"query": "법인카드 정산"}', interval '1 s'),
+    ('ASSISTANT', '법인카드 정산은 재무팀 조시우 님 담당이에요. 지금 방문 가능 상태이고 7F B-01 자리에 있어요.', NULL, NULL, interval '2 s')
 ) AS v(role, content, tool_name, tool_args, after)
 CROSS JOIN ai_conversations c;
 
@@ -455,10 +510,10 @@ INSERT INTO audit_logs (actor_id, action, target_type, target_id, before_data, a
 SELECT e.id, 'SEAT_ASSIGN', 'seat', s.id,
        '{"employee": null}', jsonb_build_object('employee', '20190005'), '10.10.3.30', '2025-03-01 09:00+09'
 FROM employees e
-JOIN floors f ON f.name = '3F'
+JOIN floors f ON f.name = '7F'
 JOIN seats s ON s.floor_id = f.id AND s.code = 'B-01'
 WHERE e.emp_no = '20130003';
 INSERT INTO audit_logs (actor_id, action, target_type, target_id, after_data, ip_address, created_at)
 SELECT e.id, 'PLAN_PUBLISH', 'floor_plan', p.id, '{"version": 1}', '10.10.1.12', p.published_at
 FROM employees e, floor_plans p JOIN floors f ON f.id = p.floor_id
-WHERE e.emp_no = '20120002' AND f.name = '5F' AND p.version = 1;
+WHERE e.emp_no = '20120002' AND f.name = '10F' AND p.version = 1;

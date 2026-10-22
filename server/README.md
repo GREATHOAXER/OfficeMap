@@ -9,8 +9,9 @@ app/
   db.py            PostgreSQL 연결 풀, app_settings 읽기
   security.py      비밀번호 해시(bcrypt), 세션 토큰
   session.py       로그인 확인. 로그인이 필요한 API는 CurrentUser 인자를 받는다
-  routers/auth.py    로그인 화면 API
-  routers/office.py  자리·재실 현황 API
+  routers/auth.py      로그인 화면 API
+  routers/office.py    자리·재실 현황 API
+  routers/presence.py  내 재실 상태 바꾸기 API
 scripts/
   init_db.py       db/schema + db/seed 실행
 ```
@@ -44,3 +45,19 @@ scripts/
 - 좌표(`x`, `y`, `shape`)는 모두 도면 너비·높이 대비 비율(0~1)입니다. 좌석 `x`, `y`는 중심점입니다.
 - 재실 상태는 `expires_at`이 지났으면 `null`로 내려갑니다.
 - 퇴사·휴직 처리된 사람은 배정이 남아 있어도 빈 자리로 보입니다.
+- 층의 `description`은 사무실이 아닌 층의 용도입니다 (예: 로비, 대강당). 사무실 층은 `null`입니다.
+
+## 내 재실 상태 API (로그인 필요)
+
+`presence_status` 테이블에 직원당 1행을 덮어씁니다. 이력은 남기지 않습니다.
+
+| 요청 | 하는 일 |
+|---|---|
+| `GET /api/presence/me` | 지금 내 상태. 없거나 자동 해제 시각이 지났으면 `{"presence": null}` |
+| `PUT /api/presence/me` | 상태 저장. `{"status", "message", "duration"}` |
+| `DELETE /api/presence/me` | 상태 지우기 (204) |
+
+- `status`: `AVAILABLE` 방문 가능, `DO_NOT_DISTURB` 방해 금지, `IN_MEETING` 회의 중, `AWAY` 자리 비움
+- `message`: 100자까지, 빈 문자열이면 지웁니다.
+- `duration`: 자동 해제 시각(`expires_at`). `NONE` 계속, `30M`, `1H`, `END_OF_DAY` 퇴근 시
+  (`app_settings`의 `presence.workday_end`, 기본 18:00. 이미 지났으면 오늘 자정)
