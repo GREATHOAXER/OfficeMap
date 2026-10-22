@@ -3,22 +3,24 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { SparkleIcon } from "@/components/icons";
-import type { FloorMap, FloorSummary, PresenceStatus } from "@/lib/api";
+import type { FloorMap, FloorSummary, MyPresence, PresenceStatus } from "@/lib/api";
 import { PRESENCE_LABEL, PRESENCE_ORDER } from "@/lib/presence";
 import AiPanel from "./AiPanel";
-import FloorPlan from "./FloorPlan";
+import FloorPlan, { clampZoom, ZOOM_MAX, ZOOM_MIN } from "./FloorPlan";
+import MyStatus from "./MyStatus";
 import SeatPanel from "./SeatPanel";
 import styles from "./office.module.css";
 
-const ZOOM_STEPS = [0.75, 1, 1.25, 1.5, 2];
+const ZOOM_STEP = 1.25; // − / + 버튼 한 번에 바뀌는 배율
 
 type Props = {
   floors: FloorSummary[];
   myFloorId: number | null;
+  myPresence: MyPresence;
   map: FloorMap;
 };
 
-export default function OfficeView({ floors, myFloorId, map }: Props) {
+export default function OfficeView({ floors, myFloorId, myPresence, map }: Props) {
   const floorId = map.floor.id;
   const [aiOpen, setAiOpen] = useState(false);
   const [zoom, setZoom] = useState(1);
@@ -41,7 +43,6 @@ export default function OfficeView({ floors, myFloorId, map }: Props) {
   }, [aiOpen]);
 
   const selectedSeat = map.seats.find((s) => s.id === selectedSeatId) ?? null;
-  const zoomIndex = ZOOM_STEPS.indexOf(zoom);
 
   function toggleStatus(status: PresenceStatus) {
     setVisible((prev) => {
@@ -67,6 +68,7 @@ export default function OfficeView({ floors, myFloorId, map }: Props) {
           <SparkleIcon size={18} />
           AI에게 묻기
         </button>
+        <MyStatus presence={myPresence} />
       </header>
 
       <div className={styles.body}>
@@ -86,7 +88,7 @@ export default function OfficeView({ floors, myFloorId, map }: Props) {
                     {floor.name}
                     {floor.id === myFloorId && <span className={styles.mine}>내 자리</span>}
                   </strong>
-                  <span>{floor.teams.map((t) => t.replace(/팀$/, "")).join("·") || "공용 공간"}</span>
+                  <span>{floor.description ?? (floor.teams.map((t) => t.replace(/팀$/, "")).join("·") || "공용 공간")}</span>
                 </Link>
               );
             })}
@@ -119,8 +121,8 @@ export default function OfficeView({ floors, myFloorId, map }: Props) {
               <button
                 type="button"
                 aria-label="축소"
-                disabled={zoomIndex <= 0}
-                onClick={() => setZoom(ZOOM_STEPS[zoomIndex - 1])}
+                disabled={zoom <= ZOOM_MIN + 0.001}
+                onClick={() => setZoom(clampZoom(zoom / ZOOM_STEP))}
               >
                 −
               </button>
@@ -130,8 +132,8 @@ export default function OfficeView({ floors, myFloorId, map }: Props) {
               <button
                 type="button"
                 aria-label="확대"
-                disabled={zoomIndex >= ZOOM_STEPS.length - 1}
-                onClick={() => setZoom(ZOOM_STEPS[zoomIndex + 1])}
+                disabled={zoom >= ZOOM_MAX - 0.001}
+                onClick={() => setZoom(clampZoom(zoom * ZOOM_STEP))}
               >
                 +
               </button>
@@ -142,6 +144,7 @@ export default function OfficeView({ floors, myFloorId, map }: Props) {
             <FloorPlan
               map={map}
               zoom={zoom}
+              onZoomChange={setZoom}
               focusZoneId={focusZoneId}
               visibleStatuses={visible}
               selectedSeatId={selectedSeatId}
@@ -168,7 +171,9 @@ export default function OfficeView({ floors, myFloorId, map }: Props) {
               </span>
               반원 = 의자 (앉는 쪽)
             </span>
-            <span className={styles.hint}>팀 칩을 누르면 그 팀만 강조 · 자리를 누르면 오른쪽에 정보</span>
+            <span className={styles.hint}>
+              트랙패드 핀치(Ctrl+휠)로 확대·축소 · 팀 칩을 누르면 그 팀만 강조 · 자리를 누르면 오른쪽에 정보
+            </span>
           </div>
         </main>
 

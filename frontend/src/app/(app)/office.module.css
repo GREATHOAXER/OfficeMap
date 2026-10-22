@@ -48,6 +48,221 @@
   box-shadow: inset 0 0 0 2px #fff, 0 0 0 2px var(--link-hover);
 }
 
+/* 내 상태 버튼과 상태 바꾸기 패널 */
+.myStatus {
+  position: relative;
+}
+
+.myStatusButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px 0 14px;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.myStatusButton:hover,
+.myStatusButton[aria-expanded="true"] {
+  background: var(--bg);
+}
+
+.myStatusCaption {
+  color: var(--muted);
+}
+
+.statusPanel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
+}
+
+.statusForm {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.statusForm h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.statusOptions,
+.durations {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.statusOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.statusOption {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.statusOption:hover {
+  border-color: var(--border);
+}
+
+/* 라디오는 투명하게 카드 전체를 덮는다: 어디를 눌러도 고를 수 있고, 키보드·스크린리더로도 그대로 쓰인다 */
+.statusOption input,
+.durations input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.statusOption:has(input:checked) {
+  border: 2px solid var(--ink);
+  padding: 0 11px;
+}
+
+.statusOption:has(input:focus-visible),
+.durations label:has(input:focus-visible) {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+.statusOptionLabel {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.statusOptionHint {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.statusField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.statusField input {
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.durations legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.durations div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.durations label {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.durations label:has(input:checked) {
+  border: 2px solid var(--ink);
+  font-weight: 600;
+}
+
+.statusNote {
+  margin: -4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.statusError {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  font-size: 12px;
+}
+
+.statusActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.statusClear {
+  min-height: 40px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.statusSave {
+  margin-left: auto;
+  height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.statusSave:disabled,
+.statusClear:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
 /* 본문: 도면(main)과 오른쪽 패널(side). 폭이 모자라면 패널이 아래로 내려간다 */
 .body {
   flex: 1;
@@ -87,8 +302,8 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
-  min-width: 96px;
-  padding: 6px 12px;
+  min-width: 76px;
+  padding: 6px 10px;
   border: 1px solid var(--divider);
   border-radius: 6px;
   background: var(--surface);
@@ -233,6 +448,8 @@
 
 .planScroll {
   overflow: auto;
+  max-height: max(360px, calc(100vh - 260px)); /* 확대하면 이 안에서 위아래·좌우로 스크롤 */
+  overscroll-behavior: contain;
 }
 
 .noPlan {
@@ -245,7 +462,8 @@
 /* 도면 안의 크기는 도면 폭(cqw) 기준이라, 메뉴를 접고 펴거나 확대해도 비율이 그대로다 */
 .plan {
   position: relative;
-  min-width: 640px; /* 좁은 화면에서는 이름이 읽히는 크기를 지키고 카드 안에서 가로로 스크롤 */
+  /* 기본 폭은 카드 폭(좁은 화면에서는 이름이 읽히는 640px)이고, 배율(--zoom)만큼 커진다 */
+  width: calc(max(100%, 640px) * var(--zoom, 1));
   container-type: inline-size;
   background: var(--surface);
 }
@@ -709,6 +927,31 @@
   color: var(--link-hover);
 }
 
+.roomList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.roomList li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.roomList strong {
+  font-size: 13px;
+  color: var(--ink);
+}
+
 /* AI 도우미 패널 (틀만) */
 .ai {
   display: flex;
@@ -843,6 +1086,19 @@
 @media (max-width: 720px) {
   .header {
     padding: 12px 16px;
+  }
+
+  /* 좁은 화면: 상태 패널은 화면 아래에서 올라오는 시트로 */
+  .statusPanel {
+    position: fixed;
+    top: auto;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    width: auto;
+    max-width: none;
+    max-height: calc(100vh - 24px);
+    overflow-y: auto;
   }
 
   .body {

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.db import pool
-from app.routers import auth, office
+from app.routers import auth, office, presence
 
 
 @asynccontextmanager
@@ -17,6 +17,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="OfficeMap API", lifespan=lifespan)
 app.include_router(auth.router)
 app.include_router(office.router)
+app.include_router(presence.router)
 
 
 @app.get("/api/health")

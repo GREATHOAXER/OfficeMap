@@ -2,13 +2,15 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { SiteSummary, User } from "@/lib/api";
 import { SIDEBAR_COOKIE } from "@/lib/sidebar";
 import {
   CalendarIcon,
+  CheckIcon,
   ChecklistIcon,
+  ChevronDownIcon,
   GridIcon,
   MenuIcon,
   MoreIcon,
@@ -50,12 +52,13 @@ function subscribeNarrow(onChange: () => void) {
 type Props = {
   user: User;
   sites: SiteSummary[];
+  defaultSiteId: number | null;
   /** 쿠키에 저장된 선택. null이면 아직 고른 적 없음: 넓은 화면은 펼치고 좁은 화면은 접는다 */
   initialCollapsed: boolean | null;
   children: ReactNode;
 };
 
-export default function AppShell({ user, sites, initialCollapsed, children }: Props) {
+export default function AppShell({ user, sites, defaultSiteId, initialCollapsed, children }: Props) {
   const [choice, setChoice] = useState<boolean | null>(initialCollapsed);
   const narrow = useSyncExternalStore(
     subscribeNarrow,
@@ -91,18 +94,7 @@ export default function AppShell({ user, sites, initialCollapsed, children }: Pr
           <Image src="/kftc-symbol.png" alt="금융결제원" width={32} height={32} className={styles.symbol} />
         </div>
 
-        {sites.length > 0 && (
-          <label className={styles.site}>
-            사업장
-            <select defaultValue={sites[0].id}>
-              {sites.map((site) => (
-                <option key={site.id} value={site.id}>
-                  {site.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
+        {sites.length > 0 && <SiteSelect sites={sites} defaultSiteId={defaultSiteId} />}
 
         <MenuList items={MAIN_MENU} collapsed={collapsed} />
 
@@ -118,6 +110,132 @@ export default function AppShell({ user, sites, initialCollapsed, children }: Pr
         <UserCard user={user} />
       </nav>
       <div className={styles.content}>{children}</div>
+    </div>
+  );
+}
+
+// 사업장 고르기. OS 기본 선택창 대신 서비스 모양에 맞춘 목록 (listbox 패턴: 방향키·Enter·Esc 지원)
+function SiteSelect({ sites, defaultSiteId }: { sites: SiteSummary[]; defaultSiteId: number | null }) {
+  const router = useRouter();
+  const params = useSearchParams();
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+
+  // 주소의 층·사업장으로 지금 보고 있는 사업장을 정한다
+  const floorId = Number(params.get("floor"));
+  const siteId = Number(params.get("site"));
+  const current =
+    sites.find((s) => s.floors.some((f) => f.id === floorId)) ??
+    sites.find((s) => s.id === siteId) ??
+    sites.find((s) => s.id === defaultSiteId) ??
+    sites[0];
+
+  useEffect(() => {
+    if (open) listRef.current?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!boxRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  function openList() {
+    setActive(Math.max(0, sites.indexOf(current)));
+    setOpen(true);
+  }
+
+  function close() {
+    setOpen(false);
+    buttonRef.current?.focus();
+  }
+
+  function choose(site: SiteSummary) {
+    close();
+    if (site.id !== current.id) router.push(`/?site=${site.id}`);
+  }
+
+  function onButtonKeyDown(event: KeyboardEvent) {
+    if (["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) {
+      event.preventDefault();
+      openList();
+    }
+  }
+
+  function onListKeyDown(event: KeyboardEvent) {
+    const last = sites.length - 1;
+    const moves: Record<string, () => void> = {
+      ArrowDown: () => setActive((i) => Math.min(last, i + 1)),
+      ArrowUp: () => setActive((i) => Math.max(0, i - 1)),
+      Home: () => setActive(0),
+      End: () => setActive(last),
+      Enter: () => choose(sites[active]),
+      " ": () => choose(sites[active]),
+      Escape: close,
+    };
+    if (event.key === "Tab") setOpen(false);
+    const move = moves[event.key];
+    if (move) {
+      event.preventDefault();
+      event.stopPropagation(); // 바깥의 Esc 처리(계정 메뉴 등)로 번지지 않게
+      move();
+    }
+  }
+
+  return (
+    <div ref={boxRef} className={styles.site}>
+      <span id="site-label" className={styles.siteLabel}>
+        사업장
+      </span>
+      <button
+        ref={buttonRef}
+        id="site-button"
+        type="button"
+        className={styles.siteButton}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-labelledby="site-label site-button"
+        onClick={() => (open ? setOpen(false) : openList())}
+        onKeyDown={onButtonKeyDown}
+      >
+        <span className={styles.siteName}>{current.name}</span>
+        <ChevronDownIcon size={18} />
+      </button>
+      {open && (
+        <ul
+          ref={listRef}
+          role="listbox"
+          tabIndex={-1}
+          aria-labelledby="site-label"
+          aria-activedescendant={`site-option-${sites[active].id}`}
+          className={styles.siteList}
+          onKeyDown={onListKeyDown}
+        >
+          {sites.map((site, i) => (
+            <li
+              key={site.id}
+              id={`site-option-${site.id}`}
+              role="option"
+              aria-selected={site.id === current.id}
+              className={`${styles.siteOption} ${i === active ? styles.siteOptionActive : ""}`}
+              onClick={() => choose(site)}
+              onMouseEnter={() => setActive(i)}
+            >
+              <span className={styles.siteCheck} aria-hidden="true">
+                {site.id === current.id && <CheckIcon size={16} />}
+              </span>
+              <span className={styles.siteOptionName}>{site.name}</span>
+              <span className={styles.siteOptionMeta}>{site.floors.length}개 층</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

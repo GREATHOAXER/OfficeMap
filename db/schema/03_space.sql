@@ -16,8 +16,9 @@ CREATE TABLE sites (
 CREATE TABLE floors (
     id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     site_id    bigint      NOT NULL REFERENCES sites(id),
-    name       varchar(20) NOT NULL,                      -- 예: 7F, B1
-    sort_order integer     NOT NULL,                      -- 층 버튼 순서. 이름으로 정렬하면 10F가 2F 앞에 온다
+    name        varchar(20) NOT NULL,                     -- 예: 7F, B1
+    description varchar(50),                              -- 사무실이 아닌 층의 용도 (예: 로비, 대강당). 층 버튼 아래 표시
+    sort_order  integer     NOT NULL,                     -- 층 버튼 순서. 이름으로 정렬하면 10F가 2F 앞에 온다
     is_active  boolean     NOT NULL DEFAULT true,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),

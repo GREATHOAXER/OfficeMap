@@ -11,17 +11,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!user) redirect("/login");
 
   let sites: SiteSummary[] = [];
+  let myFloorId: number | null = null;
   try {
-    sites = (await fetchSites(cookieHeader)).sites;
+    ({ sites, my_floor_id: myFloorId } = await fetchSites(cookieHeader));
   } catch {
     // 사업장 목록을 못 읽어도 메뉴는 그린다. 본문 쪽에서 오류를 보여 준다
   }
   // 쿠키가 없으면 null: 화면 폭에 맞춰 CSS가 정한다
   const saved = (await cookies()).get(SIDEBAR_COOKIE)?.value;
   const collapsed = saved === "collapsed" ? true : saved === "expanded" ? false : null;
+  // 주소에 사업장·층이 없을 때 고른 것으로 보여 줄 사업장: 내 자리가 있는 곳
+  const defaultSiteId = sites.find((s) => s.floors.some((f) => f.id === myFloorId))?.id ?? sites[0]?.id ?? null;
 
   return (
-    <AppShell user={user} sites={sites} initialCollapsed={collapsed}>
+    <AppShell user={user} sites={sites} defaultSiteId={defaultSiteId} initialCollapsed={collapsed}>
       {children}
     </AppShell>
   );

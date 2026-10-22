@@ -3,6 +3,7 @@
 import { CloseIcon } from "@/components/icons";
 import type { FloorMap, Seat } from "@/lib/api";
 import { PRESENCE_LABEL, PRESENCE_ORDER } from "@/lib/presence";
+import { roomStatusText } from "@/lib/rooms";
 import styles from "./office.module.css";
 
 type Props = {
@@ -88,6 +89,7 @@ export default function SeatPanel({ map, seat, onClear }: Props) {
 }
 
 function FloorSummaryCard({ map }: { map: FloorMap }) {
+  if (map.seats.length === 0) return <SharedFloorCard map={map} />;
   const seated = map.seats.filter((s) => s.occupant);
   const flex = map.seats.filter((s) => s.seat_type === "FLEX").length;
   const counts = new Map(PRESENCE_ORDER.map((status) => [status, 0]));
@@ -128,6 +130,33 @@ function FloorSummaryCard({ map }: { map: FloorMap }) {
         자리를 누르면 앉은 사람의 재실 상태와 연락처가 여기에 보여요.
         {flex > 0 && ` 이 층에는 자율석이 ${flex}석 있어요.`}
       </p>
+    </section>
+  );
+}
+
+// 로비·대강당·식당처럼 개인 좌석이 없는 층: 회의실 현황을 보여 준다
+function SharedFloorCard({ map }: { map: FloorMap }) {
+  return (
+    <section className={styles.card} aria-labelledby="floor-summary-title">
+      <h2 id="floor-summary-title" className={styles.cardTitle}>
+        {map.floor.name} 한눈에
+      </h2>
+      <p className={styles.cardHint}>이 층에는 개인 좌석이 없어요.</p>
+      {map.rooms.length > 0 && (
+        <ul className={styles.roomList}>
+          {map.rooms.map((room) => (
+            <li key={room.id}>
+              <strong>
+                {room.name}
+                {room.requires_approval && <span className={styles.tag}>승인제</span>}
+              </strong>
+              <span>
+                최대 {room.capacity}명 · {roomStatusText(room)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
