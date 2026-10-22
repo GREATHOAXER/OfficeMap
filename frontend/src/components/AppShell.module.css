@@ -1,0 +1,400 @@
+/*
+ * data-collapsed: "false" 펼침 / "true" 접힘 / "auto" 아직 고르지 않음
+ * "auto"는 넓은 화면에서 펼침, 좁은 화면(720px 이하)에서 접힘으로 보인다
+ */
+.shell {
+  --sidebar-expanded: 224px;
+  --sidebar-collapsed: 68px;
+  --sidebar-width: var(--sidebar-expanded);
+  display: flex;
+  min-height: 100vh;
+}
+
+/* 메뉴 폭이 바뀌면 본문(content)이 남은 폭을 그대로 차지한다 */
+.content {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sidebar {
+  flex: 0 0 var(--sidebar-width);
+  width: var(--sidebar-width);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--surface-sunken);
+  border-right: 1px solid var(--divider);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition:
+    flex-basis 0.2s ease,
+    width 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+}
+
+.iconButton {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.iconButton:hover {
+  background: #ededea;
+}
+
+.logo {
+  height: 32px;
+  width: auto;
+  mix-blend-mode: multiply; /* 로고의 흰 배경을 메뉴 배경에 녹인다 */
+}
+
+.symbol {
+  display: none;
+  width: 32px;
+  height: 32px;
+  margin: 4px 0 8px;
+}
+
+.site {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 0 4px 8px;
+}
+
+.site select {
+  height: 40px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  padding: 0 10px;
+  font-size: 14px;
+  background: var(--surface);
+}
+
+.menu {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+  text-align: left;
+}
+
+.item svg {
+  flex: none;
+}
+
+.item:hover {
+  background: #ededea;
+  color: var(--ink);
+}
+
+.item.active,
+.item.active:hover {
+  background: var(--ink);
+  color: #fff;
+  font-weight: 600;
+}
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--link);
+  color: #fff;
+}
+
+.groupTitle {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 18px 12px 6px;
+  font-weight: 600;
+  align-self: stretch;
+}
+
+.divider {
+  display: none;
+  width: 28px;
+  border: 0;
+  border-top: 1px solid var(--divider);
+  margin: 8px 0;
+}
+
+.spacer {
+  flex: 1;
+  min-height: 24px;
+}
+
+.user {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 4px 0 8px;
+  border-top: 1px solid var(--divider);
+  align-self: stretch;
+}
+
+.avatar,
+.avatarButton {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--divider);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+.avatarButton {
+  display: none;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  cursor: pointer;
+}
+
+.avatarButton:hover {
+  background: var(--border);
+}
+
+.userText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.userText strong {
+  font-size: 13px;
+}
+
+.userText span {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.userButton {
+  width: 36px;
+  height: 36px;
+}
+
+.popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.popoverWho {
+  margin: 0;
+  padding: 6px 8px 8px;
+  font-size: 12px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--divider);
+}
+
+.popoverItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.popoverItem:hover:not(:disabled) {
+  background: var(--bg);
+}
+
+/* ── 접힌 메뉴: 아이콘만 ───────────────────────────────────────────
+   아래 규칙은 좁은 화면의 "auto"에도 똑같이 적용한다 (맨 아래 미디어 쿼리) */
+.shell[data-collapsed="true"] {
+  --sidebar-width: var(--sidebar-collapsed);
+}
+
+.shell[data-collapsed="true"] .sidebar {
+  align-items: center;
+}
+
+.shell[data-collapsed="true"] .top {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.shell[data-collapsed="true"] .item {
+  width: 44px;
+  padding: 0;
+  justify-content: center;
+}
+
+.shell[data-collapsed="true"] .user {
+  justify-content: center;
+  padding: 10px 0 0;
+}
+
+.shell[data-collapsed="true"] .symbol,
+.shell[data-collapsed="true"] .divider {
+  display: block;
+}
+
+.shell[data-collapsed="true"] .avatarButton {
+  display: flex;
+}
+
+.shell[data-collapsed="true"] .logo,
+.shell[data-collapsed="true"] .site,
+.shell[data-collapsed="true"] .groupTitle,
+.shell[data-collapsed="true"] .label,
+.shell[data-collapsed="true"] .badge,
+.shell[data-collapsed="true"] .avatar,
+.shell[data-collapsed="true"] .userText,
+.shell[data-collapsed="true"] .userButton {
+  display: none;
+}
+
+.shell[data-collapsed="true"] .popover {
+  left: calc(100% + 8px);
+  right: auto;
+  bottom: 0;
+  width: 200px;
+}
+
+@media (max-width: 720px) {
+  .shell[data-collapsed="auto"] {
+    --sidebar-width: var(--sidebar-collapsed);
+  }
+
+  .shell[data-collapsed="auto"] .sidebar {
+    align-items: center;
+  }
+
+  .shell[data-collapsed="auto"] .top {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .shell[data-collapsed="auto"] .item {
+    width: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .shell[data-collapsed="auto"] .user {
+    justify-content: center;
+    padding: 10px 0 0;
+  }
+
+  .shell[data-collapsed="auto"] .symbol,
+  .shell[data-collapsed="auto"] .divider {
+    display: block;
+  }
+
+  .shell[data-collapsed="auto"] .avatarButton {
+    display: flex;
+  }
+
+  .shell[data-collapsed="auto"] .logo,
+  .shell[data-collapsed="auto"] .site,
+  .shell[data-collapsed="auto"] .groupTitle,
+  .shell[data-collapsed="auto"] .label,
+  .shell[data-collapsed="auto"] .badge,
+  .shell[data-collapsed="auto"] .avatar,
+  .shell[data-collapsed="auto"] .userText,
+  .shell[data-collapsed="auto"] .userButton {
+    display: none;
+  }
+
+  .shell[data-collapsed="auto"] .popover {
+    left: calc(100% + 8px);
+    right: auto;
+    bottom: 0;
+    width: 200px;
+  }
+
+  /* 좁은 화면에서 직접 펼치면 본문 위에 겹쳐 띄우고, 본문은 접힌 폭만큼만 비켜 준다 */
+  .shell[data-collapsed="false"]::before {
+    content: "";
+    flex: 0 0 var(--sidebar-collapsed);
+  }
+
+  .shell[data-collapsed="false"] .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 40;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.18);
+  }
+}

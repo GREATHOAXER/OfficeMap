@@ -22,14 +22,29 @@ API 서버(`server/`, uvicorn)가 `http://localhost:8000`에서 떠 있어야 �
 src/
   app/
     layout.tsx          공통 글꼴(IBM Plex Sans KR)·색
-    globals.css         디자인 색·글꼴 기준값
-    page.tsx            로그인 뒤 첫 화면 (자리·재실 현황이 들어올 자리)
-    login/
-      page.tsx          로그인 화면 (서버에서 공지·문의처를 읽어 옴)
-      LoginForm.tsx     사번 로그인 폼 (오류, 잠금, 사번 기억하기)
-      FloorIllustration.tsx  왼쪽 장식용 평면도 그림
-  lib/api.ts            서버 컴포넌트에서 FastAPI 부르는 함수
+    globals.css         디자인 색·글꼴 기준값, 팀 색(data-color), 재실 표시(.mk)
+    login/              로그인 화면
+    (app)/              로그인해야 보는 화면 (괄호 폴더는 주소에 안 들어감)
+      layout.tsx        로그인 확인 + 왼쪽 메뉴 틀
+      page.tsx          ① 자리·재실 현황 ( /?floor=층ID )
+      OfficeView.tsx    층 버튼, 팀 칩, 확대·축소, 범례, 오른쪽 패널
+      FloorPlan.tsx     도면 그리기 (벽·공간·회의실·구역·좌석)
+      SeatPanel.tsx     고른 자리 정보 / 층 요약
+      AiPanel.tsx       AI 도우미 패널 (틀만)
+  components/
+    AppShell.tsx        왼쪽 메뉴. 햄버거로 접고 펴며, 상태는 쿠키에 저장
+    icons.tsx           선 아이콘
+  lib/
+    api.ts              FastAPI 응답 타입과 호출 함수
+    presence.ts         재실 상태 이름
 ```
+
+## 왼쪽 메뉴 접기
+
+- 햄버거 버튼으로 접고 펴면 본문 폭이 그만큼 늘고 줄며, 도면도 같이 커지고 작아집니다.
+- 고른 상태는 `officemap_sidebar` 쿠키에 남아 새로고침해도 유지됩니다.
+- 한 번도 고르지 않았으면 넓은 화면에서는 펼치고, 720px 이하에서는 접습니다.
+- 좁은 화면에서 펼치면 본문을 밀지 않고 위에 겹쳐 뜹니다.
 
 ## 사내망에서 빌드할 때
 

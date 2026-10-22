@@ -6,12 +6,12 @@ from typing import Any
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
-from psycopg import Connection
 from pydantic import BaseModel, Field
 
 from app.config import settings
 from app.db import get_setting, pool
 from app.security import hash_token, new_session_token, verify_password
+from app.session import load_session
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -133,7 +133,7 @@ def me(request: Request) -> JSONResponse:
     user = None
     if token:
         with pool.connection() as conn:
-            user = _load_session(conn, token)
+            user = load_session(conn, token)
     if user is None:
         response = _error(401, "NOT_LOGGED_IN")
         response.delete_cookie(settings.session_cookie_name, path="/")
@@ -153,31 +153,6 @@ def logout(request: Request) -> Response:
     response = Response(status_code=204)
     response.delete_cookie(settings.session_cookie_name, path="/")
     return response
-
-
-def _load_session(conn: Connection, token: str) -> dict[str, Any] | None:
-    """유효한 세션이면 직원 정보를 돌려주고 마지막 사용 시각을 갱신한다."""
-    idle_minutes = int(get_setting(conn, "session.idle_minutes", 30))
-    user = conn.execute(
-        """
-        SELECT s.id AS session_id, e.emp_no, e.name, e.rank_name, d.name AS department,
-               a.role, a.must_change_password
-        FROM user_sessions s
-        JOIN employees e ON e.id = s.employee_id
-        JOIN departments d ON d.id = e.department_id
-        JOIN user_accounts a ON a.employee_id = e.id
-        WHERE s.token_hash = %s
-          AND s.revoked_at IS NULL
-          AND s.expires_at > now()
-          AND s.last_active_at > now() - make_interval(mins => %s)
-          AND e.employment_status = 'ACTIVE'  -- 퇴사·휴직 처리되면 남아 있던 세션도 바로 무효
-          AND a.locked_at IS NULL
-        """,
-        (hash_token(token), idle_minutes),
-    ).fetchone()
-    if user is not None:
-        conn.execute("UPDATE user_sessions SET last_active_at = now() WHERE id = %s", (user["session_id"],))
-    return user
 
 
 def _user_out(user: dict[str, Any]) -> dict[str, Any]:
