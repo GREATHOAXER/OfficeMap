@@ -87,7 +87,6 @@ export type Room = {
   name: string;
   capacity: number;
   equipment: string[];
-  requires_approval: boolean;
   shape: Rect | null;
   busy_until: string | null;
   current_title: string | null;
@@ -180,6 +179,7 @@ export type EmployeeHit = {
   name: string;
   rank: string | null;
   department: string;
+  division: string | null; // 위 부서 (본부)
   extension: string | null;
   is_me: boolean;
   seat: {
@@ -202,7 +202,7 @@ export type EmployeeHit = {
 export type Booking = {
   id: number;
   title: string;
-  status: "PENDING_APPROVAL" | "CONFIRMED";
+  status: "CONFIRMED";
   start_min: number;
   end_min: number;
   organizer: string;
@@ -215,7 +215,6 @@ export type RoomDay = {
   name: string;
   capacity: number;
   equipment: string[];
-  requires_approval: boolean;
   floor: { id: number; name: string };
   bookings: Booking[];
 };
@@ -232,18 +231,59 @@ export type RoomsDay = {
   rooms: RoomDay[];
 };
 
+/** 예약 상태: 확정 / 취소 / 체크인이 없어 자동 반납 */
+export type ReservationStatus = "CONFIRMED" | "CANCELLED" | "RELEASED";
+
 export type MyReservation = {
   id: number;
   title: string;
   starts_at: string;
   ends_at: string;
-  status: "PENDING_APPROVAL" | "CONFIRMED";
+  status: ReservationStatus;
   series_id: number | null;
   room: string;
+  floor_id: number;
   floor: string;
   is_organizer: boolean;
+  organizer: string;
+  organizer_department: string;
   attendees: number;
 };
+
+export type ReservationDetail = {
+  id: number;
+  title: string;
+  starts_at: string;
+  ends_at: string;
+  status: ReservationStatus;
+  created_at: string;
+  checked_in_at: string | null;
+  room: { name: string; capacity: number; equipment: string[]; floor_id: number; floor: string; site: string };
+  organizer: {
+    emp_no: string;
+    name: string;
+    rank: string | null;
+    department: string;
+    extension: string | null;
+    email: string | null;
+  };
+  attendees: {
+    emp_no: string;
+    name: string;
+    rank: string | null;
+    department: string;
+    is_me: boolean;
+    color_key: string | null;
+    presence: PresenceStatus | null;
+  }[];
+  series: { repeat: "WEEKLY" | "WEEKDAYS"; first_date: string; last_date: string } | null;
+  ended: boolean; // 이미 끝난 회의
+  is_organizer: boolean;
+  can_cancel: boolean;
+};
+
+/** 팀·본부. 참석자 칸에서 "$총무팀"처럼 찾아 팀 전체를 한 번에 넣는다. member_count는 아래 팀 사람까지 */
+export type TeamHit = { id: number; name: string; parent: string | null; member_count: number; has_children: boolean };
 
 export function fetchRoomsDay(cookieHeader: string | null, date: string | null, siteId: number | null) {
   const query = new URLSearchParams();
@@ -252,6 +292,10 @@ export function fetchRoomsDay(cookieHeader: string | null, date: string | null, 
   return apiGet<RoomsDay>(`/api/rooms/day?${query}`, cookieHeader);
 }
 
-export async function fetchMyReservations(cookieHeader: string | null): Promise<MyReservation[]> {
-  return (await apiGet<{ reservations: MyReservation[] }>("/api/reservations/mine", cookieHeader)).reservations;
+export async function fetchMyReservations(
+  cookieHeader: string | null,
+  scope: "upcoming" | "past" = "upcoming",
+): Promise<MyReservation[]> {
+  return (await apiGet<{ reservations: MyReservation[] }>(`/api/reservations/mine?scope=${scope}`, cookieHeader))
+    .reservations;
 }

@@ -7,7 +7,6 @@ CREATE TABLE meeting_rooms (
     name              varchar(100) NOT NULL,              -- 예: 소회의실 702
     capacity          smallint     NOT NULL CHECK (capacity > 0),
     equipment         text[]       NOT NULL DEFAULT '{}', -- 예: {VIDEO, TV, PROJECTOR}. '화상회의 장비' 필터에 사용
-    requires_approval boolean      NOT NULL DEFAULT false, -- 임원 회의실처럼 승인 후 확정
     shape             jsonb,                              -- 도면 위 위치. 사용 중/비어 있음 표시용
     plan_element_key  varchar(50),                        -- 도면 편집기에서 이 회의실을 만든 공간의 ID
     sort_order        integer      NOT NULL DEFAULT 0,
@@ -33,7 +32,7 @@ CREATE TABLE reservation_series (
     CHECK (last_date >= first_date)
 );
 
--- 예약 1건. 같은 회의실에서 시간이 겹치는 유효한 예약(승인 대기, 확정)은 DB가 막는다
+-- 예약 1건. 같은 회의실에서 시간이 겹치는 확정 예약은 DB가 막는다. 승인 절차 없이 바로 확정된다
 -- 최대 2시간, 체크인 유예 15분 같은 정책 값은 app_settings에서 읽어 앱에서 검사한다
 CREATE TABLE reservations (
     id               bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -44,18 +43,15 @@ CREATE TABLE reservations (
     starts_at        timestamptz  NOT NULL,
     ends_at          timestamptz  NOT NULL,
     status           varchar(20)  NOT NULL DEFAULT 'CONFIRMED'
-                     CHECK (status IN ('PENDING_APPROVAL', 'CONFIRMED', 'REJECTED', 'CANCELLED', 'RELEASED')),
+                     CHECK (status IN ('CONFIRMED', 'CANCELLED', 'RELEASED')),
     notify_attendees boolean      NOT NULL DEFAULT true,  -- 참석자에게 메신저 알림
     checked_in_at    timestamptz,                         -- 시작 후 유예 시간 안에 없으면 RELEASED(자동 반납)
-    decided_by       bigint REFERENCES employees(id),     -- 승인제 회의실의 승인·반려자
-    decided_at       timestamptz,
-    decision_comment text,
     cancelled_at     timestamptz,
     created_at       timestamptz  NOT NULL DEFAULT now(),
     updated_at       timestamptz  NOT NULL DEFAULT now(),
     CHECK (ends_at > starts_at),
     EXCLUDE USING gist (room_id WITH =, tstzrange(starts_at, ends_at) WITH &&)
-        WHERE (status IN ('PENDING_APPROVAL', 'CONFIRMED'))
+        WHERE (status = 'CONFIRMED')
 );
 CREATE INDEX reservations_organizer_idx ON reservations (organizer_id, starts_at);
 CREATE INDEX reservations_starts_at_idx ON reservations (starts_at);

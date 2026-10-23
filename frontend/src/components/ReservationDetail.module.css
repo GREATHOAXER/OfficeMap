@@ -1,0 +1,175 @@
+.state {
+  margin: 0;
+  padding: 32px 20px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 20px 20px;
+}
+
+.badge {
+  align-self: flex-start;
+  margin: 0;
+  padding: 3px 8px;
+  border: 1px solid var(--ink);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge[data-tone="danger"] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 10px 12px;
+  margin: 0;
+  font-size: 14px;
+}
+
+.facts dt {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.facts dd {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+}
+
+.sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.me {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+
+.attendees {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--divider);
+}
+
+.attendees h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.team h4 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.team h4 span {
+  font-weight: 400;
+}
+
+.team ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.team li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+}
+
+.markSlot {
+  display: flex;
+  flex: none;
+  width: 12px;
+}
+
+.presence {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  font-size: 13px;
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.secondary,
+.danger {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.secondary {
+  border: 1px solid var(--ink);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.danger {
+  border: 0;
+  background: var(--danger);
+  color: #fff;
+}

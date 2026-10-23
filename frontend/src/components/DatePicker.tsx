@@ -17,6 +17,10 @@ type Props = {
   /** 달력을 버튼 왼쪽(start)에 맞출지 오른쪽(end)에 맞출지 */
   align?: "start" | "end";
   className?: string;
+  /** 바꿀 수 없을 때 (예: 종료일은 시작일과 같다) */
+  disabled?: boolean;
+  /** 버튼 아래 설명 (스크린 리더) */
+  describedBy?: string;
   children?: ReactNode; // 버튼 안 글자. 없으면 "2026-10-23 (금)"
 };
 
@@ -26,7 +30,8 @@ const YEARS_PER_PAGE = 12;
  * 날짜 고르기. 버튼을 누르면 달력이 뜨고, 위의 "2026년 10월"을 누르면 월 → 연도 순으로 넓게 볼 수 있다.
  * 키보드: 화살표(하루·한 주), PageUp/PageDown(한 달), Home/End(주의 처음·끝), Enter(고르기), Esc(닫기)
  */
-export default function DatePicker({ value, onChange, label, today, min, align = "start", className, children }: Props) {
+export default function DatePicker(props: Props) {
+  const { value, onChange, label, today, min, align = "start", className, disabled, describedBy, children } = props;
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<View>("day");
   const [cursor, setCursor] = useState(value); // 달력에서 포커스가 있는 날 (보이는 달·연도도 여기서 정한다)
@@ -233,6 +238,8 @@ export default function DatePicker({ value, onChange, label, today, min, align =
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={`${label}: ${formatDay(value)}`}
+        aria-describedby={describedBy}
+        disabled={disabled}
         onClick={() => (open ? close(false) : openCalendar())}
       >
         <CalendarIcon size={16} />

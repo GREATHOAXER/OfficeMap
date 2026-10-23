@@ -30,7 +30,7 @@ const MAIN_MENU: MenuItem[] = [
   { label: "AI 도우미", icon: <SparkleIcon />, badge: "NEW" },
   { label: "자리·재실 현황", icon: <GridIcon />, href: "/" },
   { label: "회의실 확인·예약", icon: <CalendarIcon />, href: "/rooms" },
-  { label: "내 예약", icon: <ChecklistIcon />, href: "/rooms#mine" },
+  { label: "내 예약", icon: <ChecklistIcon />, href: "/reservations" },
   { label: "내 재실 상태", icon: <PersonIcon /> },
 ];
 

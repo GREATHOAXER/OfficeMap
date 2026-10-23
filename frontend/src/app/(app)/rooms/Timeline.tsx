@@ -12,13 +12,14 @@ type Props = {
   rooms: RoomDay[]; // 필터를 거친 회의실
   draft: Draft;
   onPick: (room: RoomDay, start: number) => void;
+  onOpenBooking: (reservationId: number) => void;
 };
 
 /**
  * 예약 현황표. 회의실마다 한 줄, 칸 하나 = 30분. 빈 칸을 누르면 그 시간을 고른다.
- * 예약은 칸 여러 개를 이어 붙인 블록 하나로 그린다 (내 예약은 검정, 승인 대기는 빗금).
+ * 예약은 칸 여러 개를 이어 붙인 블록 하나로 그리고, 누르면 자세한 내용을 띄운다 (내 예약은 검정).
  */
-export default function Timeline({ day, rooms, draft, onPick }: Props) {
+export default function Timeline({ day, rooms, draft, onPick, onOpenBooking }: Props) {
   const { open_start: open, open_end: close, slot } = day.policy;
   const starts = slotStarts(day);
   const col = (minute: number) => 2 + Math.round((Math.min(Math.max(minute, open), close) - open) / slot);
@@ -56,7 +57,6 @@ export default function Timeline({ day, rooms, draft, onPick }: Props) {
               <strong>{room.name}</strong>
               <span className="mono">
                 {room.floor.name} · {room.capacity}인{room.equipment.length ? ` · ${equipmentText(room.equipment)}` : ""}
-                {room.requires_approval && " · 승인제"}
               </span>
             </div>
             {starts.map((s) => {
@@ -81,24 +81,23 @@ export default function Timeline({ day, rooms, draft, onPick }: Props) {
               );
             })}
             {room.bookings.map((b) => (
-              <div
+              <button
                 key={b.id}
+                type="button"
                 role="gridcell"
                 className={styles.ttBooking}
                 data-mine={b.mine || undefined}
-                data-pending={b.status === "PENDING_APPROVAL" || undefined}
                 style={{ gridColumn: `${col(b.start_min)} / ${col(b.end_min)}` }}
                 title={`${b.title} · ${b.department} ${b.organizer} · ${minToHHMM(b.start_min)}–${minToHHMM(b.end_min)}`}
-                aria-label={`${room.name} ${minToHHMM(b.start_min)}–${minToHHMM(b.end_min)} ${b.title}, ${b.department} ${b.organizer}${
-                  b.status === "PENDING_APPROVAL" ? ", 승인 대기" : ""
-                }${b.mine ? ", 내 예약" : ""}`}
+                aria-haspopup="dialog"
+                aria-label={`${room.name} ${minToHHMM(b.start_min)}–${minToHHMM(b.end_min)} ${b.title}, ${b.department} ${
+                  b.organizer
+                }${b.mine ? ", 내 예약" : ""}. 누르면 자세히`}
+                onClick={() => onOpenBooking(b.id)}
               >
                 <strong>{b.title}</strong>
-                <span>
-                  {b.status === "PENDING_APPROVAL" ? "승인 대기 · " : ""}
-                  {b.mine ? "내 예약" : b.department}
-                </span>
-              </div>
+                <span>{b.mine ? "내 예약" : b.department}</span>
+              </button>
             ))}
           </div>
         ))}

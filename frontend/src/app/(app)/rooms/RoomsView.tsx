@@ -2,19 +2,18 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import DatePicker from "@/components/DatePicker";
-import { ChevronLeftIcon, ChevronRightIcon, CloseIcon } from "@/components/icons";
-import type { MyReservation, RoomDay, RoomsDay } from "@/lib/api";
+import Dialog from "@/components/Dialog";
+import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from "@/components/icons";
+import ReservationDetail from "@/components/ReservationDetail";
+import type { RoomDay, RoomsDay } from "@/lib/api";
 import { addDays, formatShortDay, minToHHMM } from "@/lib/dates";
-import MyReservations from "./MyReservations";
-import ReservationForm, { equipmentText } from "./ReservationForm";
-import { canStartAt, defaultRange, type Draft, EMPTY_DRAFT, latestEnd } from "./slots";
+import { ROOMS_FLOOR_COOKIE } from "@/lib/roomsFloor";
+import ReservationForm, { equipmentText, isReady } from "./ReservationForm";
+import { allAttendees, canStartAt, defaultRange, type Draft, EMPTY_DRAFT, latestEnd } from "./slots";
 import Timeline from "./Timeline";
 import styles from "./rooms.module.css";
-
-/** 본문 폭이 이보다 넓으면 예약 폼을 오른쪽에 두고, 좁으면 팝업으로 띄운다 (CSS의 @container 값과 같아야 한다) */
-const WIDE_MIN = 980;
 
 const CAPACITY_FILTERS = [
   { value: 0, label: "제한 없음" },
@@ -23,20 +22,24 @@ const CAPACITY_FILTERS = [
   { value: 12, label: "12명 이상" },
 ];
 
-type Props = { day: RoomsDay; mine: MyReservation[] };
+type Props = {
+  day: RoomsDay;
+  /** 마지막으로 고른 층 (쿠키). 처음이면 "all" */
+  initialFloor: number | "all";
+};
 
-export default function RoomsView({ day, mine }: Props) {
+export default function RoomsView({ day, initialFloor }: Props) {
   const router = useRouter();
-  const [floor, setFloor] = useState<number | "all">("all");
+  const formId = useId();
+  const [floor, setFloor] = useState<number | "all">(initialFloor);
   const [minCapacity, setMinCapacity] = useState(0);
   const [needVideo, setNeedVideo] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
-  const [wide, setWide] = useState(true);
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [detailId, setDetailId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const bodyRef = useRef<HTMLDivElement>(null);
 
   // 날짜를 바꾸거나 데이터를 다시 읽으면, 작성 중인 예약의 시간이 그날에도 비어 있는지 다시 본다
   const [checkedDay, setCheckedDay] = useState(day);
@@ -44,20 +47,6 @@ export default function RoomsView({ day, mine }: Props) {
     setCheckedDay(day);
     setDraft((d) => keepIfStillFree(d, day));
   }
-
-  // 본문 폭을 재서 예약 폼을 오른쪽에 둘지 팝업으로 띄울지 정한다. 폼 입력값은 이 화면이 들고 있어서 옮겨도 남는다
-  useLayoutEffect(() => {
-    const el = bodyRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver(([entry]) => {
-      const isWide = entry.contentRect.width >= WIDE_MIN;
-      setWide(isWide);
-      // 넓어지면 팝업은 닫고 오른쪽 폼으로 이어 쓴다. 다시 좁아져도 저절로 열지는 않는다 ("작성 중인 예약 이어서")
-      if (isWide) setSheetOpen(false);
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
 
   useEffect(() => {
     if (!notice) return;
@@ -74,10 +63,22 @@ export default function RoomsView({ day, mine }: Props) {
       (!needVideo || r.equipment.includes("VIDEO")),
   );
 
+  /** 층을 고르면 쿠키에 남겨서, 다음에 들어와도 그 층으로 연다 */
+  function chooseFloor(next: number | "all") {
+    setFloor(next);
+    document.cookie = `${ROOMS_FLOOR_COOKIE}=${next}; path=/; max-age=31536000; samesite=lax`;
+  }
+
   function goToDate(iso: string) {
     router.push(`/rooms?date=${iso}&site=${day.site.id}`, { scroll: false });
   }
 
+  function openForm() {
+    setError(null);
+    setFormOpen(true);
+  }
+
+  /** 빈 칸을 누르면 그 칸부터 1시간으로 예약 팝업을 연다. 팝업을 닫고 같은 줄 뒤 칸을 누르면 끝 시각을 거기까지 늘린다 */
   function pickSlot(room: RoomDay, start: number) {
     const slot = day.policy.slot;
     setDraft((d) => {
@@ -87,8 +88,7 @@ export default function RoomsView({ day, mine }: Props) {
       }
       return { ...d, roomId: room.id, ...defaultRange(day, room, start) };
     });
-    setError(null);
-    if (!wide) setSheetOpen(true);
+    openForm();
   }
 
   async function submit() {
@@ -105,7 +105,7 @@ export default function RoomsView({ day, mine }: Props) {
           start_min: draft.start,
           end_min: draft.end,
           title: draft.title,
-          attendees: draft.attendees.map((a) => a.emp_no),
+          attendees: allAttendees(draft).map((a) => a.emp_no),
           repeat: draft.repeat,
           repeat_until: draft.repeat === "NONE" ? null : draft.repeatUntil,
           notify: draft.notify,
@@ -122,14 +122,9 @@ export default function RoomsView({ day, mine }: Props) {
         return;
       }
       const time = `${formatShortDay(day.date)} ${minToHHMM(draft.start)}–${minToHHMM(draft.end)}`;
-      const repeat = data.count > 1 ? ` (${data.count}회)` : "";
-      setNotice(
-        data.status === "PENDING_APPROVAL"
-          ? `${data.room} ${time}${repeat} 승인을 요청했어요. 승인되면 확정돼요.`
-          : `${data.room} ${time}${repeat} 예약했어요.`,
-      );
+      setNotice(`${data.room} ${time}${data.count > 1 ? ` (${data.count}회)` : ""} 예약했어요.`);
       setDraft(EMPTY_DRAFT);
-      setSheetOpen(false);
+      setFormOpen(false);
       router.refresh();
     } catch {
       setError("예약하지 못했어요. 네트워크를 확인하고 다시 시도하세요.");
@@ -138,28 +133,7 @@ export default function RoomsView({ day, mine }: Props) {
     }
   }
 
-  async function cancel(id: number) {
-    const res = await fetch(`/api/reservations/${id}`, { method: "DELETE" });
-    if (res.status === 401) {
-      router.replace("/login");
-      return;
-    }
-    setNotice(res.ok ? "예약을 취소했어요." : "취소하지 못했어요. 이미 끝났거나 취소된 예약일 수 있어요.");
-    router.refresh();
-  }
-
-  const hasDraft = draft.roomId !== null || draft.title !== "" || draft.attendees.length > 0;
-  const form = (
-    <ReservationForm
-      day={day}
-      draft={draft}
-      onDraftChange={setDraft}
-      onDateChange={goToDate}
-      onSubmit={submit}
-      submitting={submitting}
-      error={error}
-    />
-  );
+  const hasDraft = draft.roomId !== null || draft.title !== "" || draft.attendees.length > 0 || draft.teams.length > 0;
 
   return (
     <div className={styles.page}>
@@ -177,28 +151,19 @@ export default function RoomsView({ day, mine }: Props) {
             오늘
           </button>
         </div>
-        {!wide && (
-          <button
-            type="button"
-            className={styles.openSheet}
-            aria-haspopup="dialog"
-            onClick={() => {
-              setError(null);
-              setSheetOpen(true);
-            }}
-          >
-            {hasDraft ? "작성 중인 예약 이어서" : "예약하기"}
-          </button>
-        )}
+        <button type="button" className={styles.openForm} aria-haspopup="dialog" onClick={openForm}>
+          <PlusIcon size={18} />
+          {hasDraft ? "작성 중인 예약 이어서" : "예약하기"}
+        </button>
       </header>
 
       <div className={styles.filters}>
         <div className={styles.seg} role="group" aria-label="층">
-          <button type="button" aria-pressed={floorFilter === "all"} onClick={() => setFloor("all")}>
+          <button type="button" aria-pressed={floorFilter === "all"} onClick={() => chooseFloor("all")}>
             전체 층
           </button>
           {floors.map((f) => (
-            <button key={f.id} type="button" aria-pressed={floorFilter === f.id} onClick={() => setFloor(f.id)}>
+            <button key={f.id} type="button" aria-pressed={floorFilter === f.id} onClick={() => chooseFloor(f.id)}>
               {f.name}
             </button>
           ))}
@@ -228,60 +193,91 @@ export default function RoomsView({ day, mine }: Props) {
         {notice}
       </p>
 
-      <div ref={bodyRef} className={styles.body}>
-        <div className={styles.layout} data-wide={wide}>
-          <main className={styles.main}>
-            {day.now_min !== null && <NowCards day={day} rooms={rooms} />}
+      <main className={styles.main}>
+        {day.now_min !== null && <NowCards day={day} rooms={rooms} />}
 
-            <section className={styles.ttCard} aria-labelledby="tt-title">
-              <div className={styles.ttTop}>
-                <h2 id="tt-title">
-                  예약 현황표 <span className="mono">{formatShortDay(day.date)}</span>
-                </h2>
-                <span className={styles.legend}>
-                  <span className={styles.lgBooked} aria-hidden="true" />
-                  예약됨
-                </span>
-                <span className={styles.legend}>
-                  <span className={styles.lgPending} aria-hidden="true" />
-                  승인 대기
-                </span>
-                <span className={styles.legend}>
-                  <span className={styles.lgMine} aria-hidden="true" />내 예약
-                </span>
-                <span className={styles.legend}>
-                  <span className={styles.lgSelected} aria-hidden="true" />
-                  선택
-                </span>
-                {day.now_min !== null && (
-                  <span className={styles.legend}>
-                    <span className={styles.lgNow} aria-hidden="true" />
-                    지금
-                  </span>
-                )}
-                <span className={styles.ttHint}>빈 칸을 눌러 시간 선택 · 뒤 칸을 누르면 거기까지 늘어나요</span>
-              </div>
-              {day.past && <p className={styles.pastNote}>지난 날짜예요. 예약 현황만 볼 수 있어요.</p>}
-              {rooms.length === 0 ? (
-                <p className={styles.empty}>조건에 맞는 회의실이 없어요.</p>
-              ) : (
-                <Timeline day={day} rooms={rooms} draft={draft} onPick={pickSlot} />
-              )}
-            </section>
-          </main>
+        <section className={styles.ttCard} aria-labelledby="tt-title">
+          <div className={styles.ttTop}>
+            <h2 id="tt-title">
+              예약 현황표 <span className="mono">{formatShortDay(day.date)}</span>
+            </h2>
+            <span className={styles.legend}>
+              <span className={styles.lgBooked} aria-hidden="true" />
+              예약됨
+            </span>
+            <span className={styles.legend}>
+              <span className={styles.lgMine} aria-hidden="true" />내 예약
+            </span>
+            <span className={styles.legend}>
+              <span className={styles.lgSelected} aria-hidden="true" />
+              선택
+            </span>
+            {day.now_min !== null && (
+              <span className={styles.legend}>
+                <span className={styles.lgNow} aria-hidden="true" />
+                지금
+              </span>
+            )}
+            <span className={styles.ttHint}>빈 칸을 누르면 예약 · 예약을 누르면 자세히</span>
+          </div>
+          {day.past && <p className={styles.pastNote}>지난 날짜예요. 예약 현황만 볼 수 있어요.</p>}
+          {rooms.length === 0 ? (
+            <p className={styles.empty}>조건에 맞는 회의실이 없어요.</p>
+          ) : (
+            <Timeline day={day} rooms={rooms} draft={draft} onPick={pickSlot} onOpenBooking={setDetailId} />
+          )}
+        </section>
+      </main>
 
-          <aside className={styles.side}>
-            {wide && <div className={styles.formCard}>{form}</div>}
-            <MyReservations items={mine} today={day.today} onCancel={cancel} />
-          </aside>
-        </div>
-      </div>
+      <Dialog
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        title="예약하기"
+        size="wide"
+        footer={
+          <>
+            {hasDraft && (
+              <button
+                type="button"
+                className={styles.textButton}
+                onClick={() => {
+                  setDraft(EMPTY_DRAFT);
+                  setError(null);
+                }}
+              >
+                새로 쓰기
+              </button>
+            )}
+            <span className={styles.spacer} />
+            <button type="button" className={styles.textButton} onClick={() => setFormOpen(false)}>
+              닫기
+            </button>
+            <button type="submit" form={formId} className={styles.submit} disabled={!isReady(draft) || submitting}>
+              {submitting ? "예약하는 중…" : "예약 확정"}
+            </button>
+          </>
+        }
+      >
+        <ReservationForm
+          formId={formId}
+          day={day}
+          draft={draft}
+          onDraftChange={setDraft}
+          onDateChange={goToDate}
+          onSubmit={submit}
+          error={error}
+        />
+      </Dialog>
 
-      {!wide && (
-        <Sheet open={sheetOpen} onClose={() => setSheetOpen(false)}>
-          {form}
-        </Sheet>
-      )}
+      <ReservationDetail
+        reservationId={detailId}
+        onClose={() => setDetailId(null)}
+        onCancelled={(title) => {
+          setDetailId(null);
+          setNotice(`‘${title}’ 예약을 취소했어요.`);
+          router.refresh();
+        }}
+      />
     </div>
   );
 }
@@ -349,15 +345,12 @@ function NowCards({ day, rooms }: { day: RoomsDay; rooms: RoomDay[] }) {
             text = next ? `비어 있음 · ${minToHHMM(next.start_min)}까지` : "비어 있음 · 종일";
           }
           return (
-            <li key={room.id} className={styles.nowCard} data-state={state} data-approval={room.requires_approval || undefined}>
+            <li key={room.id} className={styles.nowCard} data-state={state}>
               <span className={styles.nowName}>
                 <span className={styles.nowDot} aria-hidden="true" />
                 <strong>{room.name}</strong>
               </span>
-              <span>
-                {room.requires_approval ? "승인 필요 · " : ""}
-                {text}
-              </span>
+              <span>{text}</span>
               <span className={`mono ${styles.muted}`}>
                 {room.floor.name} · {room.capacity}인{room.equipment.length ? ` · ${equipmentText(room.equipment)}` : ""}
               </span>
@@ -366,33 +359,5 @@ function NowCards({ day, rooms }: { day: RoomsDay; rooms: RoomDay[] }) {
         })}
       </ul>
     </section>
-  );
-}
-
-/** 좁은 화면의 예약 팝업. 브라우저 기본 dialog라 포커스 가두기·Esc·배경 막기가 된다 */
-function Sheet({ open, onClose, children }: { open: boolean; onClose: () => void; children: ReactNode }) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const dialog = ref.current;
-    if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
-  }, [open]);
-
-  return (
-    <dialog
-      ref={ref}
-      className={styles.sheet}
-      aria-label="예약하기"
-      onClose={onClose}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose(); // 바깥 어두운 곳을 누르면 닫는다
-      }}
-    >
-      <button type="button" className={styles.sheetClose} aria-label="예약 창 닫기" onClick={onClose}>
-        <CloseIcon size={20} />
-      </button>
-      <div className={styles.sheetBody}>{children}</div>
-    </dialog>
   );
 }

@@ -762,15 +762,6 @@
   color: var(--muted);
 }
 
-.approval {
-  font-style: normal;
-  font-size: 0.85em;
-  margin-left: 4px;
-  padding: 0 4px;
-  border: 1px solid currentColor;
-  border-radius: 3px;
-}
-
 .zone {
   position: absolute;
   border: 1.5px solid var(--tc);

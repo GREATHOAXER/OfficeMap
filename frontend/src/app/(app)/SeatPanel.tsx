@@ -148,7 +148,6 @@ function SharedFloorCard({ map }: { map: FloorMap }) {
             <li key={room.id}>
               <strong>
                 {room.name}
-                {room.requires_approval && <span className={styles.tag}>승인제</span>}
               </strong>
               <span>
                 최대 {room.capacity}명 · {roomStatusText(room)}

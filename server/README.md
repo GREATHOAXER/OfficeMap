@@ -54,12 +54,16 @@ scripts/
 
 | 요청 | 하는 일 |
 |---|---|
-| `GET /api/employees/search?q=김민준` | 이름·팀·사번으로 찾기. 띄어 쓴 낱말은 모두 맞아야 함 (`김민준 IT`). 기본 20명 |
+| `GET /api/employees/search?q=김민준` | 이름·사번, 또는 부서(본부)·팀 이름으로 사람 찾기. 띄어 쓴 낱말은 모두 맞아야 함 (`김민준 IT`). 기본 20명 |
+| `GET /api/employees/teams?q=총무` | 팀·본부 찾기 (참석자 칸의 `$총무팀`). `q`가 비면 전부. `member_count`는 아래 팀 사람까지 |
+| `GET /api/employees/teams/{id}/members` | 팀 전체 (재직자만). 본부면 아래 팀 사람까지 |
 
-- 결과마다 직급·팀·지금 자리(사업장·층·좌석)·재실 상태가 붙습니다. 자리가 없으면 `seat: null`.
+- 결과마다 직급·팀·위 부서(`division`, 본부)·지금 자리(사업장·층·좌석)·재실 상태가 붙습니다. 자리가 없으면 `seat: null`.
+- 팀·본부 이름으로도 걸립니다: `IT본부`로 찾으면 IT운영팀·보안팀·디지털혁신팀·데이터팀 사람이 나옵니다.
 - `date`, `start_min`, `end_min`(서울 기준 그날 0시부터 분)을 같이 주면 그 시간에 겹치는 다른 회의(`busy`)와
   휴가·출장·재택(`absence`)도 알려 줍니다. 참석자를 고를 때 "이 시간 다른 회의" 표시에 씁니다.
-- 이름이 같은 사람이 먼저, 그다음 이름이 그 글자로 시작하는 사람 순서입니다.
+- 이름이 같은 사람이 먼저, 그다음 이름이 그 글자로 시작하는 사람, 이름에 들어간 사람, 팀·본부로 걸린 사람 순서입니다.
+- `members`에도 같은 `date`, `start_min`, `end_min`을 줄 수 있습니다.
 
 ## 회의실 확인·예약 API (로그인 필요)
 
@@ -67,7 +71,8 @@ scripts/
 |---|---|
 | `GET /api/rooms/day?date=2026-10-23&site_id=1` | 한 사업장 회의실들의 하루 예약 현황. 날짜·사업장을 빼면 오늘, 내 자리가 있는 사업장 |
 | `POST /api/reservations` | 예약 만들기 (아래) |
-| `GET /api/reservations/mine` | 내가 만들었거나 참석하는, 아직 끝나지 않은 예약 |
+| `GET /api/reservations/mine?scope=upcoming` | 내가 만들었거나 참석하는 예약. `upcoming`: 아직 안 끝난 것, `past`: 최근 30일 지난·취소된 것 |
+| `GET /api/reservations/{id}` | 예약 자세히: 회의실, 일시, 만든 사람(내선), 참석자(재실 상태), 반복 규칙, 내가 취소할 수 있는지 |
 | `DELETE /api/reservations/{id}` | 예약 취소 (만든 사람만, 끝나기 전에만). 반복 예약은 그 회차만 |
 
 - 시간은 모두 서울 기준 그날 0시부터 분(`start_min`, `end_min`)입니다. 13:30 → 810.
@@ -75,7 +80,7 @@ scripts/
   `room.open_hours`(08:00~20:00).
 - `POST /api/reservations` 본문:
   `{"room_id", "date", "start_min", "end_min", "title", "attendees": [사번], "repeat": "NONE"|"WEEKLY"|"WEEKDAYS", "repeat_until", "notify"}`
-  - 승인제 회의실(임원 회의실, 대강당)은 `PENDING_APPROVAL`(승인 대기)로 들어갑니다.
+  - 승인 절차는 없습니다. 임원 회의실·대강당도 바로 확정(`CONFIRMED`)됩니다.
   - 반복 예약은 회차마다 한 행씩 만듭니다(`reservation_series`가 규칙). 석 달(92일), 60회까지.
     한 회차라도 겹치면 아무것도 만들지 않고 겹치는 날짜를 돌려줍니다.
   - `notify`면 참석자에게 화면 알림(`notifications`)을 쌓아 둡니다 (메신저 연동 전).
