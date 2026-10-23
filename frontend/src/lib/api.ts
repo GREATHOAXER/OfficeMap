@@ -172,3 +172,86 @@ export function fetchFloor(cookieHeader: string | null, floorId: number): Promis
 export async function fetchMyPresence(cookieHeader: string | null): Promise<MyPresence> {
   return (await apiGet<{ presence: MyPresence }>("/api/presence/me", cookieHeader)).presence;
 }
+
+// 직원 검색 ----------------------------------------------------------------------
+
+export type EmployeeHit = {
+  emp_no: string;
+  name: string;
+  rank: string | null;
+  department: string;
+  extension: string | null;
+  is_me: boolean;
+  seat: {
+    id: number;
+    code: string;
+    floor_id: number;
+    floor_name: string;
+    site_name: string;
+    color_key: string | null;
+  } | null;
+  presence: { status: PresenceStatus; message: string | null } | null;
+  /** 시간을 같이 넘겨 검색했을 때만: 그 시간에 겹치는 다른 회의 / 휴가·외근 */
+  busy: { title: string; starts_at: string; ends_at: string } | null;
+  absence: "LEAVE" | "BUSINESS_TRIP" | "REMOTE" | null;
+};
+
+// 회의실 확인·예약 -----------------------------------------------------------------
+
+/** 시간은 모두 서울 기준 그날 0시부터 분 (예: 13:30 → 810) */
+export type Booking = {
+  id: number;
+  title: string;
+  status: "PENDING_APPROVAL" | "CONFIRMED";
+  start_min: number;
+  end_min: number;
+  organizer: string;
+  department: string;
+  mine: boolean; // 내가 만들었거나 참석하는 예약
+};
+
+export type RoomDay = {
+  id: number;
+  name: string;
+  capacity: number;
+  equipment: string[];
+  requires_approval: boolean;
+  floor: { id: number; name: string };
+  bookings: Booking[];
+};
+
+export type RoomPolicy = { slot: number; max: number; open_start: number; open_end: number };
+
+export type RoomsDay = {
+  date: string; // YYYY-MM-DD
+  today: string;
+  now_min: number | null; // 오늘이면 지금 시각
+  past: boolean;
+  site: { id: number; name: string };
+  policy: RoomPolicy;
+  rooms: RoomDay[];
+};
+
+export type MyReservation = {
+  id: number;
+  title: string;
+  starts_at: string;
+  ends_at: string;
+  status: "PENDING_APPROVAL" | "CONFIRMED";
+  series_id: number | null;
+  room: string;
+  floor: string;
+  is_organizer: boolean;
+  attendees: number;
+};
+
+export function fetchRoomsDay(cookieHeader: string | null, date: string | null, siteId: number | null) {
+  const query = new URLSearchParams();
+  if (date) query.set("date", date);
+  if (siteId) query.set("site_id", String(siteId));
+  return apiGet<RoomsDay>(`/api/rooms/day?${query}`, cookieHeader);
+}
+
+export async function fetchMyReservations(cookieHeader: string | null): Promise<MyReservation[]> {
+  return (await apiGet<{ reservations: MyReservation[] }>("/api/reservations/mine", cookieHeader)).reservations;
+}

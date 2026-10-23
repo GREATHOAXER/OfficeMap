@@ -16,6 +16,12 @@
   --danger-text: #912018;
   --info-bg: #eef2ff;
 
+  /* 재실 상태 색 */
+  --st-available: #16a34a;
+  --st-dnd: #dc2626;
+  --st-meeting: #7c3aed;
+  --st-away: #8a8a85;
+
   /* 팀 구역 색 (t1~t4, t0 = 공용) */
   --t1: #3b5b92;
   --t1-fill: #e3eaf6;
@@ -103,36 +109,39 @@ a:hover {
 
 /* 재실 상태 표시. 색만으로 구분하지 않도록 모양이 다르다:
    채운 원 = 방문 가능, 가로줄 원 = 방해 금지, 회색 네모 = 회의 중, 점선 원 = 부재 */
+/* 재실 표시: 멀리서도 구분되게 색과 모양을 둘 다 다르게 한다 (색을 못 보는 사람도 모양으로 구분)
+   방문 가능 = 초록 원, 방해 금지 = 빨간 원에 흰 가로줄, 회의 중 = 보라 네모, 부재 = 회색 점선 원 */
 .mk {
   display: inline-block;
   position: relative;
   flex: none;
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
 }
 .mk[data-status="AVAILABLE"] {
-  background: var(--ink);
+  background: var(--st-available);
 }
 .mk[data-status="DO_NOT_DISTURB"] {
-  border: 2px solid var(--ink);
+  background: var(--st-dnd);
 }
 .mk[data-status="DO_NOT_DISTURB"]::after {
   content: "";
   position: absolute;
-  left: 0;
-  right: 0;
+  left: 20%;
+  right: 20%;
   top: 50%;
-  height: 2px;
-  margin-top: -1px;
-  background: var(--ink);
+  height: max(2px, 18%);
+  transform: translateY(-50%);
+  border-radius: 1px;
+  background: #fff;
 }
 .mk[data-status="IN_MEETING"] {
-  border-radius: 2px;
-  background: #8a8a85;
+  border-radius: 22%;
+  background: var(--st-meeting);
 }
 .mk[data-status="AWAY"] {
-  border: 1.5px dashed #6e6e69;
+  border: 2px dashed var(--st-away);
 }
 
 .visually-hidden {

@@ -430,8 +430,9 @@ FROM (SELECT (now() AT TIME ZONE 'Asia/Seoul')::date AS today) t;
 
 INSERT INTO reservations (room_id, organizer_id, series_id, title, starts_at, ends_at)
 SELECT s.room_id, s.organizer_id, s.id, s.title,
-       (d + s.start_time) AT TIME ZONE 'Asia/Seoul', (d + s.end_time) AT TIME ZONE 'Asia/Seoul'
+       (d::date + s.start_time) AT TIME ZONE 'Asia/Seoul', (d::date + s.end_time) AT TIME ZONE 'Asia/Seoul'
 FROM reservation_series s,
+     -- generate_series는 timestamptz를 돌려주니 날짜로 바꿔서 서울 시각을 붙인다
      generate_series(s.first_date, s.last_date, interval '7 days') AS d
 WHERE s.title = '재무팀 주간회의';
 

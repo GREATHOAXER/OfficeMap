@@ -22,6 +22,135 @@
   white-space: nowrap;
 }
 
+/* 직원 검색 (머리글) */
+.search {
+  position: relative;
+  flex: 1 1 260px;
+  max-width: 480px;
+  min-width: 0;
+}
+
+.searchField {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.searchField:focus-within {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+
+.searchField input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  font: inherit;
+  font-size: 14px;
+  background: transparent;
+}
+
+.searchPanel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  width: max(100%, min(380px, calc(100vw - 32px)));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+
+.searchStatus {
+  margin: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--divider);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.searchList {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+}
+
+.searchOption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.searchOptionActive {
+  background: var(--info-bg);
+}
+
+.searchOption[aria-disabled="true"] {
+  cursor: default;
+  color: var(--muted);
+}
+
+.searchMark {
+  display: flex;
+  flex: none;
+  width: 12px;
+}
+
+.searchMain {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 14px;
+}
+
+.searchMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.searchMeta .swatch,
+.popoverTeam .swatch {
+  width: 10px;
+  height: 10px;
+}
+
+.searchState {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.searchMe {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+}
+
 .aiButton {
   margin-left: auto;
   display: inline-flex;
@@ -468,6 +597,108 @@
   width: calc(max(100%, 640px) * var(--zoom, 1));
   container-type: inline-size;
   background: var(--surface);
+  user-select: none; /* 끌어서 옮길 때 글자가 선택되지 않게 */
+}
+
+/* 확대해서 도면이 영역보다 크면 잡고 끌어서 옮긴다 */
+.planScroll[data-pannable="true"] {
+  cursor: grab;
+}
+
+.planScroll[data-panning="true"],
+.planScroll[data-panning="true"] .seat {
+  cursor: grabbing;
+}
+
+/* 자리 정보 카드: 마우스를 1초 올려 두면 뜨고, 좁은 화면에서는 누르면 고정해서 띄운다 */
+.popover {
+  --tx: -50%;
+  --ty: calc(-100% - 10px);
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 232px;
+  padding: 10px 12px;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.16);
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: normal;
+  user-select: text;
+  pointer-events: none;
+  transform: translate(var(--tx), var(--ty));
+}
+
+.popover[data-align="start"] {
+  --tx: 0;
+}
+
+.popover[data-align="end"] {
+  --tx: -100%;
+}
+
+.popover[data-place="below"] {
+  --ty: 10px;
+}
+
+.popover[data-pinned="true"] {
+  border-width: 1.5px;
+  pointer-events: auto;
+}
+
+.popoverHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 15px;
+}
+
+.popoverHead span {
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.popoverClose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: -6px -8px -6px 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.popoverClose:hover {
+  background: var(--bg);
+}
+
+.popoverTeam {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.popoverStatus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.popoverMuted {
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .wall {
@@ -482,7 +713,7 @@
   align-items: center;
   justify-content: center;
   text-align: center;
-  font-size: clamp(8px, 0.85cqw, 12px);
+  font-size: max(8px, 0.85cqw);
   line-height: 1.45;
 }
 
@@ -564,7 +795,7 @@
   border-radius: 6px 0 6px 0;
   background: var(--tc);
   color: #fff;
-  font-size: clamp(8px, 0.85cqw, 12px);
+  font-size: max(8px, 0.85cqw);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -583,7 +814,7 @@
   border-top: 3px solid var(--tc);
   border-radius: 3px;
   background: var(--surface);
-  font-size: clamp(8px, 0.9cqw, 12px);
+  font-size: max(8px, 1.05cqw); /* 상한이 없어야 확대할 때 이름도 같이 커진다 */
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
@@ -625,16 +856,15 @@
   z-index: 4;
 }
 
+/* 재실 표시는 이름 바로 앞에 붙여서 어느 자리 것인지 헷갈리지 않게 한다. 확대하면 같이 커진다 */
 .seatMark {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  width: clamp(5px, 0.55cqw, 8px);
-  height: clamp(5px, 0.55cqw, 8px);
+  width: max(10px, 1.05cqw);
+  height: max(10px, 1.05cqw);
+  margin-right: max(2px, 0.25cqw);
 }
 
-.seatMark[data-status="DO_NOT_DISTURB"] {
-  border-width: 1.5px;
+.seatMark[data-status="AWAY"] {
+  border-width: max(2px, 0.18cqw);
 }
 
 /* 의자: 책상에 붙은 반원 */
@@ -649,7 +879,7 @@
 .chairBottom {
   left: 30%;
   width: 40%;
-  height: clamp(4px, 0.55cqw, 7px);
+  height: max(4px, 0.55cqw);
 }
 
 .chairTop {
@@ -666,7 +896,7 @@
 .chairRight {
   top: 30%;
   height: 40%;
-  width: clamp(4px, 0.55cqw, 7px);
+  width: max(4px, 0.55cqw);
 }
 
 .chairLeft {
@@ -1088,6 +1318,17 @@
 @media (max-width: 720px) {
   .header {
     padding: 12px 16px;
+  }
+
+  /* 좁은 화면: 검색창은 버튼들 아래 한 줄을 다 쓴다 */
+  .search {
+    flex-basis: 100%;
+    max-width: none;
+    order: 5;
+  }
+
+  .searchPanel {
+    width: 100%;
   }
 
   /* 좁은 화면: 상태 패널은 화면 아래에서 올라오는 시트로 */

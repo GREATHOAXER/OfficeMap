@@ -1,0 +1,213 @@
+.picker {
+  position: relative;
+  display: inline-flex;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.button:hover {
+  background: var(--surface-sunken);
+}
+
+.panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  width: 296px;
+  max-width: calc(100vw - 24px);
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
+}
+
+.panel[data-align="end"] {
+  right: 0;
+  left: auto;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.nav {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.nav:hover,
+.title:hover {
+  background: var(--bg);
+}
+
+.title {
+  flex: 1;
+  height: 36px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 36px;
+  cursor: pointer;
+}
+
+strong.title {
+  cursor: default;
+}
+
+strong.title:hover {
+  background: transparent;
+}
+
+.title span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.days {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.weekRow {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.weekday {
+  padding: 4px 0;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.weekday[data-weekday="0"],
+.day[data-weekday="0"] {
+  color: #b42318; /* 일요일 */
+}
+
+.weekday[data-weekday="6"],
+.day[data-weekday="6"] {
+  color: #1d4ed8; /* 토요일 */
+}
+
+.day {
+  width: 100%;
+  height: 36px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.day:hover:not(:disabled),
+.cell:hover {
+  background: var(--info-bg);
+}
+
+.day[data-today],
+.cell[data-today] {
+  box-shadow: inset 0 0 0 1.5px var(--ink);
+  font-weight: 700;
+}
+
+.day[data-selected],
+.cell[data-selected] {
+  background: var(--ink);
+  color: #fff;
+  font-weight: 700;
+}
+
+.day:disabled {
+  color: #b8b8b3;
+  cursor: not-allowed;
+}
+
+.day:focus-visible,
+.cell:focus-visible,
+.nav:focus-visible,
+.title:focus-visible,
+.todayButton:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+
+.grid3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.cell {
+  height: 48px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface-sunken);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--divider);
+}
+
+.todayButton {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.todayButton:disabled {
+  border-color: var(--border);
+  color: var(--muted);
+  cursor: not-allowed;
+}

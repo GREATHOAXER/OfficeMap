@@ -12,6 +12,8 @@ app/
   routers/auth.py      로그인 화면 API
   routers/office.py    자리·재실 현황 API
   routers/presence.py  내 재실 상태 바꾸기, 실시간 알림(SSE) API
+  routers/employees.py 직원 검색 API (검색창, 참석자 추가)
+  routers/rooms.py     회의실 확인·예약 API
   realtime.py      재실 상태 변경을 DB에서 받아(LISTEN) 열린 화면마다 나눠 주기
 scripts/
   init_db.py       db/schema + db/seed 실행
@@ -47,6 +49,47 @@ scripts/
 - 재실 상태는 `expires_at`이 지났으면 `null`로 내려갑니다.
 - 퇴사·휴직 처리된 사람은 배정이 남아 있어도 빈 자리로 보입니다.
 - 층의 `description`은 사무실이 아닌 층의 용도입니다 (예: 로비, 대강당). 사무실 층은 `null`입니다.
+
+## 직원 검색 API (로그인 필요)
+
+| 요청 | 하는 일 |
+|---|---|
+| `GET /api/employees/search?q=김민준` | 이름·팀·사번으로 찾기. 띄어 쓴 낱말은 모두 맞아야 함 (`김민준 IT`). 기본 20명 |
+
+- 결과마다 직급·팀·지금 자리(사업장·층·좌석)·재실 상태가 붙습니다. 자리가 없으면 `seat: null`.
+- `date`, `start_min`, `end_min`(서울 기준 그날 0시부터 분)을 같이 주면 그 시간에 겹치는 다른 회의(`busy`)와
+  휴가·출장·재택(`absence`)도 알려 줍니다. 참석자를 고를 때 "이 시간 다른 회의" 표시에 씁니다.
+- 이름이 같은 사람이 먼저, 그다음 이름이 그 글자로 시작하는 사람 순서입니다.
+
+## 회의실 확인·예약 API (로그인 필요)
+
+| 요청 | 하는 일 |
+|---|---|
+| `GET /api/rooms/day?date=2026-10-23&site_id=1` | 한 사업장 회의실들의 하루 예약 현황. 날짜·사업장을 빼면 오늘, 내 자리가 있는 사업장 |
+| `POST /api/reservations` | 예약 만들기 (아래) |
+| `GET /api/reservations/mine` | 내가 만들었거나 참석하는, 아직 끝나지 않은 예약 |
+| `DELETE /api/reservations/{id}` | 예약 취소 (만든 사람만, 끝나기 전에만). 반복 예약은 그 회차만 |
+
+- 시간은 모두 서울 기준 그날 0시부터 분(`start_min`, `end_min`)입니다. 13:30 → 810.
+- 예약 정책은 `app_settings`에서 읽습니다: `room.slot_minutes`(30분 단위), `room.max_minutes`(최대 2시간),
+  `room.open_hours`(08:00~20:00).
+- `POST /api/reservations` 본문:
+  `{"room_id", "date", "start_min", "end_min", "title", "attendees": [사번], "repeat": "NONE"|"WEEKLY"|"WEEKDAYS", "repeat_until", "notify"}`
+  - 승인제 회의실(임원 회의실, 대강당)은 `PENDING_APPROVAL`(승인 대기)로 들어갑니다.
+  - 반복 예약은 회차마다 한 행씩 만듭니다(`reservation_series`가 규칙). 석 달(92일), 60회까지.
+    한 회차라도 겹치면 아무것도 만들지 않고 겹치는 날짜를 돌려줍니다.
+  - `notify`면 참석자에게 화면 알림(`notifications`)을 쌓아 둡니다 (메신저 연동 전).
+- 같은 회의실·겹치는 시간은 DB 제약(EXCLUDE)이 마지막으로 막습니다. 검사와 저장 사이에 누가 먼저 잡아도 409.
+
+| 상태 | code | 뜻 |
+|---|---|---|
+| 409 | `TIME_TAKEN` | 그 시간에 이미 예약이 있음 (`dates`: 겹치는 날짜) |
+| 422 | `INVALID_TIME` | 30분 단위가 아니거나 운영 시간 밖 |
+| 422 | `TOO_LONG` | 최대 시간 넘음 |
+| 422 | `IN_PAST` | 지난 시간 (지금 진행 중인 칸은 됨) |
+| 422 | `TITLE_REQUIRED`, `INVALID_REPEAT`, `REPEAT_TOO_LONG`, `UNKNOWN_ATTENDEE` | 입력 확인 |
+| 403 | `NOT_ORGANIZER` | 남의 예약 취소 |
+| 409 | `NOT_CANCELLABLE` | 이미 끝났거나 취소된 예약 |
 
 ## 내 재실 상태 API (로그인 필요)
 

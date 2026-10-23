@@ -29,8 +29,8 @@ type MenuItem = { label: string; icon: ReactNode; href?: string; badge?: string 
 const MAIN_MENU: MenuItem[] = [
   { label: "AI 도우미", icon: <SparkleIcon />, badge: "NEW" },
   { label: "자리·재실 현황", icon: <GridIcon />, href: "/" },
-  { label: "회의실 확인·예약", icon: <CalendarIcon /> },
-  { label: "내 예약", icon: <ChecklistIcon /> },
+  { label: "회의실 확인·예약", icon: <CalendarIcon />, href: "/rooms" },
+  { label: "내 예약", icon: <ChecklistIcon />, href: "/rooms#mine" },
   { label: "내 재실 상태", icon: <PersonIcon /> },
 ];
 
@@ -117,6 +117,7 @@ export default function AppShell({ user, sites, defaultSiteId, initialCollapsed,
 // 사업장 고르기. OS 기본 선택창 대신 서비스 모양에 맞춘 목록 (listbox 패턴: 방향키·Enter·Esc 지원)
 function SiteSelect({ sites, defaultSiteId }: { sites: SiteSummary[]; defaultSiteId: number | null }) {
   const router = useRouter();
+  const pathname = usePathname();
   const params = useSearchParams();
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -158,7 +159,7 @@ function SiteSelect({ sites, defaultSiteId }: { sites: SiteSummary[]; defaultSit
 
   function choose(site: SiteSummary) {
     close();
-    if (site.id !== current.id) router.push(`/?site=${site.id}`);
+    if (site.id !== current.id) router.push(`${pathname}?site=${site.id}`); // 지금 화면 그대로 사업장만 바꾼다
   }
 
   function onButtonKeyDown(event: KeyboardEvent) {
