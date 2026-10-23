@@ -10,8 +10,11 @@ from app.db import get_setting, pool
 from app.security import hash_token
 
 
-def load_session(conn: Connection, token: str) -> dict[str, Any] | None:
-    """유효한 세션이면 직원 정보를 돌려주고 마지막 사용 시각을 갱신한다."""
+def load_session(conn: Connection, token: str, *, touch: bool = True) -> dict[str, Any] | None:
+    """유효한 세션이면 직원 정보를 돌려준다. touch면 마지막 사용 시각도 갱신한다.
+
+    실시간 알림 연결처럼 사람이 쓰지 않아도 열려 있는 요청은 touch=False로 확인만 한다
+    (갱신하면 화면만 띄워 두어도 자동 로그아웃이 안 된다)."""
     idle_minutes = int(get_setting(conn, "session.idle_minutes", 30))
     user = conn.execute(
         """
@@ -30,7 +33,7 @@ def load_session(conn: Connection, token: str) -> dict[str, Any] | None:
         """,
         (hash_token(token), idle_minutes),
     ).fetchone()
-    if user is not None:
+    if user is not None and touch:
         conn.execute("UPDATE user_sessions SET last_active_at = now() WHERE id = %s", (user["session_id"],))
     return user
 

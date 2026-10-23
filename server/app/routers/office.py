@@ -59,7 +59,7 @@ def floor_map(floor_id: int, user: CurrentUser) -> dict[str, Any]:
     with pool.connection() as conn:
         floor = conn.execute(
             """
-            SELECT f.id, f.name, s.id AS site_id, s.name AS site_name
+            SELECT f.id, f.name, s.id AS site_id, s.name AS site_name, now() AS fetched_at
             FROM floors f JOIN sites s ON s.id = f.site_id
             WHERE f.id = %s AND f.is_active
             """,
@@ -117,7 +117,8 @@ def floor_map(floor_id: int, user: CurrentUser) -> dict[str, Any]:
                    a.kind AS assignment_kind, e.emp_no, e.name, e.rank_name, d.name AS department,
                    e.extension, e.email,
                    CASE WHEN {_LIVE_PRESENCE} THEN p.status END AS presence_status,
-                   CASE WHEN {_LIVE_PRESENCE} THEN p.message END AS presence_message
+                   CASE WHEN {_LIVE_PRESENCE} THEN p.message END AS presence_message,
+                   CASE WHEN {_LIVE_PRESENCE} THEN p.expires_at END AS presence_expires_at
             FROM seats s
             LEFT JOIN seat_assignments a ON a.seat_id = s.id AND {_CURRENT_ASSIGNMENT}
             LEFT JOIN employees e ON e.id = a.employee_id AND e.employment_status = 'ACTIVE'
@@ -135,6 +136,8 @@ def floor_map(floor_id: int, user: CurrentUser) -> dict[str, Any]:
             "name": floor["name"],
             "site": {"id": floor["site_id"], "name": floor["site_name"]},
         },
+        # 이 데이터를 읽은 시각. 화면은 이보다 나중에 온 실시간 알림만 덮어쓴다
+        "fetched_at": floor["fetched_at"],
         "plan": plan,
         "zones": zones,
         "rooms": [_room_out(r) for r in rooms],
@@ -168,7 +171,11 @@ def _seat_out(row: dict[str, Any]) -> dict[str, Any]:
             "email": row["email"],
             "kind": row["assignment_kind"],
             "presence": (
-                {"status": row["presence_status"], "message": row["presence_message"]}
+                {
+                    "status": row["presence_status"],
+                    "message": row["presence_message"],
+                    "expires_at": row["presence_expires_at"],
+                }
                 if row["presence_status"]
                 else None
             ),

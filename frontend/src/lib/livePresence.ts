@@ -1,0 +1,111 @@
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import type { FloorMap, MyPresence, PresenceEvent } from "./api";
+
+/** 사번 → 그 사람의 가장 최근 상태 변경 알림 */
+export type LiveChanges = ReadonlyMap<string, PresenceEvent>;
+
+const RETRY_MIN_MS = 3_000;
+const RETRY_MAX_MS = 30_000;
+const MAX_TIMEOUT_MS = 2 ** 31 - 1; // setTimeout이 받는 최대 지연 (약 24일)
+
+/**
+ * 동료들의 재실 상태 변경을 실시간으로 받는다 (/api/presence/stream, SSE).
+ * - 받은 변경은 사번별로 모아 돌려준다. 서버에서 읽은 값보다 나중 것만 화면에 덮어쓴다 (withLivePresence)
+ * - 끊겼다 다시 붙거나 서버가 resync를 보내면, 그 사이 놓친 변경이 있을 수 있어 화면 데이터를 다시 읽는다
+ * - 로그아웃·자동 로그아웃으로 연결이 거절되면 로그인 화면으로 보낸다
+ */
+export function useLivePresence(): LiveChanges {
+  const router = useRouter();
+  const [changes, setChanges] = useState<LiveChanges>(() => new Map());
+
+  useEffect(() => {
+    let source: EventSource | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let retryMs = RETRY_MIN_MS;
+    let connectedBefore = false;
+    let stopped = false;
+
+    function connect() {
+      source = new EventSource("/api/presence/stream");
+      source.addEventListener("open", () => {
+        retryMs = RETRY_MIN_MS;
+        if (connectedBefore) router.refresh();
+        connectedBefore = true;
+      });
+      source.addEventListener("presence", (event) => {
+        const change = JSON.parse((event as MessageEvent<string>).data) as PresenceEvent;
+        setChanges((prev) => new Map(prev).set(change.emp_no, change));
+      });
+      source.addEventListener("resync", () => router.refresh());
+      source.addEventListener("error", () => {
+        // 브라우저가 알아서 다시 붙는 중(CONNECTING)이면 둔다. CLOSED는 서버가 거절한 것
+        // (로그인 만료 401, API 서버 꺼짐 5xx)이라 어느 쪽인지 확인하고 직접 다시 시도한다
+        if (source?.readyState === EventSource.CLOSED) void retry();
+      });
+    }
+
+    async function retry() {
+      try {
+        const res = await fetch("/api/auth/me");
+        if (stopped) return;
+        if (res.status === 401) {
+          router.replace("/login");
+          return;
+        }
+      } catch {
+        // 네트워크 오류: 아래에서 다시 시도
+      }
+      if (stopped) return;
+      retryTimer = setTimeout(connect, retryMs);
+      retryMs = Math.min(retryMs * 2, RETRY_MAX_MS);
+    }
+
+    connect();
+    return () => {
+      stopped = true;
+      clearTimeout(retryTimer);
+      source?.close();
+    };
+  }, [router]);
+
+  return changes;
+}
+
+/** 서버에서 읽은 층 데이터에, 그보다 나중에 온 상태 변경을 덮어쓴다 */
+export function withLivePresence(map: FloorMap, changes: LiveChanges): FloorMap {
+  const fetchedAt = Date.parse(map.fetched_at);
+  let changed = false;
+  const seats = map.seats.map((seat) => {
+    const change = seat.occupant && changes.get(seat.occupant.emp_no);
+    if (!seat.occupant || !change || Date.parse(change.at) <= fetchedAt) return seat;
+    changed = true;
+    return { ...seat, occupant: { ...seat.occupant, presence: change.presence } };
+  });
+  return changed ? { ...map, seats } : map;
+}
+
+/** 내 상태도 같은 방식으로 */
+export function withLiveMine(mine: MyPresence, change: PresenceEvent | undefined, fetchedAt: string): MyPresence {
+  return change && Date.parse(change.at) > Date.parse(fetchedAt) ? change.presence : mine;
+}
+
+/** 화면에 보이는 상태 중 가장 먼저 자동 해제되는 시각에 데이터를 다시 읽는다 (해제는 알림이 따로 오지 않는다) */
+export function useRefreshAtExpiry(map: FloorMap, mine: MyPresence) {
+  const router = useRouter();
+  const next = useMemo(() => {
+    const times = [mine?.expires_at, ...map.seats.map((s) => s.occupant?.presence?.expires_at)]
+      .filter((t): t is string => !!t)
+      .map((t) => Date.parse(t));
+    return times.length ? Math.min(...times) : null;
+  }, [map, mine]);
+
+  useEffect(() => {
+    if (next === null) return;
+    // 서버와 PC 시계가 조금 어긋나도 해제된 뒤에 읽도록 1초 늦게
+    const delay = Math.max(0, next - Date.now() + 1000);
+    if (delay > MAX_TIMEOUT_MS) return;
+    const timer = setTimeout(() => router.refresh(), delay);
+    return () => clearTimeout(timer);
+  }, [next, router]);
+}

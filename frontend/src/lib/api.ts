@@ -28,8 +28,9 @@ const DEFAULT_LOGIN_INFO: LoginInfo = {
   max_failed_count: 5,
 };
 
-/** 쿠키로 로그인한 사람을 확인한다. 로그인 안 했거나 API가 꺼져 있으면 null */
-export async function fetchMe(cookieHeader: string | null): Promise<User | null> {
+/** 쿠키로 로그인한 사람을 확인한다. 로그인 안 했거나 API가 꺼져 있으면 null.
+ *  레이아웃과 페이지가 같은 요청 안에서 한 번만 부르도록 cache로 감싼다 */
+export const fetchMe = cache(async (cookieHeader: string | null): Promise<User | null> => {
   if (!cookieHeader) return null;
   try {
     const res = await fetch(`${API_URL}/api/auth/me`, {
@@ -41,7 +42,7 @@ export async function fetchMe(cookieHeader: string | null): Promise<User | null>
   } catch {
     return null;
   }
-}
+});
 
 /** 로그인 화면의 공지·문의처. API가 꺼져 있어도 화면은 기본값으로 뜬다 */
 export async function fetchLoginInfo(): Promise<LoginInfo> {
@@ -101,7 +102,7 @@ export type Occupant = {
   extension: string | null;
   email: string | null;
   kind: "FIXED" | "DAILY";
-  presence: { status: PresenceStatus; message: string | null } | null;
+  presence: { status: PresenceStatus; message: string | null; expires_at: string | null } | null;
 };
 
 export type Seat = {
@@ -118,6 +119,7 @@ export type Seat = {
 
 export type FloorMap = {
   floor: { id: number; name: string; site: { id: number; name: string } };
+  fetched_at: string; // 이 데이터를 읽은 시각 (실시간 알림과 어느 쪽이 최신인지 비교)
   plan: {
     version: number;
     width_m: number;
@@ -136,6 +138,9 @@ export type MyPresence = {
   expires_at: string | null;
   updated_at: string;
 } | null;
+
+/** 실시간 알림(/api/presence/stream)의 presence 이벤트. presence가 null이면 상태를 지웠다 */
+export type PresenceEvent = { emp_no: string; presence: MyPresence; at: string };
 
 /** 재실 상태 자동 해제: 계속 / 30분 / 1시간 / 퇴근 시 */
 export type PresenceDuration = "NONE" | "30M" | "1H" | "END_OF_DAY";
