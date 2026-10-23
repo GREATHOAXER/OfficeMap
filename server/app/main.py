@@ -5,7 +5,7 @@ from fastapi import FastAPI
 
 from app.db import pool
 from app.realtime import hub
-from app.routers import auth, office, presence
+from app.routers import auth, employees, office, presence, rooms
 
 
 @asynccontextmanager
@@ -22,6 +22,8 @@ app = FastAPI(title="OfficeMap API", lifespan=lifespan)
 app.include_router(auth.router)
 app.include_router(office.router)
 app.include_router(presence.router)
+app.include_router(employees.router)
+app.include_router(rooms.router)
 
 
 @app.get("/api/health")

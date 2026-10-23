@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SparkleIcon } from "@/components/icons";
-import type { FloorMap, FloorSummary, MyPresence, PresenceStatus } from "@/lib/api";
+import type { EmployeeHit, FloorMap, FloorSummary, MyPresence, PresenceStatus } from "@/lib/api";
 import { useLivePresence, useRefreshAtExpiry, withLiveMine, withLivePresence } from "@/lib/livePresence";
 import { PRESENCE_LABEL, PRESENCE_ORDER } from "@/lib/presence";
 import AiPanel from "./AiPanel";
+import EmployeeSearch from "./EmployeeSearch";
 import FloorPlan, { clampZoom, ZOOM_MAX, ZOOM_MIN } from "./FloorPlan";
 import MyStatus from "./MyStatus";
 import SeatPanel from "./SeatPanel";
@@ -33,14 +35,71 @@ export default function OfficeView({ floors, myFloorId, myEmpNo, myPresence, map
   const [aiOpen, setAiOpen] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [visible, setVisible] = useState<Set<PresenceStatus>>(() => new Set(PRESENCE_ORDER));
-  // 층을 바꾸면 고른 자리·강조한 팀은 의미가 없어서, 어느 층에서 고른 것인지 같이 기억한다
-  const [picked, setPicked] = useState<{ floorId: number; seatId: number | null; zoneId: number | null }>({
+  // 층을 바꾸면 고른 자리·강조한 팀은 의미가 없어서, 어느 층에서 고른 것인지 같이 기억한다.
+  // pinned: 오른쪽 패널이 도면 아래로 내려간 좁은 화면에서는 자리 옆에 정보 카드를 고정해 띄운다
+  const [picked, setPicked] = useState<{ floorId: number; seatId: number | null; zoneId: number | null; pinned: boolean }>({
     floorId,
     seatId: null,
     zoneId: null,
+    pinned: false,
   });
   const selectedSeatId = picked.floorId === floorId ? picked.seatId : null;
   const focusZoneId = picked.floorId === floorId ? picked.zoneId : null;
+  const pinnedSeatId = picked.pinned ? selectedSeatId : null;
+
+  const router = useRouter();
+  const seatParam = Number(useSearchParams().get("seat")) || null;
+  const mainRef = useRef<HTMLElement>(null);
+  const sideRef = useRef<HTMLDivElement>(null);
+
+  /** 오른쪽 패널이 도면 옆이 아니라 아래에 있나 (좁은 화면) */
+  const sideIsBelow = useCallback(() => {
+    const main = mainRef.current;
+    const side = sideRef.current;
+    return !!main && !!side && side.offsetTop > main.offsetTop + 8;
+  }, []);
+
+  const selectSeat = useCallback(
+    (seatId: number | null) =>
+      setPicked((p) => ({
+        floorId,
+        zoneId: p.floorId === floorId ? p.zoneId : null,
+        seatId,
+        pinned: seatId !== null && sideIsBelow(),
+      })),
+    [floorId, sideIsBelow],
+  );
+  const unpin = useCallback(() => selectSeat(null), [selectSeat]);
+
+  /** 자리를 골라서 도면 가운데로 가져온다 (검색, ?seat= 주소) */
+  const revealSeat = useCallback(
+    (seatId: number) => {
+      selectSeat(seatId);
+      document
+        .querySelector(`[data-seat-id="${seatId}"]`)
+        ?.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+    },
+    [selectSeat],
+  );
+
+  // 주소에 ?seat=자리ID 가 있으면 그 자리를 보여 준다 (다른 층 사람을 검색해서 넘어왔을 때).
+  // 새 층이 그려진 다음 프레임에 옮기고, 데이터를 다시 읽을 때마다 다시 옮기지 않게 한 번만 한다
+  const revealedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const key = `${floorId}:${seatParam}`;
+    if (!seatParam || revealedRef.current === key || !fetchedMap.seats.some((s) => s.id === seatParam)) return;
+    const frame = requestAnimationFrame(() => {
+      revealedRef.current = key;
+      revealSeat(seatParam);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [seatParam, floorId, fetchedMap, revealSeat]);
+
+  function goToPerson(hit: EmployeeHit) {
+    if (!hit.seat) return;
+    if (hit.seat.floor_id === floorId) revealSeat(hit.seat.id);
+    else router.push(`/?floor=${hit.seat.floor_id}&seat=${hit.seat.id}`, { scroll: false });
+  }
 
   const aiButtonRef = useRef<HTMLButtonElement>(null);
   const wasAiOpen = useRef(false);
@@ -65,6 +124,7 @@ export default function OfficeView({ floors, myFloorId, myEmpNo, myPresence, map
     <div className={styles.page}>
       <header className={styles.header}>
         <h1 className={styles.title}>자리·재실 현황</h1>
+        <EmployeeSearch onPick={goToPerson} />
         <button
           ref={aiButtonRef}
           type="button"
@@ -80,7 +140,7 @@ export default function OfficeView({ floors, myFloorId, myEmpNo, myPresence, map
       </header>
 
       <div className={styles.body}>
-        <main className={styles.main}>
+        <main ref={mainRef} className={styles.main}>
           <nav aria-label="층 선택" className={styles.floors}>
             {[...floors].reverse().map((floor) => {
               const current = floor.id === floorId;
@@ -117,7 +177,9 @@ export default function OfficeView({ floors, myFloorId, myEmpNo, myPresence, map
                     className={`${styles.chip} ${on ? styles.chipOn : ""}`}
                     data-color={zone.color_key}
                     aria-pressed={on}
-                    onClick={() => setPicked({ floorId, seatId: selectedSeatId, zoneId: on ? null : zone.id })}
+                    onClick={() =>
+                      setPicked({ floorId, seatId: selectedSeatId, zoneId: on ? null : zone.id, pinned: picked.pinned })
+                    }
                   >
                     <span className={styles.swatch} aria-hidden="true" />
                     {zone.name}
@@ -156,9 +218,9 @@ export default function OfficeView({ floors, myFloorId, myEmpNo, myPresence, map
               focusZoneId={focusZoneId}
               visibleStatuses={visible}
               selectedSeatId={selectedSeatId}
-              onSelectSeat={(seatId) =>
-                setPicked({ floorId, zoneId: focusZoneId, seatId: seatId === selectedSeatId ? null : seatId })
-              }
+              onSelectSeat={(seatId) => selectSeat(seatId === selectedSeatId ? null : seatId)}
+              pinnedSeatId={pinnedSeatId}
+              onUnpin={unpin}
             />
           </div>
 
@@ -180,19 +242,19 @@ export default function OfficeView({ floors, myFloorId, myEmpNo, myPresence, map
               반원 = 의자 (앉는 쪽)
             </span>
             <span className={styles.hint}>
-              트랙패드 핀치(Ctrl+휠)로 확대·축소 · 팀 칩을 누르면 그 팀만 강조 · 자리를 누르면 오른쪽에 정보
+              트랙패드 핀치(Ctrl+휠)로 확대·축소 · 확대하면 끌어서 이동 · 자리에 마우스를 올리면 정보 카드
             </span>
           </div>
         </main>
 
-        <div className={styles.side}>
+        <div ref={sideRef} className={styles.side}>
           {aiOpen ? (
             <AiPanel onClose={() => setAiOpen(false)} />
           ) : (
             <SeatPanel
               map={map}
               seat={selectedSeat}
-              onClear={() => setPicked({ floorId, zoneId: focusZoneId, seatId: null })}
+              onClear={unpin}
             />
           )}
         </div>
