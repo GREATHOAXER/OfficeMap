@@ -14,11 +14,11 @@ import { hhmm } from "@/lib/rooms";
 import { ROOMS_FLOOR_COOKIE } from "@/lib/roomsFloor";
 import ReservationForm, { equipmentText } from "./ReservationForm";
 import {
-  allAttendees,
   type Attendee,
   defaultRange,
   type Draft,
   EMPTY_DRAFT,
+  headcount,
   latestEnd,
   timeIsFree,
   withoutBooking,
@@ -166,7 +166,7 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
         return { ...d, end: start + slot };
       }
       // 다른 칸으로 새로 시작하는데 앞에서 쓰던 내용이 있으면 폼 위에 알려 준다
-      if (d.title.trim() || d.attendees.length || d.teams.length) setCarried(true);
+      if (d.title.trim() || d.attendees.length) setCarried(true);
       return { ...d, roomId: room.id, ...defaultRange(day, room, start) };
     });
     openForm();
@@ -180,6 +180,7 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
     if (draft.start === null || draft.end === null) problems.push("시작·종료 시각을 고르세요.");
     else if (room && !timeIsFree(day, room, draft)) problems.push(`이 시간에 ${room.name}에 이미 예약이 있어요.`);
     if (conflicts.length > 0) problems.push("이 기간에 이미 잡힌 예약이 있어요.");
+    if (headcount(draft) === 0) problems.push("참석자가 없어요. 나도 들어가지 않으면 회의에 들어갈 사람을 넣으세요.");
     if (!draft.title.trim()) problems.push("회의 제목을 적어 주세요.");
     return problems;
   }
@@ -192,11 +193,11 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
       return;
     }
     const room = day.rooms.find((r) => r.id === draft.roomId)!;
-    const people = allAttendees(draft).length + 1;
+    const people = headcount(draft);
     if (people > room.capacity && !capacityOk) {
       setCapacityOk(true);
       setError(
-        `정원 ${room.capacity}명인 ${room.name}에 나를 포함해 ${people}명이 참석해요. 그래도 예약하려면 ‘예약 확정’을 한 번 더 누르세요.`,
+        `정원 ${room.capacity}명인 ${room.name}에 ${people}명이 참석해요. 그래도 예약하려면 ‘예약 확정’을 한 번 더 누르세요.`,
       );
       return;
     }
@@ -213,7 +214,8 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
           end_date: addDays(day.date, draft.endDays),
           end_min: draft.end,
           title: draft.title,
-          attendees: allAttendees(draft).map((a) => a.emp_no),
+          attendees: draft.attendees.map((a) => a.emp_no),
+          organizer_attends: draft.meAttends,
           repeat: editing ? "NONE" : draft.repeat,
           repeat_until: editing || draft.repeat === "NONE" ? null : draft.repeatUntil,
           skip_conflicts: skipConflicts,
@@ -263,7 +265,7 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
     }
   }
 
-  const hasDraft = draft.roomId !== null || draft.title !== "" || draft.attendees.length > 0 || draft.teams.length > 0;
+  const hasDraft = draft.roomId !== null || draft.title !== "" || draft.attendees.length > 0 || !draft.meAttends;
 
   return (
     <div className={styles.page}>
@@ -398,7 +400,13 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
           formId={formId}
           day={day}
           draft={draft}
-          onDraftChange={setDraft}
+          onDraftChange={(update) => {
+            // 고치기 시작하면 지난번 확정 때 보여 준 오류는 내린다 (다시 누르면 다시 확인)
+            setDraft(update);
+            setError(null);
+            setSkipDates(null);
+            setCapacityOk(false);
+          }}
           onDateChange={goToDate}
           onSubmit={() => void submit()}
           error={error}
@@ -407,7 +415,7 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
           editing={editing !== null}
           carried={carried}
           onClearCarried={() => {
-            setDraft((d) => ({ ...d, title: "", attendees: [], teams: [] }));
+            setDraft((d) => ({ ...d, title: "", attendees: [], meAttends: true }));
             setCarried(false);
           }}
           skipDates={skipDates}
@@ -448,7 +456,9 @@ function draftOf(detail: Detail): Draft {
     endDays,
     end: endMin === 0 && endDay > startDay ? 1440 : endMin,
     title: detail.title,
-    attendees: detail.attendees.map(
+    // 고치는 사람은 예약한 사람이다. 나는 "나" 칩으로, 나머지는 한 사람씩
+    meAttends: detail.organizer.attends,
+    attendees: detail.attendees.filter((a) => !a.is_organizer).map(
       (a) =>
         ({
           emp_no: a.emp_no,
@@ -489,6 +499,8 @@ function errorText(detail: ErrorDetail): string {
       return `반복 예약은 ${detail.max_days ?? 92}일 안에서만 할 수 있어요.`;
     case "UNKNOWN_ATTENDEE":
       return "참석자 중 퇴사·휴직한 사람이 있어요. 다시 골라 주세요.";
+    case "NO_ATTENDEES":
+      return "참석자가 없어요. 나도 들어가지 않으면 회의에 들어갈 사람을 넣으세요.";
     case "ROOM_NOT_FOUND":
       return "지금은 쓸 수 없는 회의실이에요.";
     default:

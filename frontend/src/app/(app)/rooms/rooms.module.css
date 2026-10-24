@@ -836,54 +836,88 @@
   white-space: nowrap;
 }
 
-.teamChip {
-  padding-left: 4px;
+/* 나(예약한 사람): 빼면 예약만 하고 회의에는 안 들어간다 */
+.meChip {
   border-color: var(--ink);
+  font-weight: 600;
 }
 
-.chipLabel {
+.addMe {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 6px;
-  border: 0;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px dashed var(--ink);
   border-radius: 999px;
   background: transparent;
   color: var(--ink);
   font: inherit;
   font-size: 12px;
-  font-weight: 600;
   cursor: pointer;
 }
 
-.chipLabel:hover {
-  background: var(--bg);
+/* 그 시간에 다른 일정이 있는 사람 */
+.chip[data-conflict] {
+  border-color: var(--danger);
 }
 
 .chipWarn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.chipWarnText {
   color: var(--danger);
   font-weight: 600;
 }
 
-.teamMembers {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 4px 12px;
-  max-height: 180px;
-  margin: 0;
-  padding: 10px 12px;
-  overflow-y: auto;
+/* 팀으로 한꺼번에 넣은 사람: 팀별로 모아 보여 준다 (한 명씩 뺄 수도, 모두 뺄 수도) */
+.chipGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
   border: 1px solid var(--divider);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--surface-sunken);
-  list-style: none;
+}
+
+.chipGroupHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
   font-size: 12px;
 }
 
-.teamMembers li {
-  display: flex;
-  flex-direction: column;
+.chipGroupHead .linkButton {
+  margin-left: auto;
+}
+
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.attendeeNote {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .teamAvatar {

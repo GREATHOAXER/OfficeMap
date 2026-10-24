@@ -48,9 +48,9 @@ export default function PresenceView({ myEmpNo, info, team, upcoming, today }: P
     .filter((m) => !filter || m.presence?.status === filter)
     .sort((a, b) => rank(a.presence?.status) - rank(b.presence?.status) || a.name.localeCompare(b.name, "ko"));
 
-  // 오늘 남은 일정: 취소된 회의는 빼고
+  // 오늘 남은 일정: 내가 실제로 들어가는 회의만 (취소된 회의, 예약만 해 준 회의는 빼고)
   const todays = upcoming.filter(
-    (r) => r.status === "CONFIRMED" && kstDate(r.starts_at) <= today && today <= kstDate(r.ends_at),
+    (r) => r.status === "CONFIRMED" && r.attending && kstDate(r.starts_at) <= today && today <= kstDate(r.ends_at),
   );
 
   return (

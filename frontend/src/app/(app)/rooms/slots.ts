@@ -6,11 +6,11 @@ import type { SearchWhen } from "@/lib/useEmployeeSearch";
 
 export type Repeat = "NONE" | "WEEKLY" | "WEEKDAYS";
 
-/** 참석자. sameName: 고를 때 같은 이름이 또 있었다 (칩에 직급까지 붙여 구별) */
-export type Attendee = EmployeeHit & { sameName?: boolean };
-
-/** 팀 전체를 한 번에 넣은 참석자 묶음. members에 나는 빠져 있다 */
-export type TeamGroup = { id: number; name: string; members: Attendee[] };
+/**
+ * 참석자 한 사람. sameName: 고를 때 같은 이름이 또 있었다 (칩에 직급까지 붙여 구별).
+ * via: 팀을 통째로 넣을 때 같이 들어왔으면 그 팀 이름 (칩을 팀별로 묶어 보여 주고 한 번에 뺄 수 있게)
+ */
+export type Attendee = EmployeeHit & { sameName?: boolean; via?: string };
 
 /**
  * 작성 중인 예약. 시작 날짜는 화면에서 보고 있는 날(day.date)이고, 끝나는 날은 거기서 endDays일 뒤.
@@ -22,8 +22,9 @@ export type Draft = {
   endDays: number; // 0이면 같은 날에 끝남
   end: number | null; // 끝나는 날의 분
   title: string;
-  attendees: Attendee[]; // 한 사람씩 넣은 참석자
-  teams: TeamGroup[];
+  attendees: Attendee[]; // 참석자 (나 말고). 팀을 넣어도 한 사람씩 들어가서 빼고 싶은 사람만 뺄 수 있다
+  /** 예약하는 나도 회의에 들어가나. 비서처럼 예약만 해 주는 사람은 끈다 */
+  meAttends: boolean;
   repeat: Repeat;
   repeatUntil: string | null;
   notify: boolean;
@@ -36,7 +37,7 @@ export const EMPTY_DRAFT: Draft = {
   end: null,
   title: "",
   attendees: [],
-  teams: [],
+  meAttends: true,
   repeat: "NONE",
   repeatUntil: null,
   notify: true,
@@ -101,14 +102,8 @@ export function whenOf(day: RoomsDay, d: Draft): SearchWhen | null {
   return { date: day.date, start_min: d.start, end_date: addDays(day.date, d.endDays), end_min: d.end };
 }
 
-/** 실제로 초대할 사람 (한 사람씩 넣은 사람 + 팀 묶음, 겹치면 한 번만) */
-export function allAttendees(draft: Draft): Attendee[] {
-  const byEmpNo = new Map<string, Attendee>();
-  for (const person of [...draft.attendees, ...draft.teams.flatMap((t) => t.members)]) {
-    if (!byEmpNo.has(person.emp_no)) byEmpNo.set(person.emp_no, person);
-  }
-  return [...byEmpNo.values()];
-}
+/** 회의에 실제로 들어가는 사람 수 (나도 참석하면 나까지) */
+export const headcount = (draft: Draft) => draft.attendees.length + (draft.meAttends ? 1 : 0);
 
 /** 반복 예약 회차 수 (서버와 같은 규칙: 매주는 7일 간격, 평일은 토·일 빼고) */
 export function occurrenceCount(date: string, repeat: Repeat, until: string | null): number {

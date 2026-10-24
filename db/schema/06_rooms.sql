@@ -56,6 +56,8 @@ CREATE TABLE reservations (
 CREATE INDEX reservations_organizer_idx ON reservations (organizer_id, starts_at);
 CREATE INDEX reservations_starts_at_idx ON reservations (starts_at);
 
+-- 실제로 회의에 들어가는 사람. 예약한 사람(organizer)도 참석하면 여기에 들어간다
+-- (비서가 임원 회의를 잡아 주는 것처럼, 예약만 하고 들어가지 않을 수도 있다)
 CREATE TABLE reservation_attendees (
     reservation_id bigint      NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,
     employee_id    bigint      NOT NULL REFERENCES employees(id),
