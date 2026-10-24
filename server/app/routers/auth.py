@@ -10,8 +10,8 @@ from pydantic import BaseModel, Field
 
 from app.config import settings
 from app.db import get_setting, pool
-from app.security import hash_token, new_session_token, verify_password
-from app.session import load_session
+from app.security import new_session_token, verify_password
+from app.session import IS_ADMIN_SQL, end_sessions, load_session
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -49,9 +49,9 @@ def login(body: LoginRequest, request: Request) -> JSONResponse:
         max_failed = int(get_setting(conn, "login.max_failed_count", 5))
         # 동시에 여러 번 틀려도 실패 횟수가 정확히 올라가도록 계정 행을 잠근다
         user = conn.execute(
-            """
+            f"""
             SELECT e.id, e.emp_no, e.name, e.rank_name, e.employment_status, d.name AS department,
-                   a.password_hash, a.role, a.failed_login_count, a.locked_at, a.must_change_password
+                   a.password_hash, a.failed_login_count, a.locked_at, a.must_change_password, {IS_ADMIN_SQL}
             FROM employees e
             JOIN departments d ON d.id = e.department_id
             JOIN user_accounts a ON a.employee_id = e.id
@@ -144,16 +144,8 @@ def me(request: Request) -> JSONResponse:
 
 @router.post("/logout", status_code=204)
 def logout(request: Request) -> Response:
-    token = request.cookies.get(settings.session_cookie_name)
-    if token:
-        with pool.connection() as conn:
-            conn.execute(
-                "UPDATE user_sessions SET revoked_at = now() WHERE token_hash = %s AND revoked_at IS NULL",
-                (hash_token(token),),
-            )
-    response = Response(status_code=204)
-    response.delete_cookie(settings.session_cookie_name, path="/")
-    return response
+    """직원 화면 로그아웃. 같은 브라우저의 관리자 로그인도 같이 끝낸다"""
+    return end_sessions(request)
 
 
 def _user_out(user: dict[str, Any]) -> dict[str, Any]:
@@ -162,7 +154,7 @@ def _user_out(user: dict[str, Any]) -> dict[str, Any]:
         "name": user["name"],
         "rank": user["rank_name"],
         "department": user["department"],
-        "role": user["role"],
+        "role": "ADMIN" if user["is_admin"] else "USER",
         "must_change_password": user["must_change_password"],
     }
 

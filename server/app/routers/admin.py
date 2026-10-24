@@ -12,7 +12,8 @@ from app.admin_auth import CurrentAdmin, admin_out, grants_of, load_admin
 from app.config import settings
 from app.db import get_setting, pool
 from app.routers.auth import client_info, error_response
-from app.security import hash_token, new_session_token, verify_password
+from app.security import new_session_token, verify_password
+from app.session import end_sessions
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -125,19 +126,8 @@ def admin_me(admin: CurrentAdmin) -> dict[str, Any]:
 
 @router.post("/auth/logout", status_code=204)
 def admin_logout(request: Request) -> Response:
-    token = request.cookies.get(settings.admin_cookie_name)
-    if token:
-        with pool.connection() as conn:
-            conn.execute(
-                """
-                UPDATE user_sessions SET revoked_at = now()
-                WHERE token_hash = %s AND kind = 'ADMIN' AND revoked_at IS NULL
-                """,
-                (hash_token(token),),
-            )
-    response = Response(status_code=204)
-    response.delete_cookie(settings.admin_cookie_name, path="/")
-    return response
+    """관리자 페이지 로그아웃. 직원 화면 로그인도 같이 끝낸다 (로그아웃 = 이 브라우저에서 완전히 나가기)"""
+    return end_sessions(request)
 
 
 @router.get("/overview")

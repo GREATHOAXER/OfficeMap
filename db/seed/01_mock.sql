@@ -101,10 +101,9 @@ FROM gen
 JOIN departments d ON d.dept_code = gen.dept_code;
 
 -- 신규 입사자만 임시 비밀번호 상태
-INSERT INTO user_accounts (employee_id, password_hash, role, must_change_password, password_changed_at)
+INSERT INTO user_accounts (employee_id, password_hash, must_change_password, password_changed_at)
 SELECT id,
        '$2b$12$YQWCooIW9V1YrWJ5vD7EDujBSKuP2HW49Z852NdLGSIWLnTG5B7b2',  -- officemap1234
-       CASE WHEN emp_no = '20090001' THEN 'ADMIN' ELSE 'USER' END,
        emp_no = '20260006',
        CASE WHEN emp_no = '20260006' THEN NULL ELSE timestamptz '2026-09-01 09:00+09' END
 FROM employees;
@@ -317,10 +316,6 @@ SELECT g.employee_id,
        g.granted_at, g.granted_by
 FROM admin_grants g
 WHERE g.revoked_at IS NULL;
-
--- 권한을 받은 사람은 직원 화면 왼쪽 메뉴에도 "관리자 페이지" 링크가 보인다
-UPDATE user_accounts SET role = 'ADMIN'
-WHERE employee_id IN (SELECT employee_id FROM admin_grants WHERE revoked_at IS NULL);
 
 -- ④ 좌석 배정 ----------------------------------------------------------------
 

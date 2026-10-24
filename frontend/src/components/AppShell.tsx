@@ -36,12 +36,9 @@ const MAIN_MENU: MenuItem[] = [
   { label: "내 재실 상태", icon: <PersonIcon />, href: "/presence" },
 ];
 
-// 직원 화면의 "관리" 메뉴. 관리자 페이지는 관리자 비밀번호로 따로 로그인한다
-const ADMIN_MENU: MenuItem[] = [
-  { label: "좌석 배치 편집", icon: <MoveIcon /> },
-  { label: "도면 편집", icon: <PenIcon /> },
-  { label: "사업장·권한", icon: <ShieldIcon />, href: "/admin" },
-];
+// 직원 화면에는 관리 기능을 두지 않고, 관리자 권한이 있는 사람에게만 관리자 페이지로 가는 입구 하나를 보여 준다.
+// 관리 메뉴(사업장·권한, 좌석 배치 편집, 도면 편집)는 관리자 페이지 안에 있고, 관리자 비밀번호로 따로 로그인한다
+const ADMIN_MENU: MenuItem[] = [{ label: "관리자 페이지", icon: <ShieldIcon />, href: "/admin" }];
 
 // 관리자 페이지의 왼쪽 메뉴
 const CONSOLE_MENU: MenuGroup[] = [
