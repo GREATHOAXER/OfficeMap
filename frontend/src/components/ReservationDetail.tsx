@@ -25,7 +25,11 @@ type Props = {
 
 type Loaded = { id: number; detail: Detail | null; failed: boolean };
 
-/** 예약 한 건 자세히 보기 팝업: 일시, 장소, 만든 사람, 참석자(재실 상태), 반복 규칙. 만든 사람은 여기서 취소할 수 있다 */
+/**
+ * 예약 한 건 자세히 보기 팝업: 일시, 장소, 예약한 사람, 참석자(재실 상태), 반복 규칙.
+ * 예약한 사람은 여기서 수정·취소할 수 있다. 예약한 사람이 회의에 안 들어갈 수도 있어서(비서가 잡아 주는 경우)
+ * 참석 여부를 따로 보여 준다
+ */
 export default function ReservationDetail({ reservationId, onClose, onCancelled, showTimetableLink }: Props) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -86,7 +90,7 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
           <p className={styles.badge} data-tone="danger">
             {STATUS_LABEL[detail.status]}
             {detail.cancelled_at &&
-              ` · ${formatShortDay(kstDate(detail.cancelled_at))} ${hhmm.format(new Date(detail.cancelled_at))}에 주최자가 취소`}
+              ` · ${formatShortDay(kstDate(detail.cancelled_at))} ${hhmm.format(new Date(detail.cancelled_at))}에 예약한 사람이 취소`}
           </p>
         ) : (
           detail.ended && <p className={styles.badge}>끝난 회의</p>
@@ -112,7 +116,7 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
               {detail.room.equipment.length > 0 && ` · ${detail.room.equipment.map((e) => EQUIPMENT_LABEL[e] ?? e).join(", ")}`}
             </span>
           </dd>
-          <dt>만든 사람</dt>
+          <dt>예약한 사람</dt>
           <dd>
             <span>
               {detail.organizer.name} {detail.organizer.rank}
@@ -121,15 +125,16 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
             <span className={styles.sub}>
               {detail.organizer.department}
               {detail.organizer.extension && ` · 내선 ${detail.organizer.extension}`}
+              {detail.organizer.attends ? " · 회의에도 참석" : " · 예약만 함 (회의에는 안 들어감)"}
             </span>
           </dd>
         </dl>
 
         <section className={styles.attendees} aria-labelledby="detail-attendees">
           <h3 id="detail-attendees">
-            참석자 {detail.attendees.length + 1}명 <span className={styles.sub}>주최자 포함</span>
+            참석자 {detail.attendees.length}명
           </h3>
-          {detail.attendees.length === 0 && <p className={styles.sub}>주최자 말고 따로 초대한 사람이 없어요.</p>}
+          {detail.attendees.length === 0 && <p className={styles.sub}>참석자가 없어요.</p>}
           {[...byTeam.entries()].map(([team, people]) => (
             <div key={team} className={styles.team}>
               <h4>
@@ -143,6 +148,7 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
                     </span>
                     {p.name} {p.rank}
                     {p.is_me && <span className={styles.me}>나</span>}
+                    {p.is_organizer && <span className={styles.sub}> · 예약한 사람</span>}
                     <span className={styles.presence}>{p.presence ? PRESENCE_LABEL[p.presence] : NO_STATUS_LABEL}</span>
                   </li>
                 ))}
@@ -161,6 +167,7 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
   }
 
   const day = detail && kstDate(detail.starts_at);
+  const others = detail ? detail.attendees.filter((a) => !a.is_organizer).length : 0; // 나 말고 알려 줄 사람
   const series = detail?.series && detail.series.left > 1 ? detail.series : null;
   const footer = detail && (
     <>
@@ -183,7 +190,7 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
           <span className={styles.confirm} role="group" aria-label="예약 취소 확인">
             <span>
               이 회의를 취소할까요?
-              {detail.attendees.length > 0 && ` 참석자 ${detail.attendees.length}명의 내 예약에 ‘취소됨’으로 표시돼요.`}
+              {others > 0 && ` 참석자 ${others}명의 내 예약에 ‘취소됨’으로 표시돼요.`}
             </span>
             {series ? (
               <>

@@ -1,20 +1,21 @@
 "use client";
 
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
-import { CloseIcon, PersonIcon, SearchIcon } from "@/components/icons";
+import { CloseIcon, PersonIcon, PlusIcon, SearchIcon } from "@/components/icons";
 import type { EmployeeHit, TeamHit } from "@/lib/api";
 import { NO_STATUS_LABEL, PRESENCE_LABEL } from "@/lib/presence";
 import { type SearchWhen, useEmployeeSearch, useTeamSearch } from "@/lib/useEmployeeSearch";
-import type { Attendee, TeamGroup } from "./slots";
+import type { Attendee } from "./slots";
 import styles from "./rooms.module.css";
 
 const ABSENCE_LABEL = { LEAVE: "휴가", BUSINESS_TRIP: "출장", REMOTE: "재택" } as const;
 
 type Props = {
   people: Attendee[];
-  teams: TeamGroup[];
   onPeopleChange: (people: Attendee[]) => void;
-  onTeamsChange: (teams: TeamGroup[]) => void;
+  /** 예약하는 나도 회의에 들어가나 */
+  meAttends: boolean;
+  onMeAttendsChange: (attends: boolean) => void;
   /** 고른 회의 시간. 있으면 참석자마다 그 시간에 다른 회의·휴가가 있는지 같이 보여 준다 */
   when: SearchWhen | null;
 };
@@ -29,33 +30,32 @@ function conflictOf(person: EmployeeHit): string | null {
 }
 
 /**
- * 참석자 추가.
- * - 이름·사번, 또는 팀·부서 이름으로 찾아 한 사람씩 넣는다 (예: "재무팀"이면 재무팀 사람들이 목록에 뜬다)
- * - "$총무팀"처럼 $로 시작하면 팀을 찾아 팀 전체를 한 묶음으로 넣는다. 본부를 고르면 아래 팀 사람까지
+ * 참석자 추가. 실제로 회의에 들어가는 사람만 넣는다.
+ * - 예약하는 나는 기본으로 참석. 비서처럼 예약만 해 주면 "나" 칩을 빼면 된다 (다시 넣으려면 "나도 참석")
+ * - 이름·사번, 또는 팀·부서 이름으로 찾아 한 사람씩 넣는다
+ * - 팀 이름을 쓰면(또는 "$총무팀") 팀 사람을 한꺼번에 넣는다. 묶음이 아니라 한 사람씩 들어가서,
+ *   안 올 사람 몇 명만 ✕로 뺄 수 있다. 팀으로 넣은 사람은 팀별로 모아 보여 주고 "모두 빼기"도 된다
  * 같은 이름이 여럿이면 팀·위치로 구별하게 알려 주고, 칩에 직급까지 붙인다.
  */
-export default function AttendeePicker({ people, teams, onPeopleChange, onTeamsChange, when }: Props) {
+export default function AttendeePicker({ people, onPeopleChange, meAttends, onMeAttendsChange, when }: Props) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const [loadingTeam, setLoadingTeam] = useState<number | null>(null);
   const [teamError, setTeamError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<number | null>(null); // 펼쳐 본 팀 묶음
-  const [blockedNote, setBlockedNote] = useState<string | null>(null); // 고를 수 없는 사람을 골랐을 때 이유
+  const [note, setNote] = useState<string | null>(null); // 방금 한 일 (팀을 넣었다, 이미 있는 사람이다 등)
   const boxRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listId = useId();
-  const teamMode = query.trimStart().startsWith("$"); // $팀이름: 팀 전체 추가
+  const teamMode = query.trimStart().startsWith("$"); // $팀이름: 팀 사람 한꺼번에
   const teamQuery = query.trimStart().slice(1);
   const search = useEmployeeSearch(query, when, 20, !teamMode);
   const teamSearch = useTeamSearch(teamQuery, open && teamMode);
-  // "총무"처럼 팀 이름을 쓰면 $ 없이도 맨 위에 "총무팀 전체 추가"를 보여 준다 (두 글자부터)
+  // "총무"처럼 팀 이름을 쓰면 $ 없이도 맨 위에 "총무팀 모두 넣기"를 보여 준다 (두 글자부터)
   const nameTeams = useTeamSearch(query, open && !teamMode && query.trim().length >= 2);
   const showList = open && query.trim() !== "";
 
   const added = new Set(people.map((p) => p.emp_no));
-  const inTeam = new Set(teams.flatMap((t) => t.members.map((m) => m.emp_no)));
-  const addedTeams = new Set(teams.map((t) => t.id));
   const options: Option[] = teamMode
     ? teamSearch.teams.map((team) => ({ kind: "team" as const, team }))
     : [
@@ -74,21 +74,20 @@ export default function AttendeePicker({ people, teams, onPeopleChange, onTeamsC
   }, [showList]);
 
   function personBlocked(hit: EmployeeHit): string | null {
-    if (hit.is_me) return "주최자 · 자동 포함";
+    if (hit.is_me) return meAttends ? "나 · 참석" : null;
     if (added.has(hit.emp_no)) return "추가됨";
-    if (inTeam.has(hit.emp_no)) return "팀으로 추가됨";
     return null;
   }
 
   function reset() {
     setQuery("");
     setActive(-1);
-    setBlockedNote(null);
     inputRef.current?.focus();
   }
 
+  /** 팀 사람을 한 사람씩 넣는다 (이미 있는 사람·나는 건너뛴다) */
   async function addTeam(team: TeamHit) {
-    if (addedTeams.has(team.id) || loadingTeam !== null) return;
+    if (loadingTeam !== null) return;
     setLoadingTeam(team.id);
     setTeamError(null);
     try {
@@ -97,8 +96,16 @@ export default function AttendeePicker({ people, teams, onPeopleChange, onTeamsC
       const res = await fetch(`/api/employees/teams/${team.id}/members?${params}`);
       if (!res.ok) throw new Error(String(res.status));
       const data = (await res.json()) as { team: { id: number; name: string }; members: EmployeeHit[] };
-      const members = data.members.filter((m) => !m.is_me);
-      onTeamsChange([...teams, { id: data.team.id, name: data.team.name, members }]);
+      const fresh = data.members.filter((m) => !m.is_me && !added.has(m.emp_no));
+      onPeopleChange([...people, ...fresh.map((m) => ({ ...m, via: data.team.name }))]);
+      const skipped = data.members.length - fresh.length;
+      setNote(
+        fresh.length === 0
+          ? `${data.team.name} 사람은 이미 모두 들어가 있어요.`
+          : `${data.team.name} ${fresh.length}명을 한 명씩 넣었어요${
+              skipped ? ` (나·이미 있는 사람 ${skipped}명 빼고)` : ""
+            }. 안 올 사람은 ✕로 빼세요.`,
+      );
       reset();
     } catch {
       setTeamError(`${team.name} 사람들을 불러오지 못했습니다. 다시 시도하세요.`);
@@ -108,14 +115,23 @@ export default function AttendeePicker({ people, teams, onPeopleChange, onTeamsC
   }
 
   function addPerson(hit: EmployeeHit) {
-    const reason = personBlocked(hit);
-    if (reason) {
-      // 말없이 무시하지 않고 왜 안 되는지 알려 준다
-      setBlockedNote(hit.is_me ? "주최자(나)는 따로 넣지 않아도 참석자에 포함돼요." : `${hit.name}: 이미 ${reason}`);
+    if (hit.is_me) {
+      if (!meAttends) {
+        onMeAttendsChange(true);
+        setNote("나도 참석자로 넣었어요.");
+        reset();
+      } else {
+        setNote("나는 이미 참석자예요. 예약만 하고 들어가지 않으려면 ‘나’ 칩을 빼세요.");
+      }
+      return;
+    }
+    if (added.has(hit.emp_no)) {
+      setNote(`이미 참석자에 있어요: ${hit.name}`);
       return;
     }
     const sameName = search.results.some((r) => r.name === hit.name && r.emp_no !== hit.emp_no);
     onPeopleChange([...people, { ...hit, sameName }]);
+    setNote(null);
     reset();
   }
 
@@ -153,78 +169,104 @@ export default function AttendeePicker({ people, teams, onPeopleChange, onTeamsC
     if (teamSearch.loading) status = "팀 찾는 중…";
     else if (teamSearch.failed) status = "팀을 찾지 못했습니다. 잠시 후 다시 시도하세요.";
     else if (options.length === 0) status = `‘${name}’에 맞는 팀·부서가 없습니다`;
-    else status = name ? `팀 전체 추가 · ‘${name}’ ${options.length}개` : "팀 전체 추가 · 팀 이름을 이어서 쓰세요";
+    else status = name ? `팀 사람 한꺼번에 넣기 · ‘${name}’ ${options.length}개` : "팀 이름을 이어서 쓰세요";
   } else if (search.loading) status = "찾는 중…";
   else if (search.failed) status = "검색하지 못했습니다. 잠시 후 다시 시도하세요.";
-  else if (options.length === 0) status = `‘${query.trim()}’에 맞는 사람이 없습니다 · 팀 전체는 $팀이름`;
+  else if (options.length === 0) status = `‘${query.trim()}’에 맞는 사람이 없습니다`;
   else if (sameNameCount > 1) status = `‘${query.trim()}’ 동명이인 ${sameNameCount}명 · 소속과 위치를 확인하고 골라주세요`;
-  else status = `${search.results.length}명${search.results.length === 20 ? " (앞 20명)" : ""} · 팀 전체는 $팀이름`;
+  else status = `${search.results.length}명${search.results.length === 20 ? " (앞 20명)" : ""}`;
 
-  const expandedTeam = teams.find((t) => t.id === expanded);
+  // 칩: 한 사람씩 넣은 사람 먼저, 팀으로 넣은 사람은 팀별로 모아서
+  const single = people.filter((p) => !p.via);
+  const groups = new Map<string, Attendee[]>();
+  for (const p of people) if (p.via) groups.set(p.via, [...(groups.get(p.via) ?? []), p]);
+  const remove = (emp: string) => onPeopleChange(people.filter((p) => p.emp_no !== emp));
+
+  function chip(person: Attendee) {
+    const conflict = conflictOf(person);
+    return (
+      <li key={person.emp_no} className={styles.chip} data-conflict={!!conflict || undefined} title={conflict ?? undefined}>
+        <span className={styles.chipSwatch} data-color={person.seat?.color_key ?? "t0"} aria-hidden="true" />
+        {person.name}
+        {showRank(person) && person.rank ? ` ${person.rank}` : ""}
+        {!person.via && ` · ${person.department}`}
+        {conflict && (
+          <span className={styles.chipWarn} aria-label={conflict}>
+            !
+          </span>
+        )}
+        <button
+          type="button"
+          className={styles.chipRemove}
+          aria-label={`${person.name} 빼기`}
+          onClick={() => remove(person.emp_no)}
+        >
+          <CloseIcon size={14} />
+        </button>
+      </li>
+    );
+  }
 
   return (
     <div ref={boxRef} className={styles.attendees}>
-      {(people.length > 0 || teams.length > 0) && (
-        <ul className={styles.chips} aria-label="추가한 참석자">
-          {teams.map((team) => {
-            const busy = team.members.filter((m) => conflictOf(m)).length;
-            return (
-              <li key={`team-${team.id}`} className={`${styles.chip} ${styles.teamChip}`}>
-                <button
-                  type="button"
-                  className={styles.chipLabel}
-                  aria-expanded={expanded === team.id}
-                  onClick={() => setExpanded(expanded === team.id ? null : team.id)}
-                >
-                  <PersonIcon size={14} />
-                  {team.name} 전체 {team.members.length}명
-                  {busy > 0 && <span className={styles.chipWarn}> · 다른 일정 {busy}명</span>}
-                </button>
-                <button
-                  type="button"
-                  className={styles.chipRemove}
-                  aria-label={`${team.name} 전체 빼기`}
-                  onClick={() => {
-                    onTeamsChange(teams.filter((t) => t.id !== team.id));
-                    if (expanded === team.id) setExpanded(null);
-                  }}
-                >
-                  <CloseIcon size={14} />
-                </button>
-              </li>
-            );
-          })}
-          {people.map((person) => (
-            <li key={person.emp_no} className={styles.chip}>
-              <span className={styles.chipSwatch} data-color={person.seat?.color_key ?? "t0"} aria-hidden="true" />
-              {person.name}
-              {showRank(person) && person.rank ? ` ${person.rank}` : ""} · {person.department}
+      <ul className={styles.chips} aria-label="참석자">
+        {meAttends ? (
+          <li className={`${styles.chip} ${styles.meChip}`}>
+            <PersonIcon size={14} />나 · 예약한 사람
+            <button
+              type="button"
+              className={styles.chipRemove}
+              aria-label="나는 참석하지 않음 (예약만 하기)"
+              title="예약만 하고 회의에는 들어가지 않으면 빼세요"
+              onClick={() => {
+                onMeAttendsChange(false);
+                setNote("나는 예약만 하고 회의에는 들어가지 않아요. 참석자에서 빠졌어요.");
+              }}
+            >
+              <CloseIcon size={14} />
+            </button>
+          </li>
+        ) : (
+          <li>
+            <button
+              type="button"
+              className={styles.addMe}
+              onClick={() => {
+                onMeAttendsChange(true);
+                setNote(null);
+              }}
+            >
+              <PlusIcon size={14} /> 나도 참석
+            </button>
+          </li>
+        )}
+        {single.map(chip)}
+      </ul>
+      {[...groups.entries()].map(([team, members]) => {
+        const busy = members.filter((m) => conflictOf(m)).length;
+        return (
+          <div key={team} className={styles.chipGroup}>
+            <div className={styles.chipGroupHead}>
+              <strong>{team}</strong> {members.length}명
+              {busy > 0 && <span className={styles.chipWarnText}> · 다른 일정 {busy}명</span>}
               <button
                 type="button"
-                className={styles.chipRemove}
-                aria-label={`${person.name} 빼기`}
-                onClick={() => onPeopleChange(people.filter((p) => p.emp_no !== person.emp_no))}
+                className={styles.linkButton}
+                onClick={() => onPeopleChange(people.filter((p) => p.via !== team))}
               >
-                <CloseIcon size={14} />
+                모두 빼기
               </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {expandedTeam && (
-        <ul className={styles.teamMembers} aria-label={`${expandedTeam.name} 참석자`}>
-          {expandedTeam.members.map((m) => {
-            const conflict = conflictOf(m);
-            return (
-              <li key={m.emp_no}>
-                <span>
-                  {m.name} {m.rank}
-                </span>
-                {conflict && <span className={styles.conflict}>{conflict}</span>}
-              </li>
-            );
-          })}
-        </ul>
+            </div>
+            <ul className={styles.chips} aria-label={`${team}에서 넣은 참석자`}>
+              {members.map(chip)}
+            </ul>
+          </div>
+        );
+      })}
+      {note && (
+        <p className={styles.attendeeNote} role="status">
+          {note}
+        </p>
       )}
       <label className={styles.attendeeField}>
         <SearchIcon size={16} />
@@ -236,13 +278,12 @@ export default function AttendeePicker({ people, teams, onPeopleChange, onTeamsC
           aria-controls={listId}
           aria-autocomplete="list"
           aria-activedescendant={showList && activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined}
-          placeholder="이름·팀·사번으로 추가 · $총무팀은 팀 전체"
+          placeholder="이름·사번, 또는 팀 이름으로 한꺼번에"
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);
             setOpen(true);
             setActive(-1);
-            setBlockedNote(null);
           }}
           onFocus={(event) => {
             setOpen(true);
@@ -261,8 +302,8 @@ export default function AttendeePicker({ people, teams, onPeopleChange, onTeamsC
       )}
       {showList && (
         <div className={styles.attendeePanel}>
-          <p className={styles.attendeeStatus} role="status" data-warn={sameNameCount > 1 || !!blockedNote || undefined}>
-            {blockedNote ?? status}
+          <p className={styles.attendeeStatus} role="status" data-warn={sameNameCount > 1 || undefined}>
+            {status}
           </p>
           {options.length > 0 && (
             <ul id={listId} role="listbox" aria-label="참석자 검색 결과" className={styles.attendeeList}>
@@ -270,14 +311,12 @@ export default function AttendeePicker({ people, teams, onPeopleChange, onTeamsC
                 const optionClass = `${styles.attendeeOption} ${i === activeIndex ? styles.attendeeOptionActive : ""}`;
                 if (option.kind === "team") {
                   const { team } = option;
-                  const done = addedTeams.has(team.id);
                   return (
                     <li
                       key={`team-${team.id}`}
                       id={`${listId}-${i}`}
                       role="option"
                       aria-selected={i === activeIndex}
-                      aria-disabled={done}
                       className={optionClass}
                       onMouseEnter={() => setActive(i)}
                       onClick={() => choose(option)}
@@ -287,14 +326,14 @@ export default function AttendeePicker({ people, teams, onPeopleChange, onTeamsC
                       </span>
                       <span className={styles.attendeeMain}>
                         <span>
-                          <strong>{team.name} 전체</strong> {team.member_count}명
-                          {done && <span className={styles.tag}>추가됨</span>}
+                          <strong>{team.name}</strong> {team.member_count}명 모두 넣기
                         </span>
                         <span className={styles.attendeeMeta}>
-                          {team.has_children ? "아래 팀 사람까지 모두" : (team.parent ?? "팀 사람 모두")} · 나는 빼고 추가
+                          {team.has_children ? "아래 팀 사람까지 · " : team.parent ? `${team.parent} · ` : ""}
+                          한 명씩 들어가서 안 올 사람만 뺄 수 있어요
                         </span>
                       </span>
-                      <span className={styles.attendeeSide}>{loadingTeam === team.id ? "불러오는 중…" : "팀 추가"}</span>
+                      <span className={styles.attendeeSide}>{loadingTeam === team.id ? "넣는 중…" : "모두 넣기"}</span>
                     </li>
                   );
                 }
@@ -318,6 +357,7 @@ export default function AttendeePicker({ people, teams, onPeopleChange, onTeamsC
                     <span className={styles.attendeeMain}>
                       <span>
                         <strong>{hit.name}</strong> {hit.rank}
+                        {hit.is_me && !reason && <span className={styles.tag}>나 · 누르면 참석</span>}
                         {reason && <span className={styles.tag}>{reason}</span>}
                       </span>
                       <span className={styles.attendeeMeta}>

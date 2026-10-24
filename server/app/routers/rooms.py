@@ -133,7 +133,8 @@ class ReservationIn(BaseModel):
     end_date: dt.date | None = None  # 끝나는 날짜. 없으면 시작 날짜 (여러 날에 걸친 예약은 다른 날)
     end_min: int = Field(ge=0, le=1440)
     title: str = Field(max_length=200)
-    attendees: list[str] = Field(default_factory=list, max_length=50)  # 사번
+    attendees: list[str] = Field(default_factory=list, max_length=200)  # 참석자 사번 (예약한 사람 빼고)
+    organizer_attends: bool = True  # 예약한 사람도 회의에 들어가나 (비서가 잡아 주기만 하면 False)
     repeat: Literal["NONE", "WEEKLY", "WEEKDAYS"] = "NONE"
     repeat_until: dt.date | None = None  # 반복할 때 마지막 날 (그날까지 포함)
     skip_conflicts: bool = False  # 반복 예약에서 이미 차 있는 날은 빼고 나머지만 예약
@@ -166,6 +167,8 @@ def _check_request(
     started_at: dt.datetime | None = None,
 ) -> tuple[dict[str, Any], list[int]]:
     """만들기·고치기 공통 확인: 시간 규칙, 회의실, 참석자. (회의실, 참석자 직원 id들)을 돌려준다.
+
+    참석자에는 예약한 사람이 참석할 때만 예약한 사람이 들어간다. 아무도 없으면 NO_ATTENDEES.
 
     started_at: 고치는 예약의 원래 시작 시각. 이미 시작한 회의는 시작 시각을 그대로 두면 지난 시간이어도 된다.
     """
@@ -200,7 +203,12 @@ def _check_request(
     unknown = set(emp_nos) - {a["emp_no"] for a in attendees}
     if unknown:
         raise _error(422, "UNKNOWN_ATTENDEE", emp_nos=sorted(unknown))
-    return room, [a["id"] for a in attendees if a["id"] != user["employee_id"]]
+    ids = [a["id"] for a in attendees if a["id"] != user["employee_id"]]
+    if body.organizer_attends:
+        ids.insert(0, user["employee_id"])
+    if not ids:
+        raise _error(422, "NO_ATTENDEES")
+    return room, ids
 
 
 @router.post("/reservations", status_code=201)
@@ -299,7 +307,8 @@ def create_reservation(body: ReservationIn, user: CurrentUser) -> dict[str, Any]
                         """,
                         (ids, attendee_ids),
                     )
-                if body.notify and attendee_ids:
+                invitees = [i for i in attendee_ids if i != user["employee_id"]]  # 나에게는 알리지 않는다
+                if body.notify and invitees:
                     # 메신저 연동 전이라 화면 알림으로 쌓아 둔다 (첫 회차 기준)
                     conn.execute(
                         """
@@ -309,7 +318,7 @@ def create_reservation(body: ReservationIn, user: CurrentUser) -> dict[str, Any]
                                                   'starts_at', %s::timestamptz, 'occurrences', %s::int)
                         FROM unnest(%s::bigint[]) AS e
                         """,
-                        (ids[0], title, spans[0][0], len(ids), attendee_ids),
+                        (ids[0], title, spans[0][0], len(ids), invitees),
                     )
         except psycopg.errors.ExclusionViolation:
             # 검사한 뒤 저장하기 전에 누가 먼저 예약했다
@@ -393,7 +402,8 @@ def update_reservation(reservation_id: int, body: ReservationIn, user: CurrentUs
                         """,
                         (reservation_id, attendee_ids),
                     )
-                if body.notify and attendee_ids:
+                invitees = [i for i in attendee_ids if i != user["employee_id"]]
+                if body.notify and invitees:
                     conn.execute(
                         """
                         INSERT INTO notifications (recipient_id, channel, type, payload)
@@ -402,7 +412,7 @@ def update_reservation(reservation_id: int, body: ReservationIn, user: CurrentUs
                                                   'starts_at', %s::timestamptz)
                         FROM unnest(%s::bigint[]) AS e
                         """,
-                        (reservation_id, title, starts_at, attendee_ids),
+                        (reservation_id, title, starts_at, invitees),
                     )
         except psycopg.errors.ExclusionViolation:
             raise _error(409, "TIME_TAKEN", dates=[]) from None
@@ -472,6 +482,8 @@ def my_reservations(
             SELECT r.id, r.title, r.starts_at, r.ends_at, r.status, r.series_id, r.cancelled_at,
                    m.name AS room, f.id AS floor_id, f.name AS floor,
                    r.organizer_id = %(me)s AS is_organizer, e.name AS organizer, d.name AS organizer_department,
+                   EXISTS (SELECT 1 FROM reservation_attendees ra
+                           WHERE ra.reservation_id = r.id AND ra.employee_id = %(me)s) AS attending,
                    (SELECT count(*) FROM reservation_attendees ra WHERE ra.reservation_id = r.id)::int AS attendees
             FROM reservations r
             JOIN meeting_rooms m ON m.id = r.room_id
@@ -520,6 +532,7 @@ def reservation_detail(reservation_id: int, user: CurrentUser) -> dict[str, Any]
         attendees = conn.execute(
             """
             SELECT e.emp_no, e.name, e.rank_name AS rank, d.name AS department, e.id = %(me)s AS is_me,
+                   e.id = %(organizer)s AS is_organizer,
                    z.color_key, CASE WHEN p.expires_at IS NULL OR p.expires_at > now() THEN p.status END AS presence
             FROM reservation_attendees ra
             JOIN employees e ON e.id = ra.employee_id
@@ -532,9 +545,9 @@ def reservation_detail(reservation_id: int, user: CurrentUser) -> dict[str, Any]
             LEFT JOIN zones z ON z.id = cur.zone_id
             LEFT JOIN presence_status p ON p.employee_id = e.id
             WHERE ra.reservation_id = %(id)s
-            ORDER BY d.name, e.name
+            ORDER BY e.id = %(organizer)s DESC, d.name, e.name
             """,
-            {"id": reservation_id, "me": user["employee_id"]},
+            {"id": reservation_id, "me": user["employee_id"], "organizer": row["organizer_id"]},
         ).fetchall()
 
     is_organizer = row["organizer_id"] == user["employee_id"]
@@ -563,6 +576,8 @@ def reservation_detail(reservation_id: int, user: CurrentUser) -> dict[str, Any]
             "department": row["department"],
             "extension": row["extension"],
             "email": row["email"],
+            # 예약한 사람이 회의에도 들어가나 (예약만 해 줄 수도 있다)
+            "attends": any(a["is_organizer"] for a in attendees),
         },
         "attendees": attendees,
         "series": (
@@ -622,8 +637,15 @@ def cancel_reservation(
                 SELECT DISTINCT ra.employee_id, 'IN_APP', 'RESERVATION_CANCELLED',
                        jsonb_build_object('reservation_id', %s::bigint, 'title', %s::text,
                                           'starts_at', %s::timestamptz, 'occurrences', %s::int)
-                FROM reservation_attendees ra WHERE ra.reservation_id = ANY(%s)
+                FROM reservation_attendees ra WHERE ra.reservation_id = ANY(%s) AND ra.employee_id <> %s
                 """,
-                (reservation_id, row["title"], row["starts_at"], len(cancelled), [c["id"] for c in cancelled]),
+                (
+                    reservation_id,
+                    row["title"],
+                    row["starts_at"],
+                    len(cancelled),
+                    [c["id"] for c in cancelled],
+                    user["employee_id"],
+                ),
             )
     return {"cancelled": len(cancelled)}

@@ -448,7 +448,9 @@ FROM (VALUES
     ('회의실 601',       '20170008', '장애 대응 상황실', 0, time '09:00', time '18:00', true),
     ('회의실 501',       '20190005', '정산 시스템 점검', 0, time '16:00', time '17:00', false),
     ('접견실 101',       '20120002', '협력사 방문 미팅', 0, time '11:00', time '12:00', false),
-    ('임원 회의실 1001', '20090001', '이사회 준비',      1, time '14:00', time '16:00', false)
+    ('임원 회의실 1001', '20090001', '이사회 준비',      1, time '14:00', time '16:00', false),
+    -- 비서실 윤하은이 예약만 해 주고 본인은 들어가지 않는 회의
+    ('임원 회의실 1001', '20100009', '경영회의',         1, time '10:00', time '11:00', false)
 ) AS v(room, organizer, title, day, starts, ends, checked_in)
 JOIN meeting_rooms m ON m.name = v.room
 JOIN employees e ON e.emp_no = v.organizer;
@@ -464,13 +466,22 @@ SELECT r.id, e.id
 FROM reservations r
 JOIN employees e ON e.emp_no IN ('20190005', '20200007')
 WHERE r.title = '분기 결산 보고';
+INSERT INTO reservation_attendees (reservation_id, employee_id)
+SELECT r.id, e.id
+FROM reservations r
+JOIN employees e ON e.emp_no IN ('20090001', '20120002', '20130003')
+WHERE r.title = '경영회의';
+-- 예약한 사람도 참석한다 (경영회의는 비서가 예약만 했다)
+INSERT INTO reservation_attendees (reservation_id, employee_id)
+SELECT id, organizer_id FROM reservations WHERE title <> '경영회의'
+ON CONFLICT DO NOTHING;
 
 INSERT INTO notifications (recipient_id, channel, type, payload, status, created_at)
 SELECT a.employee_id, 'IN_APP', 'RESERVATION_INVITE',
        jsonb_build_object('reservation_id', r.id, 'title', r.title, 'starts_at', r.starts_at),
        'PENDING', pg_temp.kst(0, '09:00')
 FROM reservations r
-JOIN reservation_attendees a ON a.reservation_id = r.id
+JOIN reservation_attendees a ON a.reservation_id = r.id AND a.employee_id <> r.organizer_id
 WHERE r.title = '재무팀 주간회의' AND r.starts_at = pg_temp.kst(0, '15:00');
 
 -- ⑦ AI 도우미 ----------------------------------------------------------------

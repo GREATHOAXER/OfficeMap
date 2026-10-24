@@ -15,7 +15,7 @@ type Role = "all" | "organizer" | "attendee";
 
 const ROLES: { value: Role; label: string }[] = [
   { value: "all", label: "전체" },
-  { value: "organizer", label: "내가 만든" },
+  { value: "organizer", label: "내가 예약한" },
   { value: "attendee", label: "초대받은" },
 ];
 
@@ -41,9 +41,10 @@ export default function ReservationsView({ upcoming, past, today }: Props) {
   // 요약 숫자에는 취소된 회의를 넣지 않는다 (목록에는 "취소됨"으로 며칠 남겨 둔다)
   const confirmed = upcoming.filter((r) => r.status === "CONFIRMED");
   const stats = [
-    { label: "오늘 남은 회의", value: confirmed.filter((r) => kstDate(r.starts_at) === today).length },
-    { label: "7일 안에", value: confirmed.filter((r) => kstDate(r.starts_at) < weekEnd).length },
-    { label: "내가 만든", value: confirmed.filter((r) => r.is_organizer).length },
+    // 회의 수는 내가 실제로 들어가는 회의만 (예약만 해 준 회의는 빼고)
+    { label: "오늘 남은 회의", value: confirmed.filter((r) => r.attending && kstDate(r.starts_at) === today).length },
+    { label: "7일 안에", value: confirmed.filter((r) => r.attending && kstDate(r.starts_at) < weekEnd).length },
+    { label: "내가 예약한", value: confirmed.filter((r) => r.is_organizer).length },
   ];
 
   const list = (tab === "upcoming" ? upcoming : past).filter(
@@ -155,7 +156,7 @@ export default function ReservationsView({ upcoming, past, today }: Props) {
                           <strong>{r.title}</strong>
                           <span className={styles.tags}>
                             <span className={styles.tag} data-tone={r.is_organizer ? "dark" : undefined}>
-                              {r.is_organizer ? "주최" : "참석"}
+                              {r.is_organizer ? (r.attending ? "예약·참석" : "예약만") : "참석"}
                             </span>
                             {days && <span className={styles.tag}>{days}일</span>}
                             {r.series_id && <span className={styles.tag}>반복</span>}
@@ -167,9 +168,10 @@ export default function ReservationsView({ upcoming, past, today }: Props) {
                           </span>
                         </span>
                         <span className={styles.meta}>
-                          {r.floor} {r.room} · {r.attendees + 1}명 (주최자 포함)
-                          {!r.is_organizer && ` · ${r.organizer_department} ${r.organizer}`}
-                          {r.status === "CANCELLED" && r.cancelled_at && " · 주최자가 취소했어요"}
+                          {r.floor} {r.room} · {r.attendees}명 참석
+                          {!r.is_organizer && ` · 예약 ${r.organizer_department} ${r.organizer}`}
+                          {r.is_organizer && !r.attending && " · 나는 예약만 (회의에는 안 들어감)"}
+                          {r.status === "CANCELLED" && r.cancelled_at && " · 예약한 사람이 취소했어요"}
                         </span>
                       </span>
                       <span className={styles.more} aria-hidden="true">

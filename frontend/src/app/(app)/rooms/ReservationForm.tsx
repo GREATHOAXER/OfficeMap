@@ -8,10 +8,10 @@ import { addDays, daysBetween, formatDuration, formatShortDay, minToHHMM } from 
 import { rangeText } from "@/lib/rooms";
 import AttendeePicker from "./AttendeePicker";
 import {
-  allAttendees,
   defaultRepeatUntil,
   type Draft,
   freeRoomsFor,
+  headcount,
   isFree,
   isPast,
   latestEnd,
@@ -85,8 +85,8 @@ export default function ReservationForm(props: Props) {
   const freeStarts = starts.filter((s) => !s.note).length;
   const dayClosed = day.past || (day.now_min !== null && day.now_min >= close - slot);
   const when = whenOf(day, draft);
-  const invited = allAttendees(draft).length;
-  const overCapacity = room && invited + 1 > room.capacity;
+  const people = headcount(draft); // 실제로 회의에 들어가는 사람 (나도 참석하면 나까지)
+  const overCapacity = room && people > room.capacity;
   const taken = room !== null && !timeIsFree(day, room, draft);
   const alternatives = taken ? freeRoomsFor(day, draft).slice(0, 4) : [];
   const occurrences = occurrenceCount(day.date, draft.repeat, draft.repeatUntil);
@@ -406,14 +406,15 @@ export default function ReservationForm(props: Props) {
 
           <div className={styles.field}>
             <span>
-              참석자 {invited > 0 && `${invited}명`}
-              {overCapacity && <span className={styles.warn}> · 나를 포함해 {room.capacity}인실 정원을 넘어요</span>}
+              참석자 {people}명
+              {!draft.meAttends && <span className={styles.muted}> · 나는 예약만</span>}
+              {overCapacity && <span className={styles.warn}> · {room.capacity}인실 정원을 넘어요</span>}
             </span>
             <AttendeePicker
               people={draft.attendees}
-              teams={draft.teams}
               onPeopleChange={(attendees) => set({ attendees })}
-              onTeamsChange={(teams) => set({ teams })}
+              meAttends={draft.meAttends}
+              onMeAttendsChange={(meAttends) => set({ meAttends })}
               when={when}
             />
           </div>

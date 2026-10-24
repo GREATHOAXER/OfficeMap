@@ -81,9 +81,9 @@ scripts/
 | `GET /api/rooms/day?date=2026-10-23&site_id=1` | 한 사업장 회의실들의 하루 예약 현황. 날짜·사업장을 빼면 오늘, 내 자리가 있는 사업장 |
 | `POST /api/reservations` | 예약 만들기 (아래) |
 | `PUT /api/reservations/{id}` | 예약 고치기: 회의실·일시·제목·참석자 (만든 사람만, 끝나기 전에만, 반복은 그 회차만). 본문은 만들기와 같고 `repeat`는 `NONE` |
-| `GET /api/reservations/mine?scope=upcoming` | 내가 만들었거나 참석하는 예약. `upcoming`: 아직 안 끝난 것 (최근 7일 안에 취소된 것도 `CANCELLED`로 남김), `past`: 최근 30일 지난·취소된 것 |
+| `GET /api/reservations/mine?scope=upcoming` | 내가 예약했거나 참석하는 예약 (`is_organizer`, `attending`: 내가 실제로 들어가는지). `upcoming`: 아직 안 끝난 것 (최근 7일 안에 취소된 것도 `CANCELLED`로 남김), `past`: 최근 30일 지난·취소된 것 |
 | `GET /api/rooms/{id}/conflicts?start_date&start_min&end_date&end_min&exclude` | 그 기간에 이 회의실에 이미 잡힌 예약 (여러 날 예약을 고를 때 미리 확인). `exclude`: 고치는 예약 |
-| `GET /api/reservations/{id}` | 예약 자세히: 회의실, 일시, 만든 사람(내선), 참석자(재실 상태), 반복 규칙(남은 회차 `left`), 취소 시각, 내가 취소·수정할 수 있는지 |
+| `GET /api/reservations/{id}` | 예약 자세히: 회의실, 일시, 예약한 사람(내선, 회의 참석 여부 `attends`), 참석자(재실 상태, 예약한 사람이면 `is_organizer`), 반복 규칙(남은 회차 `left`), 취소 시각, 내가 취소·수정할 수 있는지 |
 | `DELETE /api/reservations/{id}?scope=one\|following` | 예약 취소 (만든 사람만, 끝나기 전에만). 반복 예약은 그 회차만(`one`) 또는 그 뒤 회차 모두(`following`). `{"cancelled": n}` |
 
 - 시간은 모두 서울 기준 그날 0시부터 분(`start_min`, `end_min`)입니다. 13:30 → 810.
@@ -93,6 +93,9 @@ scripts/
 - `POST /api/reservations` 본문:
   `{"room_id", "date", "start_min", "end_date", "end_min", "title", "attendees": [사번], "repeat": "NONE"|"WEEKLY"|"WEEKDAYS", "repeat_until", "notify"}`
   - `end_date`가 없으면 시작 날짜와 같은 날에 끝납니다. 여러 날 예약은 반복할 수 없습니다(`REPEAT_SINGLE_DAY`).
+  - `attendees`는 실제로 회의에 들어가는 사람(예약한 사람 빼고), `organizer_attends`(기본 `true`)는 예약한 사람도
+    들어가는지. 비서가 임원 회의를 잡아 주는 것처럼 예약만 하면 `false`. 참석자는 `reservation_attendees`에만 있고
+    (예약한 사람도 참석하면 거기에 들어감), "그 시간에 다른 회의" 확인도 참석자 기준입니다. 아무도 없으면 422 `NO_ATTENDEES`.
   - 승인 절차는 없습니다. 임원 회의실·대강당도 바로 확정(`CONFIRMED`)됩니다.
   - 반복 예약은 회차마다 한 행씩 만듭니다(`reservation_series`가 규칙). 석 달(92일), 60회까지.
     한 회차라도 겹치면 아무것도 만들지 않고 겹치는 날짜를 돌려줍니다. `"skip_conflicts": true`면 겹치는 날만 빼고

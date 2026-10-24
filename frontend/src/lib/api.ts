@@ -261,10 +261,11 @@ export type MyReservation = {
   room: string;
   floor_id: number;
   floor: string;
-  is_organizer: boolean;
+  is_organizer: boolean; // 내가 예약했다
+  attending: boolean; // 내가 회의에 들어간다 (예약만 해 줬으면 false)
   organizer: string;
   organizer_department: string;
-  attendees: number;
+  attendees: number; // 실제로 들어가는 사람 수 (예약한 사람이 참석하면 포함)
 };
 
 export type ReservationDetail = {
@@ -292,13 +293,16 @@ export type ReservationDetail = {
     department: string;
     extension: string | null;
     email: string | null;
+    attends: boolean; // 예약한 사람도 회의에 들어가나
   };
+  /** 실제로 회의에 들어가는 사람 (예약한 사람이 참석하면 맨 앞) */
   attendees: {
     emp_no: string;
     name: string;
     rank: string | null;
     department: string;
     is_me: boolean;
+    is_organizer: boolean;
     color_key: string | null;
     presence: PresenceStatus | null;
   }[];

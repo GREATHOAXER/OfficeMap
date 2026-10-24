@@ -96,9 +96,9 @@ def find_employees(conn: Connection, where: str, order: str, params: dict[str, A
             WHERE %(check)s
               AND r.status = 'CONFIRMED'
               AND tstzrange(r.starts_at, r.ends_at) && (SELECT span FROM win)
-              AND (r.organizer_id = e.id
-                   OR EXISTS (SELECT 1 FROM reservation_attendees ra
-                              WHERE ra.reservation_id = r.id AND ra.employee_id = e.id))
+              -- 실제로 들어가는 회의만 (예약만 해 준 회의는 그 사람 일정이 아니다)
+              AND EXISTS (SELECT 1 FROM reservation_attendees ra
+                          WHERE ra.reservation_id = r.id AND ra.employee_id = e.id)
             ORDER BY r.starts_at LIMIT 1
         ) busy ON true
         LEFT JOIN LATERAL (
