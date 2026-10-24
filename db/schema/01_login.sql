@@ -56,6 +56,7 @@ CREATE TABLE user_sessions (
     id             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     token_hash     char(64)    NOT NULL UNIQUE,          -- 쿠키 토큰의 SHA-256. 원문은 저장하지 않음
     employee_id    bigint      NOT NULL REFERENCES employees(id),
+    kind           varchar(10) NOT NULL DEFAULT 'USER' CHECK (kind IN ('USER', 'ADMIN')),  -- 직원 화면 / 관리자 페이지
     created_at     timestamptz NOT NULL DEFAULT now(),
     last_active_at timestamptz NOT NULL DEFAULT now(),   -- 현재 시각과 30분 넘게 차이 나면 만료
     expires_at     timestamptz NOT NULL,                 -- 계속 사용 중이어도 넘을 수 없는 시각 (예: 12시간 뒤)
@@ -70,8 +71,9 @@ CREATE TABLE login_history (
     id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     emp_no_input varchar(20) NOT NULL,                   -- 입력한 사번 그대로 (없는 사번도 기록)
     employee_id  bigint REFERENCES employees(id),        -- 없는 사번이면 NULL
+    kind         varchar(10) NOT NULL DEFAULT 'USER' CHECK (kind IN ('USER', 'ADMIN')),  -- 어느 로그인 화면인지
     result       varchar(20) NOT NULL
-                 CHECK (result IN ('SUCCESS', 'WRONG_PASSWORD', 'LOCKED', 'NO_ACCOUNT', 'NOT_ACTIVE')),
+                 CHECK (result IN ('SUCCESS', 'WRONG_PASSWORD', 'LOCKED', 'NO_ACCOUNT', 'NOT_ACTIVE', 'NO_PERMISSION')),
     ip_address   inet,
     user_agent   varchar(255),
     created_at   timestamptz NOT NULL DEFAULT now()

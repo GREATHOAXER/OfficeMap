@@ -145,6 +145,7 @@ WHERE e.emp_no = '20120002';
 INSERT INTO app_settings (key, value, description) VALUES
     ('login.max_failed_count',     '5',                                 '로그인 실패 허용 횟수'),
     ('session.idle_minutes',       '30',                                '미사용 자동 로그아웃'),
+    ('admin.session.idle_minutes', '15',                                '관리자 페이지 미사용 자동 로그아웃'),
     ('room.slot_minutes',          '30',                                '예약표 칸 단위'),
     ('room.max_minutes',           '10080',                             '1회 최대 예약 시간 (7일, 여러 날 예약 가능)'),
     ('room.checkin_grace_minutes', '15',                                '체크인 없으면 자동 반납까지'),
@@ -308,6 +309,18 @@ INSERT INTO admin_grants (employee_id, role, zone_id, apply_mode, granted_by, gr
 VALUES ((SELECT id FROM employees WHERE emp_no = '20150004'), 'ZONE_ADMIN',
         (SELECT z.id FROM zones z JOIN floors f ON f.id = z.floor_id WHERE f.name = '7F' AND z.code = 'B'),
         'NEEDS_APPROVAL', (SELECT id FROM employees WHERE emp_no = '20130003'), '2026-09-03 10:00+09');
+
+-- 관리자 페이지 계정: 권한을 받은 4명. 비밀번호는 직원 로그인과 다르게 officemap-admin
+INSERT INTO admin_accounts (employee_id, password_hash, password_changed_at, created_by)
+SELECT g.employee_id,
+       '$2b$12$oqrqjAGZROKv0F//QSpNveyZFOBQz7sjAMJuSOMuSvHliUhwjqeC2',  -- officemap-admin
+       g.granted_at, g.granted_by
+FROM admin_grants g
+WHERE g.revoked_at IS NULL;
+
+-- 권한을 받은 사람은 직원 화면 왼쪽 메뉴에도 "관리자 페이지" 링크가 보인다
+UPDATE user_accounts SET role = 'ADMIN'
+WHERE employee_id IN (SELECT employee_id FROM admin_grants WHERE revoked_at IS NULL);
 
 -- ④ 좌석 배정 ----------------------------------------------------------------
 

@@ -25,6 +25,7 @@ def load_session(conn: Connection, token: str, *, touch: bool = True) -> dict[st
         JOIN departments d ON d.id = e.department_id
         JOIN user_accounts a ON a.employee_id = e.id
         WHERE s.token_hash = %s
+          AND s.kind = 'USER'  -- 관리자 페이지 세션으로는 직원 화면에 못 들어온다 (반대도 마찬가지)
           AND s.revoked_at IS NULL
           AND s.expires_at > now()
           AND s.last_active_at > now() - make_interval(mins => %s)

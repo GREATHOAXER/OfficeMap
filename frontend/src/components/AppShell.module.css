@@ -187,6 +187,22 @@
   color: var(--muted);
 }
 
+/* 관리자 페이지 표시 (사업장 선택 자리) */
+.mode {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 4px 4px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--link);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  align-self: stretch;
+}
+
 .menu {
   list-style: none;
   margin: 0;
@@ -349,6 +365,17 @@
   border-bottom: 1px solid var(--divider);
 }
 
+.popoverScopes {
+  margin: 0;
+  padding: 6px 8px 8px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--divider);
+}
+
 .popoverItem {
   display: flex;
   align-items: center;
@@ -404,6 +431,7 @@
 
 .shell[data-collapsed="true"] .logo,
 .shell[data-collapsed="true"] .site,
+.shell[data-collapsed="true"] .mode,
 .shell[data-collapsed="true"] .groupTitle,
 .shell[data-collapsed="true"] .label,
 .shell[data-collapsed="true"] .badge,
@@ -449,6 +477,7 @@
 
   .shell[data-collapsed="auto"] .logo,
   .shell[data-collapsed="auto"] .site,
+  .shell[data-collapsed="auto"] .mode,
   .shell[data-collapsed="auto"] .groupTitle,
   .shell[data-collapsed="auto"] .label,
   .shell[data-collapsed="auto"] .badge,

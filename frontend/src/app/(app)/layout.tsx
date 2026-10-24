@@ -24,7 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const defaultSiteId = sites.find((s) => s.floors.some((f) => f.id === myFloorId))?.id ?? sites[0]?.id ?? null;
 
   return (
-    <AppShell user={user} sites={sites} defaultSiteId={defaultSiteId} initialCollapsed={collapsed}>
+    <AppShell variant="app" user={user} sites={sites} defaultSiteId={defaultSiteId} initialCollapsed={collapsed}>
       {children}
     </AppShell>
   );

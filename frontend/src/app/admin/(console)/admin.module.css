@@ -1,0 +1,457 @@
+/* 관리자 첫 화면 (디자인 ④ 사업장·층·권한). 직원 화면과 같은 머리글·버튼·카드 모양을 쓴다 */
+
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--divider);
+  background: var(--surface);
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.title {
+  margin: 0;
+  font-size: 18px;
+  white-space: nowrap;
+}
+
+.roleBadge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--link);
+  color: #fff;
+  white-space: nowrap;
+}
+
+.headerActions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.main {
+  width: 100%;
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 20px 24px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* 버튼: 디자인의 .btn / .btn.pri */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--bg);
+}
+
+.btn.pri {
+  background: var(--ink);
+  color: #fff;
+}
+
+.btn.pri:hover:not(:disabled) {
+  background: #000;
+}
+
+/* 아직 연결하지 않은 작업 (준비 중) */
+.btn:disabled {
+  border-style: dashed;
+  border-color: var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.myScope {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  font-size: 13px;
+}
+
+.myScope > span:not(.muted) {
+  padding: 3px 10px;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.myScope > .muted {
+  font-size: 12px;
+}
+
+/* 요약 숫자 (내 예약의 요약 카드와 같은 모양) */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stats li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.stats strong {
+  font-size: 20px;
+  color: var(--ink);
+}
+
+/* 사업장 카드 */
+.site {
+  background: var(--surface);
+  border: 1px solid var(--divider);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.siteHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--divider);
+  font-size: 12px;
+}
+
+.siteHead h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.siteMeta {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  color: var(--muted);
+}
+
+.siteMeta strong {
+  color: var(--ink);
+}
+
+.siteMeta .mono {
+  font-size: 15px;
+}
+
+.chip {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* position: 안 보이는 칸 이름(visually-hidden, absolute)도 이 상자 안에서 잘리게 한다.
+   없으면 표 오른쪽 끝의 숨긴 글자 때문에 좁은 화면에서 페이지가 가로로 넘친다 */
+.tableScroll {
+  position: relative;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tableScroll .table {
+  min-width: 1040px;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--divider);
+  font-size: 13px;
+  vertical-align: middle;
+}
+
+.table thead th {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+  background: var(--surface-sunken);
+  white-space: nowrap;
+}
+
+.table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.table tbody th {
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.table tbody th strong {
+  font-size: 15px;
+}
+
+/* 내가 관리하는 층 / 내 행: 왼쪽에 굵은 선 */
+.table tr[data-scope] > :first-child,
+.table tr[data-me] > :first-child {
+  box-shadow: inset 3px 0 0 var(--ink);
+}
+
+.colFloor {
+  width: 120px;
+}
+
+.colSeats {
+  width: 96px;
+}
+
+.colAdmin {
+  width: 170px;
+}
+
+.colPlan {
+  width: 104px;
+}
+
+.colUpdated {
+  width: 120px;
+}
+
+.colActions {
+  width: 210px;
+}
+
+.scopeTag,
+.mineTag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--ink);
+  color: #fff;
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+/* 팀 구역 칩: 도면과 같은 색 (globals.css 의 data-color) */
+.team {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  margin: 2px 4px 2px 0;
+  border: 1px solid var(--tc);
+  border-radius: 4px;
+  background: var(--tf);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* 도면 상태: 채운 점 = 작성 완료, 빈 원 = 수정 중·초안, 점선 = 미작성 */
+.plan {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.plan i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+
+.plan[data-plan="EDITING"] i,
+.plan[data-plan="DRAFT"] i {
+  background: transparent;
+  border: 2px solid var(--ink);
+}
+
+.plan[data-plan="NONE"] {
+  color: var(--muted);
+}
+
+.plan[data-plan="NONE"] i {
+  background: transparent;
+  border: 1.5px dashed var(--t0);
+}
+
+.updated {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.table td.actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.actions > * + * {
+  margin-left: 6px;
+}
+
+/* 권한 체계 */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  font-size: 12px;
+}
+
+.sectionHead h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.sectionAction {
+  margin-left: auto;
+}
+
+.levels {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+.levels li {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.levels li[data-mine] {
+  border: 1.5px solid var(--ink);
+}
+
+.levels li > .mono {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.levels strong {
+  font-size: 15px;
+}
+
+.tableCard {
+  position: relative;
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+}
+
+.tableCard .table {
+  min-width: 960px;
+}
+
+.foot {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.errorBox {
+  margin: 24px;
+  padding: 16px;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.errorBox p {
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .header {
+    padding: 12px 16px;
+  }
+
+  .main {
+    padding: 16px 12px 24px;
+    gap: 20px;
+  }
+
+  .siteHead {
+    padding: 14px 16px;
+  }
+
+  .siteMeta {
+    margin-left: 0;
+    width: 100%;
+  }
+}

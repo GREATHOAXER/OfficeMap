@@ -18,6 +18,7 @@ export type LoginInfo = {
   notices: { id: number; title: string }[];
   support_contact: string | null;
   idle_minutes: number;
+  admin_idle_minutes: number;
   max_failed_count: number;
 };
 
@@ -25,6 +26,7 @@ const DEFAULT_LOGIN_INFO: LoginInfo = {
   notices: [],
   support_contact: null,
   idle_minutes: 30,
+  admin_idle_minutes: 15,
   max_failed_count: 5,
 };
 
@@ -309,4 +311,94 @@ export type MyTeam = { team: { id: number; name: string }; fetched_at: string; m
 
 export function fetchMyTeam(cookieHeader: string | null) {
   return apiGet<MyTeam>("/api/presence/team", cookieHeader);
+}
+
+// 관리자 페이지 --------------------------------------------------------------------
+// 직원 화면과 쿠키·비밀번호가 따로다. 서버 컴포넌트는 요청 쿠키를 그대로 넘기면 된다
+
+/** 관리자 세션 쿠키 이름 (server/app/config.py 의 admin_cookie_name 과 같아야 한다) */
+export const ADMIN_COOKIE = "officemap_admin_session";
+
+export type AdminRole = "COMPANY_ADMIN" | "SITE_ADMIN" | "FLOOR_ADMIN" | "ZONE_ADMIN";
+
+export type AdminGrant = {
+  id: number;
+  role: AdminRole;
+  level: number; // 1 전사 ~ 4 구역
+  label: string;
+  scope: string; // "전체 사업장", "서울 본사 · 7F" …
+  site_id: number | null;
+  floor_id: number | null;
+  zone_id: number | null;
+  apply_mode: "IMMEDIATE" | "NEEDS_APPROVAL"; // 구역 관리자의 변경 반영
+  granted_at: string;
+  granted_by: string | null;
+  employee: { emp_no: string; name: string; rank: string | null; department: string };
+};
+
+export type Admin = {
+  emp_no: string;
+  name: string;
+  rank: string | null;
+  department: string;
+  role: AdminRole; // 가장 넓은 권한
+  role_label: string;
+  grants: AdminGrant[];
+  idle_minutes: number;
+};
+
+/** 도면 상태: 작성 완료 / 작성 완료 + 수정 중 / 초안만 / 없음 */
+export type PlanState = "PUBLISHED" | "EDITING" | "DRAFT" | "NONE";
+
+export type AdminFloor = {
+  id: number;
+  name: string;
+  description: string | null;
+  seats: number;
+  occupied: number;
+  rooms: number;
+  zones: { code: string; name: string; color_key: string; department: string | null }[];
+  floor_admins: string[];
+  zone_admins: number;
+  plan: PlanState;
+  plan_updated_at: string | null;
+  plan_updated_by: string | null;
+  in_scope: "ALL" | "ZONE" | null; // 내가 관리하는 층인가 (ZONE = 층 안 일부 구역만)
+};
+
+export type AdminSite = {
+  id: number;
+  kind: string; // 본사 / 센터
+  name: string;
+  address: string | null;
+  admins: string[];
+  floors: AdminFloor[];
+};
+
+export type AdminOverview = {
+  summary: {
+    employees: number;
+    seats: number;
+    occupied: number;
+    rooms: number;
+    reservations_today: number;
+    pending_requests: number;
+    admins: number;
+  };
+  sites: AdminSite[];
+  grants: AdminGrant[];
+};
+
+/** 관리자 쿠키로 로그인한 관리자. 아니면 null. 레이아웃과 페이지가 한 번만 부르도록 cache */
+export const fetchAdmin = cache(async (cookieHeader: string | null): Promise<Admin | null> => {
+  if (!cookieHeader) return null;
+  try {
+    return (await apiGet<{ admin: Admin }>("/api/admin/auth/me", cookieHeader)).admin;
+  } catch {
+    return null;
+  }
+});
+
+export function fetchAdminOverview(cookieHeader: string | null) {
+  return apiGet<AdminOverview>("/api/admin/overview", cookieHeader);
 }

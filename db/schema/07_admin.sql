@@ -1,6 +1,7 @@
 -- 07_admin.sql
--- 관리자 권한: 4단계(전사 → 사업장 → 층 → 구역)
--- MVP에서는 user_accounts.role(ADMIN/USER)만 쓰고, 2단계에서 이 테이블로 넘어온다
+-- 관리자 권한: 4단계(전사 → 사업장 → 층 → 구역)와 관리자 페이지 로그인 계정
+-- 무엇을 관리하는지는 admin_grants, 관리자 페이지에 어떻게 들어오는지는 admin_accounts
+-- (user_accounts.role = 'ADMIN'은 직원 화면 왼쪽 메뉴에 "관리자 페이지" 링크를 보여 줄지만 정한다)
 
 CREATE TABLE admin_grants (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -29,3 +30,17 @@ CREATE INDEX admin_grants_employee_idx ON admin_grants (employee_id) WHERE revok
 CREATE UNIQUE INDEX admin_grants_active_unique_idx ON admin_grants
     (employee_id, role, coalesce(site_id, 0), coalesce(floor_id, 0), coalesce(zone_id, 0))
     WHERE revoked_at IS NULL;
+
+-- 관리자 페이지 로그인 계정. 직원 로그인 비밀번호와 다른 관리자 전용 비밀번호를 쓴다
+-- 로그인하려면 이 계정과 함께 살아 있는 admin_grants가 하나 이상 있어야 한다
+CREATE TABLE admin_accounts (
+    employee_id         bigint       PRIMARY KEY REFERENCES employees(id),
+    password_hash       varchar(255) NOT NULL,
+    failed_login_count  smallint     NOT NULL DEFAULT 0,  -- 직원 로그인과 따로 센다. 5회면 잠금
+    locked_at           timestamptz,
+    password_changed_at timestamptz,
+    last_login_at       timestamptz,
+    created_by          bigint REFERENCES employees(id),   -- 계정을 만든 상위 관리자
+    created_at          timestamptz  NOT NULL DEFAULT now(),
+    updated_at          timestamptz  NOT NULL DEFAULT now()
+);

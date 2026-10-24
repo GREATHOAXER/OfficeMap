@@ -37,13 +37,14 @@ def login_info() -> dict[str, Any]:
             "notices": notices,
             "support_contact": get_setting(conn, "support.contact", None),
             "idle_minutes": get_setting(conn, "session.idle_minutes", 30),
+            "admin_idle_minutes": get_setting(conn, "admin.session.idle_minutes", 15),
             "max_failed_count": get_setting(conn, "login.max_failed_count", 5),
         }
 
 
 @router.post("/login")
 def login(body: LoginRequest, request: Request) -> JSONResponse:
-    ip, user_agent = _client_info(request)
+    ip, user_agent = client_info(request)
     with pool.connection() as conn:
         max_failed = int(get_setting(conn, "login.max_failed_count", 5))
         # 동시에 여러 번 틀려도 실패 횟수가 정확히 올라가도록 계정 행을 잠근다
@@ -73,13 +74,13 @@ def login(body: LoginRequest, request: Request) -> JSONResponse:
         if user is None:
             verify_password(body.password, None)  # 없는 사번도 같은 시간이 걸리게
             record("NO_ACCOUNT")
-            return _error(401, "INVALID_CREDENTIALS")
+            return error_response(401, "INVALID_CREDENTIALS")
         if user["employment_status"] != "ACTIVE":
             record("NOT_ACTIVE")
-            return _error(403, "NOT_ACTIVE")
+            return error_response(403, "NOT_ACTIVE")
         if user["locked_at"] is not None:
             record("LOCKED")
-            return _error(423, "LOCKED", max_failed_count=max_failed)
+            return error_response(423, "LOCKED", max_failed_count=max_failed)
         if not verify_password(body.password, user["password_hash"]):
             failed = user["failed_login_count"] + 1
             locked = failed >= max_failed
@@ -93,8 +94,8 @@ def login(body: LoginRequest, request: Request) -> JSONResponse:
             )
             record("WRONG_PASSWORD")
             if locked:
-                return _error(423, "LOCKED", max_failed_count=max_failed)
-            return _error(401, "INVALID_CREDENTIALS", failed_count=failed, max_failed_count=max_failed)
+                return error_response(423, "LOCKED", max_failed_count=max_failed)
+            return error_response(401, "INVALID_CREDENTIALS", failed_count=failed, max_failed_count=max_failed)
 
         token, token_hash = new_session_token()
         conn.execute(
@@ -135,7 +136,7 @@ def me(request: Request) -> JSONResponse:
         with pool.connection() as conn:
             user = load_session(conn, token)
     if user is None:
-        response = _error(401, "NOT_LOGGED_IN")
+        response = error_response(401, "NOT_LOGGED_IN")
         response.delete_cookie(settings.session_cookie_name, path="/")
         return response
     return JSONResponse({"user": _user_out(user)})
@@ -166,11 +167,11 @@ def _user_out(user: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _error(status: int, code: str, **extra: Any) -> JSONResponse:
+def error_response(status: int, code: str, **extra: Any) -> JSONResponse:
     return JSONResponse(status_code=status, content={"code": code, **extra})
 
 
-def _client_info(request: Request) -> tuple[str | None, str | None]:
+def client_info(request: Request) -> tuple[str | None, str | None]:
     ip = request.client.host if request.client else None
     # 같은 PC의 Next.js 서버를 거쳐 오면 브라우저 주소는 X-Forwarded-For에 들어 있다
     forwarded = request.headers.get("x-forwarded-for")

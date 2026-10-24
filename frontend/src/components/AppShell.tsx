@@ -3,9 +3,9 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { type CSSProperties, type KeyboardEvent, type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { type CSSProperties, Fragment, type KeyboardEvent, type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import type { SiteSummary, User } from "@/lib/api";
+import type { Admin, SiteSummary, User } from "@/lib/api";
 import { SIDEBAR_COOKIE } from "@/lib/sidebar";
 import {
   CalendarIcon,
@@ -25,6 +25,7 @@ import LogoutButton from "./LogoutButton";
 import styles from "./AppShell.module.css";
 
 type MenuItem = { label: string; icon: ReactNode; href?: string; badge?: string };
+type MenuGroup = { title?: string; items: MenuItem[] };
 
 // href가 없는 메뉴는 아직 화면이 없어서 버튼만 둔다
 const MAIN_MENU: MenuItem[] = [
@@ -35,10 +36,24 @@ const MAIN_MENU: MenuItem[] = [
   { label: "내 재실 상태", icon: <PersonIcon />, href: "/presence" },
 ];
 
+// 직원 화면의 "관리" 메뉴. 관리자 페이지는 관리자 비밀번호로 따로 로그인한다
 const ADMIN_MENU: MenuItem[] = [
   { label: "좌석 배치 편집", icon: <MoveIcon /> },
   { label: "도면 편집", icon: <PenIcon /> },
-  { label: "사업장·권한", icon: <ShieldIcon /> },
+  { label: "사업장·권한", icon: <ShieldIcon />, href: "/admin" },
+];
+
+// 관리자 페이지의 왼쪽 메뉴
+const CONSOLE_MENU: MenuGroup[] = [
+  {
+    title: "관리",
+    items: [
+      { label: "사업장·권한", icon: <ShieldIcon />, href: "/admin" },
+      { label: "좌석 배치 편집", icon: <MoveIcon /> },
+      { label: "도면 편집", icon: <PenIcon /> },
+    ],
+  },
+  { title: "직원 화면", items: [{ label: "자리·재실 현황", icon: <GridIcon />, href: "/" }] },
 ];
 
 // AppShell.module.css 의 좁은 화면 기준과 같아야 한다
@@ -50,16 +65,30 @@ function subscribeNarrow(onChange: () => void) {
   return () => query.removeEventListener("change", onChange);
 }
 
-type Props = {
-  user: User;
-  sites: SiteSummary[];
-  defaultSiteId: number | null;
+/** 왼쪽 메뉴 아래 사용자 칸 */
+type Account = {
+  name: string;
+  rank: string | null;
+  emp_no: string;
+  department: string;
+  roleLabel: string;
+  scopes?: string[]; // 관리자: 맡은 범위
+  logout: { endpoint: string; redirectTo: string };
+};
+
+type Common = {
   /** 쿠키에 저장된 선택. null이면 아직 고른 적 없음: 넓은 화면은 펼치고 좁은 화면은 접는다 */
   initialCollapsed: boolean | null;
   children: ReactNode;
 };
 
-export default function AppShell({ user, sites, defaultSiteId, initialCollapsed, children }: Props) {
+// 직원 화면과 관리자 페이지가 같은 틀을 쓴다. 관리자 페이지는 메뉴·사용자 칸만 다르고 사업장 선택이 없다
+type Props =
+  | (Common & { variant: "app"; user: User; sites: SiteSummary[]; defaultSiteId: number | null })
+  | (Common & { variant: "admin"; admin: Admin });
+
+export default function AppShell(props: Props) {
+  const { initialCollapsed, children } = props;
   const [choice, setChoice] = useState<boolean | null>(initialCollapsed);
   const narrow = useSyncExternalStore(
     subscribeNarrow,
@@ -74,11 +103,29 @@ export default function AppShell({ user, sites, defaultSiteId, initialCollapsed,
     document.cookie = `${SIDEBAR_COOKIE}=${next ? "collapsed" : "expanded"}; path=/; max-age=31536000; samesite=lax`;
   }
 
+  const groups: MenuGroup[] =
+    props.variant === "admin"
+      ? CONSOLE_MENU
+      : [{ items: MAIN_MENU }, ...(props.user.role === "ADMIN" ? [{ title: "관리", items: ADMIN_MENU }] : [])];
+  const account: Account =
+    props.variant === "admin"
+      ? {
+          ...props.admin,
+          roleLabel: props.admin.role_label,
+          scopes: props.admin.grants.map((g) => `${g.label} · ${g.scope}`),
+          logout: { endpoint: "/api/admin/auth/logout", redirectTo: "/admin/login" },
+        }
+      : {
+          ...props.user,
+          roleLabel: props.user.role === "ADMIN" ? "관리자" : "직원",
+          logout: { endpoint: "/api/auth/logout", redirectTo: "/login" },
+        };
+
   // 화면에 보이는 모양은 CSS가 data-collapsed로 정한다. "auto"는 화면 폭에 따라 CSS가 고른다
   // (서버는 화면 폭을 몰라서, 이렇게 해야 첫 화면부터 맞는 모양으로 그려진다)
   return (
     <div className={styles.shell} data-collapsed={choice === null ? "auto" : String(choice)}>
-      <nav id="main-menu" aria-label="주 메뉴" className={styles.sidebar}>
+      <nav id="main-menu" aria-label={props.variant === "admin" ? "관리자 메뉴" : "주 메뉴"} className={styles.sidebar}>
         <div className={styles.top}>
           <button
             type="button"
@@ -95,20 +142,25 @@ export default function AppShell({ user, sites, defaultSiteId, initialCollapsed,
           <Image src="/kftc-symbol.png" alt="금융결제원" width={32} height={32} className={styles.symbol} />
         </div>
 
-        {sites.length > 0 && <SiteSelect sites={sites} defaultSiteId={defaultSiteId} />}
-
-        <MenuList items={MAIN_MENU} collapsed={collapsed} />
-
-        {user.role === "ADMIN" && (
-          <>
-            <p className={styles.groupTitle}>관리</p>
-            <hr className={styles.divider} />
-            <MenuList items={ADMIN_MENU} collapsed={collapsed} />
-          </>
+        {props.variant === "admin" ? (
+          <p className={styles.mode}>
+            <ShieldIcon size={16} />
+            관리자 페이지
+          </p>
+        ) : (
+          props.sites.length > 0 && <SiteSelect sites={props.sites} defaultSiteId={props.defaultSiteId} />
         )}
 
+        {groups.map((group, i) => (
+          <Fragment key={group.title ?? i}>
+            {group.title && <p className={styles.groupTitle}>{group.title}</p>}
+            {i > 0 && <hr className={styles.divider} />}
+            <MenuList items={group.items} collapsed={collapsed} />
+          </Fragment>
+        ))}
+
         <div className={styles.spacer} />
-        <UserCard user={user} />
+        <UserCard account={account} />
       </nav>
       <div className={styles.content}>{children}</div>
     </div>
@@ -285,7 +337,7 @@ function MenuEntry({ item, active, collapsed }: { item: MenuItem; active: boolea
   );
 }
 
-function UserCard({ user }: { user: User }) {
+function UserCard({ account: user }: { account: Account }) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<CSSProperties>({});
   const boxRef = useRef<HTMLDivElement>(null);
@@ -325,7 +377,6 @@ function UserCard({ user }: { user: User }) {
     setOpen(true);
   }
 
-  const role = user.role === "ADMIN" ? "관리자" : "직원";
   const initials = user.name.slice(-2);
   const menuButtonProps = {
     type: "button" as const,
@@ -349,7 +400,7 @@ function UserCard({ user }: { user: User }) {
       <span className={styles.userText}>
         <strong>{user.name}</strong>
         <span>
-          {user.department} · {role}
+          {user.department} · {user.roleLabel}
         </span>
       </span>
       {/* 펼쳤을 때는 ⋯ 버튼, 접었을 때는 아바타가 계정 메뉴 버튼. 안 보이는 쪽은 CSS가 숨긴다 */}
@@ -365,7 +416,14 @@ function UserCard({ user }: { user: User }) {
             <p className={styles.popoverWho}>
               {user.name} {user.rank} · <span className="mono">{user.emp_no}</span>
             </p>
-            <LogoutButton className={styles.popoverItem} />
+            {user.scopes && (
+              <ul className={styles.popoverScopes} aria-label="맡은 관리 범위">
+                {user.scopes.map((scope) => (
+                  <li key={scope}>{scope}</li>
+                ))}
+              </ul>
+            )}
+            <LogoutButton className={styles.popoverItem} {...user.logout} />
           </div>,
           document.body,
         )}
