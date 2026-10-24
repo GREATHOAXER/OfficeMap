@@ -11,7 +11,7 @@ import styles from "./office.module.css";
 const SEAT_W = 0.0533;
 const SEAT_H = 0.0556;
 
-const HOVER_DELAY_MS = 1000; // 자리에 마우스를 이만큼 올려 두면 정보 카드가 뜬다
+const HOVER_DELAY_MS = 700; // 자리에 마우스를 이만큼(0.7초) 올려 두면 정보 카드가 뜬다
 const DRAG_THRESHOLD_PX = 5; // 이보다 적게 움직이면 끌기가 아니라 누르기
 
 export const ZOOM_MIN = 0.5;

@@ -549,6 +549,30 @@
   flex: 1;
 }
 
+/* 여러 날 예약: 그 기간에 이미 잡힌 예약 */
+.conflictBox {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  font-size: 12px;
+}
+
+.conflictBox[data-ok="true"] {
+  border-color: var(--divider);
+  background: var(--surface-sunken);
+  color: var(--muted);
+}
+
+.conflictBox ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
 .submit {
   height: 40px;
   padding: 0 20px;

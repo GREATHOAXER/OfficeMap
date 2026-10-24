@@ -8,11 +8,13 @@ import Dialog from "@/components/Dialog";
 import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from "@/components/icons";
 import ReservationDetail from "@/components/ReservationDetail";
 import type { RoomDay, RoomsDay } from "@/lib/api";
-import { addDays, formatShortDay, minToHHMM } from "@/lib/dates";
+import { addDays, formatShortDay, kstDate, minToHHMM } from "@/lib/dates";
+import { hhmm } from "@/lib/rooms";
 import { ROOMS_FLOOR_COOKIE } from "@/lib/roomsFloor";
 import ReservationForm, { equipmentText, isReady } from "./ReservationForm";
 import { allAttendees, canStartAt, defaultRange, type Draft, EMPTY_DRAFT, latestEnd } from "./slots";
 import Timeline from "./Timeline";
+import { useConflicts } from "./useConflicts";
 import styles from "./rooms.module.css";
 
 const CAPACITY_FILTERS = [
@@ -48,6 +50,9 @@ export default function RoomsView({ day, initialFloor }: Props) {
     setDraft((d) => keepIfStillFree(d, day));
   }
 
+  const { conflicts, checking } = useConflicts(day, draft);
+  const canSubmit = isReady(draft) && conflicts.length === 0 && !checking && !submitting;
+
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(null), 6000);
@@ -82,8 +87,14 @@ export default function RoomsView({ day, initialFloor }: Props) {
   function pickSlot(room: RoomDay, start: number) {
     const slot = day.policy.slot;
     setDraft((d) => {
-      // 같은 회의실에서 고른 시작보다 뒤 칸을 누르면 끝 시각을 거기까지 옮긴다
-      if (d.roomId === room.id && d.start !== null && start > d.start && start + slot <= latestEnd(day, room, d.start)) {
+      // 같은 회의실에서 고른 시작보다 뒤 칸을 누르면 끝 시각을 거기까지 옮긴다 (하루 안의 예약일 때)
+      if (
+        d.roomId === room.id &&
+        d.start !== null &&
+        d.endDays === 0 &&
+        start > d.start &&
+        start + slot <= latestEnd(day, room, d.start)
+      ) {
         return { ...d, end: start + slot };
       }
       return { ...d, roomId: room.id, ...defaultRange(day, room, start) };
@@ -92,7 +103,7 @@ export default function RoomsView({ day, initialFloor }: Props) {
   }
 
   async function submit() {
-    if (draft.roomId === null || draft.start === null || draft.end === null) return;
+    if (draft.roomId === null || draft.start === null || draft.end === null || !canSubmit) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -103,6 +114,7 @@ export default function RoomsView({ day, initialFloor }: Props) {
           room_id: draft.roomId,
           date: day.date,
           start_min: draft.start,
+          end_date: addDays(day.date, draft.endDays),
           end_min: draft.end,
           title: draft.title,
           attendees: allAttendees(draft).map((a) => a.emp_no),
@@ -121,7 +133,11 @@ export default function RoomsView({ day, initialFloor }: Props) {
         if (res.status === 409) router.refresh(); // 먼저 잡힌 예약을 현황표에 보여 준다
         return;
       }
-      const time = `${formatShortDay(day.date)} ${minToHHMM(draft.start)}–${minToHHMM(draft.end)}`;
+      const start = `${formatShortDay(day.date)} ${minToHHMM(draft.start)}`;
+      const time =
+        draft.endDays > 0
+          ? `${start} – ${formatShortDay(addDays(day.date, draft.endDays))} ${minToHHMM(draft.end)}`
+          : `${start}–${minToHHMM(draft.end)}`;
       setNotice(`${data.room} ${time}${data.count > 1 ? ` (${data.count}회)` : ""} 예약했어요.`);
       setDraft(EMPTY_DRAFT);
       setFormOpen(false);
@@ -252,7 +268,7 @@ export default function RoomsView({ day, initialFloor }: Props) {
             <button type="button" className={styles.textButton} onClick={() => setFormOpen(false)}>
               닫기
             </button>
-            <button type="submit" form={formId} className={styles.submit} disabled={!isReady(draft) || submitting}>
+            <button type="submit" form={formId} className={styles.submit} disabled={!canSubmit}>
               {submitting ? "예약하는 중…" : "예약 확정"}
             </button>
           </>
@@ -266,6 +282,8 @@ export default function RoomsView({ day, initialFloor }: Props) {
           onDateChange={goToDate}
           onSubmit={submit}
           error={error}
+          conflicts={conflicts}
+          checking={checking}
         />
       </Dialog>
 
@@ -287,11 +305,14 @@ function keepIfStillFree(d: Draft, day: RoomsDay): Draft {
   const room = day.rooms.find((r) => r.id === d.roomId);
   if (!room) return d.roomId === null ? d : { ...d, roomId: null, start: null, end: null };
   if (d.start === null || d.end === null) return d;
-  const ok = canStartAt(day, room, d.start) && d.end <= latestEnd(day, room, d.start);
+  // 여러 날 예약은 시작 칸만 다시 본다 (나머지 기간은 겹침 확인이 따로 한다)
+  const ok = canStartAt(day, room, d.start) && (d.endDays > 0 || d.end <= latestEnd(day, room, d.start));
   return ok ? d : { ...d, start: null, end: null };
 }
 
 type ErrorDetail = { code?: string; dates?: string[]; max?: number; max_days?: number } | undefined;
+
+const maxText = (minutes: number) => (minutes >= 1440 ? `${Math.floor(minutes / 1440)}일` : `${minutes / 60}시간`);
 
 function errorText(detail: ErrorDetail): string {
   switch (detail?.code) {
@@ -300,9 +321,11 @@ function errorText(detail: ErrorDetail): string {
         ? `그 시간에 이미 예약이 있어요: ${detail.dates.map(formatShortDay).join(", ")}`
         : "방금 다른 사람이 먼저 예약했어요. 현황표를 다시 확인하세요.";
     case "TOO_LONG":
-      return `한 번에 최대 ${(detail.max ?? 120) / 60}시간까지 예약할 수 있어요.`;
+      return `한 번에 최대 ${maxText(detail.max ?? 10080)}까지 예약할 수 있어요.`;
     case "INVALID_TIME":
-      return "예약할 수 없는 시간이에요. 운영 시간 안에서 30분 단위로 골라 주세요.";
+      return "예약할 수 없는 시간이에요. 시작·끝 시각은 운영 시간 안에서 30분 단위로, 끝은 시작보다 뒤로 골라 주세요.";
+    case "REPEAT_SINGLE_DAY":
+      return "여러 날에 걸친 예약은 반복할 수 없어요.";
     case "IN_PAST":
       return "지난 시간은 예약할 수 없어요.";
     case "TITLE_REQUIRED":
@@ -336,7 +359,12 @@ function NowCards({ day, rooms }: { day: RoomsDay; rooms: RoomDay[] }) {
           let text: string;
           if (current) {
             state = "busy";
-            text = `사용 중 · ~${minToHHMM(current.end_min)}`;
+            // 여러 날 예약이면 끝나는 날짜까지
+            const until =
+              current.end_min >= 1440
+                ? `${formatShortDay(kstDate(current.ends_at))} ${hhmm.format(new Date(current.ends_at))}`
+                : minToHHMM(current.end_min);
+            text = `사용 중 · ~${until}`;
           } else if (now >= day.policy.open_end || now < day.policy.open_start) {
             state = "closed";
             text = "운영 시간 아님";

@@ -15,6 +15,7 @@ from starlette.concurrency import run_in_threadpool
 from app.config import settings
 from app.db import get_setting, pool
 from app.realtime import CLOSE, RESYNC, hub
+from app.routers.employees import NO_WINDOW, find_employees
 from app.session import CurrentUser, load_session
 
 router = APIRouter(prefix="/api/presence", tags=["presence"])
@@ -42,6 +43,27 @@ def my_presence(user: CurrentUser) -> dict[str, Any]:
             (user["employee_id"],),
         ).fetchone()
     return {"presence": row}
+
+
+@router.get("/team")
+def my_team(user: CurrentUser) -> dict[str, Any]:
+    """우리 팀(내 부서) 사람들의 재실 상태와 자리. 내 재실 상태 화면에서 쓴다."""
+    with pool.connection() as conn:
+        team = conn.execute(
+            """
+            SELECT d.id, d.name, now() AS fetched_at
+            FROM employees e JOIN departments d ON d.id = e.department_id
+            WHERE e.id = %s
+            """,
+            (user["employee_id"],),
+        ).fetchone()
+        members = find_employees(
+            conn,
+            "e.department_id = %(team)s",
+            "e.id = %(me)s DESC, e.name, e.emp_no",
+            {"me": user["employee_id"], "team": team["id"], "limit": 500, **NO_WINDOW},
+        )
+    return {"team": {"id": team["id"], "name": team["name"]}, "fetched_at": team["fetched_at"], "members": members}
 
 
 @router.put("/me")

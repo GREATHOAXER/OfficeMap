@@ -14,6 +14,7 @@ type Props = {
   label: string;
   today: string;
   min?: string;
+  max?: string;
   /** 달력을 버튼 왼쪽(start)에 맞출지 오른쪽(end)에 맞출지 */
   align?: "start" | "end";
   className?: string;
@@ -31,7 +32,8 @@ const YEARS_PER_PAGE = 12;
  * 키보드: 화살표(하루·한 주), PageUp/PageDown(한 달), Home/End(주의 처음·끝), Enter(고르기), Esc(닫기)
  */
 export default function DatePicker(props: Props) {
-  const { value, onChange, label, today, min, align = "start", className, disabled, describedBy, children } = props;
+  const { value, onChange, label, today, min, max, align = "start", className, disabled, describedBy, children } = props;
+  const outOfRange = (iso: string) => (!!min && iso < min) || (!!max && iso > max);
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<View>("day");
   const [cursor, setCursor] = useState(value); // 달력에서 포커스가 있는 날 (보이는 달·연도도 여기서 정한다)
@@ -52,7 +54,7 @@ export default function DatePicker(props: Props) {
   }
 
   function choose(iso: string) {
-    if (min && iso < min) return;
+    if (outOfRange(iso)) return;
     onChange(iso);
     close();
   }
@@ -150,7 +152,7 @@ export default function DatePicker(props: Props) {
                     data-today={iso === today || undefined}
                     data-selected={iso === value || undefined}
                     tabIndex={iso === cursor ? 0 : -1}
-                    disabled={!!min && iso < min}
+                    disabled={outOfRange(iso)}
                     aria-label={`${formatDay(iso)}${iso === today ? ", 오늘" : ""}`}
                     aria-current={iso === today ? "date" : undefined}
                     onClick={() => choose(iso)}
@@ -256,7 +258,7 @@ export default function DatePicker(props: Props) {
           {header}
           {body}
           <div className={styles.footer}>
-            <button type="button" className={styles.todayButton} disabled={!!min && today < min} onClick={() => choose(today)}>
+            <button type="button" className={styles.todayButton} disabled={outOfRange(today)} onClick={() => choose(today)}>
               오늘
             </button>
           </div>

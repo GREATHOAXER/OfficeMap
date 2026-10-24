@@ -4,9 +4,23 @@ import { type FormEvent, useId } from "react";
 import DatePicker from "@/components/DatePicker";
 import { SparkleIcon } from "@/components/icons";
 import type { RoomsDay } from "@/lib/api";
-import { addDays, formatShortDay, minToHHMM } from "@/lib/dates";
+import { addDays, daysBetween, formatDuration, formatShortDay, minToHHMM } from "@/lib/dates";
+import { rangeText } from "@/lib/rooms";
 import AttendeePicker from "./AttendeePicker";
-import { allAttendees, canStartAt, type Draft, isPast, latestEnd, type Repeat, slotStarts } from "./slots";
+import {
+  allAttendees,
+  canStartAt,
+  type Draft,
+  endOptions,
+  isPast,
+  latestEnd,
+  lengthOf,
+  maxEndDays,
+  type Repeat,
+  slotStarts,
+  whenOf,
+} from "./slots";
+import type { Conflict } from "./useConflicts";
 import styles from "./rooms.module.css";
 
 const REPEATS: { value: Repeat; label: string }[] = [
@@ -26,6 +40,9 @@ type Props = {
   onDateChange: (iso: string) => void;
   onSubmit: () => void;
   error: string | null;
+  /** 여러 날 예약일 때 그 기간에 이미 잡힌 예약 (서버에 물어본 결과) */
+  conflicts: Conflict[];
+  checking: boolean;
 };
 
 /** 예약 폼이 다 채워졌나 (팝업 아래 "예약 확정" 버튼을 켜고 끈다) */
@@ -36,19 +53,18 @@ export const isReady = (draft: Draft) =>
  * 예약하기 폼 (팝업 안). 팝업이 넓으면 왼쪽에 회의실·시간·제목, 오른쪽에 AI 추천·참석자 두 단으로,
  * 좁으면 한 단으로 쌓인다. 입력값(draft)은 회의실 화면이 들고 있어서 팝업을 닫았다 열어도 남는다.
  */
-export default function ReservationForm({ formId, day, draft, onDraftChange, onDateChange, onSubmit, error }: Props) {
+export default function ReservationForm(props: Props) {
+  const { formId, day, draft, onDraftChange, onDateChange, onSubmit, error, conflicts, checking } = props;
   const ids = useId();
   const room = day.rooms.find((r) => r.id === draft.roomId) ?? null;
   const set = (patch: Partial<Draft>) => onDraftChange((d) => ({ ...d, ...patch }));
-  const slot = day.policy.slot;
+  const { slot, open_start: open, open_end: close } = day.policy;
+  const endDate = addDays(day.date, draft.endDays);
+  const multiDay = draft.endDays > 0;
 
   const starts = room ? slotStarts(day).filter((s) => canStartAt(day, room, s) || s === draft.start) : [];
-  const maxEnd = room && draft.start !== null ? latestEnd(day, room, draft.start) : null;
-  const ends: number[] = [];
-  if (draft.start !== null && maxEnd !== null) for (let e = draft.start + slot; e <= maxEnd; e += slot) ends.push(e);
-
-  const when =
-    draft.start !== null && draft.end !== null ? { date: day.date, start_min: draft.start, end_min: draft.end } : null;
+  const ends = room ? endOptions(day, room, draft) : [];
+  const when = whenOf(day, draft);
   const invited = allAttendees(draft).length;
   const overCapacity = room && invited + 1 > room.capacity;
 
@@ -57,7 +73,10 @@ export default function ReservationForm({ formId, day, draft, onDraftChange, onD
     onDraftChange((d) => {
       if (!next || d.start === null) return { ...d, roomId };
       // 새 회의실에서도 같은 시간이 비어 있으면 그대로 두고, 아니면 시간을 다시 고르게 한다
-      const keep = canStartAt(day, next, d.start) && d.end !== null && d.end <= latestEnd(day, next, d.start);
+      // 여러 날 예약은 시작 칸만 보고, 나머지 기간은 서버에 물어서 겹침을 보여 준다
+      const keep =
+        canStartAt(day, next, d.start) &&
+        (d.endDays > 0 || (d.end !== null && d.end <= latestEnd(day, next, d.start)));
       return keep ? { ...d, roomId } : { ...d, roomId, start: null, end: null };
     });
   }
@@ -65,8 +84,23 @@ export default function ReservationForm({ formId, day, draft, onDraftChange, onD
   function changeStart(start: number) {
     onDraftChange((d) => {
       if (!room) return d;
+      if (d.endDays > 0) return { ...d, start }; // 여러 날 예약은 끝 시각을 그대로 둔다
       const length = d.start !== null && d.end !== null ? d.end - d.start : 60;
       return { ...d, start, end: Math.min(start + length, latestEnd(day, room, start)) };
+    });
+  }
+
+  /** 끝나는 날을 바꾼다. 여러 날 예약은 반복할 수 없어서 반복을 끈다 */
+  function changeEndDate(iso: string) {
+    const endDays = Math.max(0, daysBetween(day.date, iso));
+    onDraftChange((d) => {
+      const next: Draft = { ...d, endDays, ...(endDays > 0 ? { repeat: "NONE", repeatUntil: null } : {}) };
+      if (!room || d.start === null) return next;
+      const options = endOptions(day, room, next);
+      if (d.end !== null && options.includes(d.end)) return next;
+      // 지금 끝 시각을 그날 쓸 수 없으면: 같은 날이면 시작 1시간 뒤(또는 가장 늦은 칸), 다른 날이면 시작과 같은 시각
+      const fallback = endDays === 0 ? Math.min(d.start + 60, options.at(-1) ?? d.start + slot) : d.start;
+      return { ...next, end: options.includes(fallback) ? fallback : (options[0] ?? null) };
     });
   }
 
@@ -84,7 +118,8 @@ export default function ReservationForm({ formId, day, draft, onDraftChange, onD
               <>
                 <strong>{room.name}</strong>
                 <span className="mono">
-                  {formatShortDay(day.date)} {minToHHMM(draft.start)} – {minToHHMM(draft.end)} ({draft.end - draft.start}분)
+                  {formatShortDay(day.date)} {minToHHMM(draft.start)} – {multiDay && `${formatShortDay(endDate)} `}
+                  {minToHHMM(draft.end)} ({formatDuration(lengthOf(draft))})
                 </span>
                 <span className={styles.muted}>
                   {room.floor.name} · 최대 {room.capacity}인
@@ -137,10 +172,11 @@ export default function ReservationForm({ formId, day, draft, onDraftChange, onD
             <legend>종료</legend>
             <DatePicker
               label="종료 날짜"
-              value={day.date}
+              value={endDate}
               today={day.today}
-              onChange={onDateChange}
-              disabled
+              min={day.date}
+              max={addDays(day.date, maxEndDays(day))}
+              onChange={changeEndDate}
               describedBy={`${ids}-end-note`}
             />
             <label className={styles.timeField}>
@@ -159,13 +195,39 @@ export default function ReservationForm({ formId, day, draft, onDraftChange, onD
                     {minToHHMM(e)}
                   </option>
                 ))}
+                {draft.end !== null && !ends.includes(draft.end) && (
+                  <option value={draft.end} disabled>
+                    {minToHHMM(draft.end)}
+                  </option>
+                )}
               </select>
             </label>
           </fieldset>
           <p id={`${ids}-end-note`} className={styles.policy}>
-            회의는 하루 안에서 잡아요(종료일 = 시작일) · {slot}분 단위 · 1회 최대 {day.policy.max / 60}시간 ·{" "}
-            {minToHHMM(day.policy.open_start)}–{minToHHMM(day.policy.open_end)}
+            여러 날에 걸쳐 잡을 수 있어요 (최대 {maxEndDays(day)}일) · 시작·끝 시각은 {minToHHMM(open)}–{minToHHMM(close)} 사이
+            · {slot}분 단위
           </p>
+          {multiDay && room && draft.start !== null && draft.end !== null && (
+            <div className={styles.conflictBox} data-ok={!checking && conflicts.length === 0} role="status">
+              {checking ? (
+                "이 기간에 겹치는 예약을 확인하는 중…"
+              ) : conflicts.length === 0 ? (
+                `${formatShortDay(day.date)} ~ ${formatShortDay(endDate)} 동안 ${room.name}이 비어 있어요.`
+              ) : (
+                <>
+                  <strong>이 기간에 이미 잡힌 예약이 있어요 ({conflicts.length}건)</strong>
+                  <ul>
+                    {conflicts.map((c) => (
+                      <li key={c.id}>
+                        {c.title} · <span className="mono">{rangeText(c.starts_at, c.ends_at)}</span> · {c.department}{" "}
+                        {c.organizer}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
+          )}
 
           <label className={styles.field}>
             회의 제목
@@ -183,6 +245,8 @@ export default function ReservationForm({ formId, day, draft, onDraftChange, onD
               반복
               <select
                 value={draft.repeat}
+                disabled={multiDay}
+                aria-describedby={multiDay ? `${ids}-repeat-note` : undefined}
                 onChange={(event) => {
                   const repeat = event.target.value as Repeat;
                   set({ repeat, repeatUntil: repeat === "NONE" ? null : (draft.repeatUntil ?? addDays(day.date, 27)) });
@@ -209,6 +273,12 @@ export default function ReservationForm({ formId, day, draft, onDraftChange, onD
               </div>
             )}
           </div>
+
+          {multiDay && (
+            <p id={`${ids}-repeat-note`} className={styles.policy}>
+              여러 날에 걸친 예약은 반복할 수 없어요.
+            </p>
+          )}
 
           <label className={styles.check}>
             <input type="checkbox" checked={draft.notify} onChange={(event) => set({ notify: event.target.checked })} />

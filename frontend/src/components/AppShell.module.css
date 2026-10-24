@@ -327,12 +327,10 @@
   height: 36px;
 }
 
+/* 계정 메뉴: body에 띄우고 위치는 스크립트가 정한다 (접힌 메뉴에 가려지지 않게) */
 .popover {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 0;
-  right: 0;
-  z-index: 20;
+  position: fixed;
+  z-index: 60;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -415,13 +413,6 @@
   display: none;
 }
 
-.shell[data-collapsed="true"] .popover {
-  left: calc(100% + 8px);
-  right: auto;
-  bottom: 0;
-  width: 200px;
-}
-
 @media (max-width: 720px) {
   .shell[data-collapsed="auto"] {
     --sidebar-width: var(--sidebar-collapsed);
@@ -465,13 +456,6 @@
   .shell[data-collapsed="auto"] .userText,
   .shell[data-collapsed="auto"] .userButton {
     display: none;
-  }
-
-  .shell[data-collapsed="auto"] .popover {
-    left: calc(100% + 8px);
-    right: auto;
-    bottom: 0;
-    width: 200px;
   }
 
   /* 좁은 화면에서 직접 펼치면 본문 위에 겹쳐 띄우고, 본문은 접힌 폭만큼만 비켜 준다 */

@@ -146,7 +146,7 @@ INSERT INTO app_settings (key, value, description) VALUES
     ('login.max_failed_count',     '5',                                 '로그인 실패 허용 횟수'),
     ('session.idle_minutes',       '30',                                '미사용 자동 로그아웃'),
     ('room.slot_minutes',          '30',                                '예약표 칸 단위'),
-    ('room.max_minutes',           '120',                               '1회 최대 예약 시간'),
+    ('room.max_minutes',           '10080',                             '1회 최대 예약 시간 (7일, 여러 날 예약 가능)'),
     ('room.checkin_grace_minutes', '15',                                '체크인 없으면 자동 반납까지'),
     ('room.open_hours',            '{"start": "08:00", "end": "20:00"}', '예약 가능 시간'),
     ('support.contact',            '"정보보호팀 내선 0000"',              '로그인 화면 계정 문의'),
