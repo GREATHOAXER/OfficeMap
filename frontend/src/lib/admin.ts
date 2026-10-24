@@ -1,0 +1,60 @@
+import type { Admin, AdminGrant, AdminRole, PlanState } from "./api";
+
+// 관리자 권한 체계 (디자인 ④ 사업장·층·권한). 숫자가 작을수록 넓은 범위
+export const LEVELS: { level: number; role: AdminRole; name: string; scope: string; tasks: string }[] = [
+  { level: 1, role: "COMPANY_ADMIN", name: "전사 관리자", scope: "전체 사업장", tasks: "사업장·층 생성, 사업장 관리자 지정" },
+  {
+    level: 2,
+    role: "SITE_ADMIN",
+    name: "사업장 관리자",
+    scope: "사업장 한 곳",
+    tasks: "도면 편집, 회의실 등록, 층 관리자 지정",
+  },
+  {
+    level: 3,
+    role: "FLOOR_ADMIN",
+    name: "층 관리자",
+    scope: "한 개 층",
+    tasks: "팀 구역 지정·조정, 층 전체 배치, 구역 관리자 지정, 하위 요청 승인",
+  },
+  {
+    level: 4,
+    role: "ZONE_ADMIN",
+    name: "구역(팀) 관리자",
+    scope: "내 팀 구역",
+    tasks: "구역 안 좌석 배정·교환·해제. 반영 방식은 층마다 선택: 즉시 반영 / 층 관리자 승인 후",
+  },
+];
+
+/** 관리자 목록의 "가능 작업" */
+export const ROLE_TASKS: Record<AdminRole, string> = {
+  COMPANY_ADMIN: "전체 + 권한 부여",
+  SITE_ADMIN: "도면 · 회의실 · 배치",
+  FLOOR_ADMIN: "팀 구역 · 층 배치 · 요청 승인",
+  ZONE_ADMIN: "구역 안 배치",
+};
+
+export const PLAN_LABEL: Record<PlanState, string> = {
+  PUBLISHED: "작성 완료",
+  EDITING: "수정 중",
+  DRAFT: "초안",
+  NONE: "미작성",
+};
+
+/** 변경 반영: 구역 관리자만 층마다 고른다. 나머지는 바로 반영 */
+export const applyModeText = (g: AdminGrant) =>
+  g.role !== "ZONE_ADMIN" ? "즉시" : g.apply_mode === "NEEDS_APPROVAL" ? "층 관리자 승인 후" : "즉시";
+
+/** 이 사업장의 도면을 고칠 수 있나: 전사 관리자, 그 사업장 관리자 */
+export const canEditPlan = (admin: Admin, siteId: number) =>
+  admin.grants.some((g) => g.role === "COMPANY_ADMIN" || (g.role === "SITE_ADMIN" && g.site_id === siteId));
+
+/** 이 권한을 내가 고치거나 회수할 수 있나: 내 범위 안의 더 아래 단계 관리자 */
+export function canManage(admin: Admin, target: AdminGrant): boolean {
+  return admin.grants.some((g) => {
+    if (g.level >= target.level) return false;
+    if (g.role === "COMPANY_ADMIN") return true;
+    if (g.role === "SITE_ADMIN") return g.site_id === target.site_id;
+    return g.role === "FLOOR_ADMIN" && g.floor_id === target.floor_id;
+  });
+}

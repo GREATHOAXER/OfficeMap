@@ -1,6 +1,8 @@
 import Image from "next/image";
+import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { ShieldIcon } from "@/components/icons";
 import { fetchLoginInfo, fetchMe } from "@/lib/api";
 import FloorIllustration from "./FloorIllustration";
 import LoginForm from "./LoginForm";
@@ -69,6 +71,15 @@ export default async function LoginPage() {
               로그인 후 {info.idle_minutes}분간 사용하지 않으면 자동 로그아웃됩니다.
             </p>
           </aside>
+
+          <Link href="/admin/login" className={styles.adminLink}>
+            <ShieldIcon size={18} />
+            <span>
+              <strong>관리자 페이지</strong>
+              <span>관리자 권한이 있는 직원 · 관리자 비밀번호로 따로 로그인</span>
+            </span>
+            <span aria-hidden="true">→</span>
+          </Link>
         </div>
       </main>
     </div>

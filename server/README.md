@@ -23,7 +23,7 @@ scripts/
 
 | 요청 | 하는 일 |
 |---|---|
-| `GET /api/auth/login-info` | 로그인 화면의 공지, 문의처, 자동 로그아웃 시간, 실패 허용 횟수 |
+| `GET /api/auth/login-info` | 로그인 화면의 공지, 문의처, 자동 로그아웃 시간(직원·관리자), 실패 허용 횟수 |
 | `POST /api/auth/login` | 사번·비밀번호 로그인. 성공하면 HttpOnly 쿠키로 세션 발급 |
 | `GET /api/auth/me` | 쿠키로 로그인한 사람 확인. 30분 미사용, 퇴사·잠금이면 401 |
 | `POST /api/auth/logout` | 세션 종료, 쿠키 삭제 |
@@ -99,6 +99,27 @@ scripts/
 | 422 | `TITLE_REQUIRED`, `INVALID_REPEAT`, `REPEAT_TOO_LONG`, `UNKNOWN_ATTENDEE` | 입력 확인 |
 | 403 | `NOT_ORGANIZER` | 남의 예약 취소 |
 | 409 | `NOT_CANCELLABLE` | 이미 끝났거나 취소된 예약 |
+
+## 관리자 페이지 API (`/api/admin`, 관리자 로그인 필요)
+
+직원 로그인과 따로입니다. 비밀번호는 `admin_accounts`(직원 비밀번호와 다름), 쿠키는 `officemap_admin_session`
+(SameSite=Strict), 세션은 `user_sessions.kind = 'ADMIN'`으로 구분합니다. 직원 쿠키로는 관리자 API를,
+관리자 쿠키로는 직원 API를 쓸 수 없습니다.
+
+| 요청 | 하는 일 |
+|---|---|
+| `POST /api/admin/auth/login` | 사번·관리자 비밀번호 로그인. 관리자 계정과 살아 있는 권한(`admin_grants`)이 있어야 함 |
+| `GET /api/admin/auth/me` | 로그인한 관리자와 권한 목록(가장 넓은 권한이 `role`). 아니면 401 `NOT_ADMIN_LOGGED_IN` |
+| `POST /api/admin/auth/logout` | 관리자 세션만 끝냄 (직원 로그인은 그대로) |
+| `GET /api/admin/overview` | 관리자 첫 화면: 요약 숫자, 사업장별 층(입주 팀 구역·좌석·층 관리자·도면 상태·최종 수정), 관리자 목록 |
+
+- 로그인 실패 `code`는 직원 로그인과 같고(`INVALID_CREDENTIALS`, `LOCKED`, `NOT_ACTIVE`), 권한이 하나도 없으면
+  403 `NO_PERMISSION`. 관리자 계정이 없는 사번도 `INVALID_CREDENTIALS`(누가 관리자인지 알려 주지 않음).
+- 실패 횟수·잠금은 관리자 계정에 따로 셉니다. 시도는 `login_history`에 `kind = 'ADMIN'`으로 남깁니다.
+- `app_settings`의 `admin.session.idle_minutes`(기본 15분) 동안 쓰지 않으면 401. 최대 8시간.
+- 권한을 모두 회수하면 로그인해 있던 세션도 바로 401이 됩니다.
+- 권한 단계: `COMPANY_ADMIN` 전사 > `SITE_ADMIN` 사업장 > `FLOOR_ADMIN` 층 > `ZONE_ADMIN` 구역.
+  `overview`는 전체를 보여 주고, 층마다 `in_scope`(`ALL` 내 관리 / `ZONE` 층 안 내 구역만 / `null`)를 붙입니다.
 
 ## 내 재실 상태 API (로그인 필요)
 
