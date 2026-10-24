@@ -90,7 +90,7 @@ def floor_map(floor_id: int, user: CurrentUser) -> dict[str, Any]:
         # 지금 사용 중인 예약과, 오늘(서울 기준) 안에 시작하는 다음 예약
         rooms = conn.execute(
             """
-            SELECT m.id, m.name, m.capacity, m.equipment, m.requires_approval, m.shape,
+            SELECT m.id, m.name, m.capacity, m.equipment, m.shape,
                    cur.title AS current_title, cur.ends_at AS busy_until, nxt.starts_at AS next_start
             FROM meeting_rooms m
             LEFT JOIN LATERAL (
@@ -100,7 +100,7 @@ def floor_map(floor_id: int, user: CurrentUser) -> dict[str, Any]:
             ) cur ON true
             LEFT JOIN LATERAL (
                 SELECT min(r.starts_at) AS starts_at FROM reservations r
-                WHERE r.room_id = m.id AND r.status IN ('CONFIRMED', 'PENDING_APPROVAL')
+                WHERE r.room_id = m.id AND r.status = 'CONFIRMED'
                   AND r.starts_at > now()
                   AND r.starts_at < (date_trunc('day', now() AT TIME ZONE 'Asia/Seoul') + interval '1 day')
                                     AT TIME ZONE 'Asia/Seoul'
@@ -151,7 +151,6 @@ def _room_out(row: dict[str, Any]) -> dict[str, Any]:
         "name": row["name"],
         "capacity": row["capacity"],
         "equipment": row["equipment"],
-        "requires_approval": row["requires_approval"],
         "shape": row["shape"],
         "busy_until": row["busy_until"],
         "current_title": row["current_title"],

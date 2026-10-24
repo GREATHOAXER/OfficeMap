@@ -293,7 +293,6 @@ function RoomBox({ room, shape }: { room: Room; shape: Rect }) {
     <div className={styles.room} style={rectStyle(shape)} data-busy={!!room.busy_until}>
       <span>
         {room.name}
-        {room.requires_approval && <em className={styles.approval}>승인제</em>}
         <br />
         <span className={styles.roomStatus}>{roomStatusText(room)}</span>
       </span>

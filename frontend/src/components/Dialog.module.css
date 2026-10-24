@@ -1,0 +1,92 @@
+.dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  border: 1.5px solid var(--ink);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+/* 예약 폼: 화면이 넓을수록 넓게 (안의 폼은 폭에 따라 한 단 / 두 단) */
+.dialog[data-size="wide"] {
+  width: min(920px, calc(100vw - 32px));
+}
+
+.dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.dialog::backdrop {
+  background: rgba(28, 28, 28, 0.45);
+}
+
+.head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 12px 12px 20px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.head h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.close {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.close:hover {
+  background: var(--bg);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.foot {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--divider);
+  background: var(--surface-sunken);
+  border-radius: 0 0 12px 12px;
+}
+
+/* 휴대폰: 화면 아래에서 올라오는 시트 */
+@media (max-width: 720px) {
+  .dialog,
+  .dialog[data-size="wide"] {
+    width: 100%;
+    max-width: none;
+    max-height: 92dvh;
+    margin: auto 0 0;
+    border-radius: 14px 14px 0 0;
+  }
+
+  .foot {
+    border-radius: 0;
+  }
+}

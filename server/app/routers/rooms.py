@@ -15,7 +15,6 @@ router = APIRouter(prefix="/api", tags=["rooms"])
 
 # 한국은 서머타임이 없어 고정 +9시간으로 충분하다 (Windows는 시간대 DB가 없어 ZoneInfo를 쓰려면 패키지가 더 필요)
 KST = dt.timezone(dt.timedelta(hours=9), "KST")
-ACTIVE = ("PENDING_APPROVAL", "CONFIRMED")  # 자리를 차지하는 예약 상태
 MAX_REPEAT_DAYS = 92  # 반복 예약은 석 달까지
 MAX_OCCURRENCES = 60
 
@@ -69,7 +68,7 @@ def rooms_day(user: CurrentUser, date: dt.date | None = None, site_id: int | Non
 
         rooms = conn.execute(
             """
-            SELECT m.id, m.name, m.capacity, m.equipment, m.requires_approval, f.id AS floor_id, f.name AS floor_name
+            SELECT m.id, m.name, m.capacity, m.equipment, f.id AS floor_id, f.name AS floor_name
             FROM meeting_rooms m JOIN floors f ON f.id = m.floor_id AND f.is_active
             WHERE f.site_id = %s AND m.is_active
             ORDER BY f.sort_order, m.sort_order, m.id
@@ -90,7 +89,7 @@ def rooms_day(user: CurrentUser, date: dt.date | None = None, site_id: int | Non
             FROM reservations r
             JOIN employees e ON e.id = r.organizer_id
             JOIN departments d ON d.id = e.department_id
-            WHERE r.room_id = ANY(%(rooms)s) AND r.status = ANY(%(active)s)
+            WHERE r.room_id = ANY(%(rooms)s) AND r.status = 'CONFIRMED'
               AND r.starts_at < %(end)s AND r.ends_at > %(start)s
             ORDER BY r.starts_at
             """,
@@ -99,7 +98,6 @@ def rooms_day(user: CurrentUser, date: dt.date | None = None, site_id: int | Non
                 "end": day_start + dt.timedelta(days=1),
                 "me": user["employee_id"],
                 "rooms": [r["id"] for r in rooms],
-                "active": list(ACTIVE),
             },
         ).fetchall()
 
@@ -120,7 +118,6 @@ def rooms_day(user: CurrentUser, date: dt.date | None = None, site_id: int | Non
                 "name": r["name"],
                 "capacity": r["capacity"],
                 "equipment": r["equipment"],
-                "requires_approval": r["requires_approval"],
                 "floor": {"id": r["floor_id"], "name": r["floor_name"]},
                 "bookings": by_room[r["id"]],
             }
@@ -160,7 +157,7 @@ def _occurrences(body: ReservationIn) -> list[dt.date]:
 
 @router.post("/reservations", status_code=201)
 def create_reservation(body: ReservationIn, user: CurrentUser) -> dict[str, Any]:
-    """예약을 만든다. 승인제 회의실은 승인 대기(PENDING_APPROVAL)로 들어간다.
+    """예약을 만든다. 승인 절차 없이 바로 확정(CONFIRMED)된다.
 
     반복 예약은 회차마다 한 행씩 만들고, 한 회차라도 겹치면 아무것도 만들지 않고 겹치는 날짜를 알려 준다.
     """
@@ -189,7 +186,7 @@ def create_reservation(body: ReservationIn, user: CurrentUser) -> dict[str, Any]
             raise _error(422, "IN_PAST")
 
         room = conn.execute(
-            "SELECT id, name, requires_approval FROM meeting_rooms WHERE id = %s AND is_active", (body.room_id,)
+            "SELECT id, name FROM meeting_rooms WHERE id = %s AND is_active", (body.room_id,)
         ).fetchone()
         if room is None:
             raise _error(404, "ROOM_NOT_FOUND")
@@ -208,20 +205,18 @@ def create_reservation(body: ReservationIn, user: CurrentUser) -> dict[str, Any]
             """
             SELECT DISTINCT (r.starts_at AT TIME ZONE 'Asia/Seoul')::date AS day
             FROM reservations r, unnest(%(starts)s::timestamptz[], %(ends)s::timestamptz[]) AS w(s, e)
-            WHERE r.room_id = %(room)s AND r.status = ANY(%(active)s) AND r.starts_at < w.e AND r.ends_at > w.s
+            WHERE r.room_id = %(room)s AND r.status = 'CONFIRMED' AND r.starts_at < w.e AND r.ends_at > w.s
             ORDER BY 1
             """,
             {
                 "starts": [s for s, _ in spans],
                 "ends": [e for _, e in spans],
                 "room": room["id"],
-                "active": list(ACTIVE),
             },
         ).fetchall()
         if taken:
             raise _error(409, "TIME_TAKEN", dates=[t["day"].isoformat() for t in taken])
 
-        status = "PENDING_APPROVAL" if room["requires_approval"] else "CONFIRMED"
         try:
             with conn.transaction():
                 series_id = None
@@ -249,19 +244,10 @@ def create_reservation(body: ReservationIn, user: CurrentUser) -> dict[str, Any]
                         conn.execute(
                             """
                             INSERT INTO reservations (room_id, organizer_id, series_id, title, starts_at, ends_at,
-                                                      status, notify_attendees)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                                                      notify_attendees)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
                             """,
-                            (
-                                room["id"],
-                                user["employee_id"],
-                                series_id,
-                                title,
-                                starts_at,
-                                ends_at,
-                                status,
-                                body.notify,
-                            ),
+                            (room["id"], user["employee_id"], series_id, title, starts_at, ends_at, body.notify),
                         ).fetchone()["id"]
                     )
                 if attendee_ids:
@@ -290,34 +276,130 @@ def create_reservation(body: ReservationIn, user: CurrentUser) -> dict[str, Any]
 
     return {
         "count": len(ids),
-        "status": status,
         "room": room["name"],
         "first": {"id": ids[0], "starts_at": spans[0][0], "ends_at": spans[0][1]},
     }
 
 
 @router.get("/reservations/mine")
-def my_reservations(user: CurrentUser, limit: int = Query(default=20, ge=1, le=100)) -> dict[str, Any]:
-    """내가 만들었거나 참석하는, 아직 끝나지 않은 예약."""
+def my_reservations(
+    user: CurrentUser,
+    scope: Literal["upcoming", "past"] = "upcoming",
+    limit: int = Query(default=50, ge=1, le=200),
+) -> dict[str, Any]:
+    """내가 만들었거나 참석하는 예약.
+
+    upcoming: 아직 끝나지 않은 확정 예약, 가까운 순. past: 최근 30일 안에 끝났거나 취소된 예약, 최근 순.
+    """
+    where = (
+        "r.status = 'CONFIRMED' AND r.ends_at > now()"
+        if scope == "upcoming"
+        else "(r.ends_at <= now() OR r.status <> 'CONFIRMED') AND r.starts_at > now() - interval '30 days'"
+    )
+    order = "r.starts_at" if scope == "upcoming" else "r.starts_at DESC"
     with pool.connection() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT r.id, r.title, r.starts_at, r.ends_at, r.status, r.series_id,
-                   m.name AS room, f.name AS floor, r.organizer_id = %(me)s AS is_organizer,
+                   m.name AS room, f.id AS floor_id, f.name AS floor,
+                   r.organizer_id = %(me)s AS is_organizer, e.name AS organizer, d.name AS organizer_department,
                    (SELECT count(*) FROM reservation_attendees ra WHERE ra.reservation_id = r.id)::int AS attendees
             FROM reservations r
             JOIN meeting_rooms m ON m.id = r.room_id
             JOIN floors f ON f.id = m.floor_id
-            WHERE r.status = ANY(%(active)s) AND r.ends_at > now()
+            JOIN employees e ON e.id = r.organizer_id
+            JOIN departments d ON d.id = e.department_id
+            WHERE {where}
               AND (r.organizer_id = %(me)s OR EXISTS (
                   SELECT 1 FROM reservation_attendees ra
                   WHERE ra.reservation_id = r.id AND ra.employee_id = %(me)s))
-            ORDER BY r.starts_at
+            ORDER BY {order}
             LIMIT %(limit)s
             """,
-            {"me": user["employee_id"], "active": list(ACTIVE), "limit": limit},
+            {"me": user["employee_id"], "limit": limit},
         ).fetchall()
     return {"reservations": rows}
+
+
+@router.get("/reservations/{reservation_id}")
+def reservation_detail(reservation_id: int, user: CurrentUser) -> dict[str, Any]:
+    """예약 한 건의 자세한 내용: 회의실, 시간, 만든 사람, 참석자(재실 상태 포함), 반복 규칙."""
+    with pool.connection() as conn:
+        row = conn.execute(
+            """
+            SELECT r.id, r.title, r.starts_at, r.ends_at, r.status, r.created_at, r.checked_in_at,
+                   r.ends_at > now() AS open,
+                   m.name AS room, m.capacity, m.equipment, f.id AS floor_id, f.name AS floor, si.name AS site,
+                   e.id AS organizer_id, e.emp_no, e.name, e.rank_name, d.name AS department, e.extension, e.email,
+                   s.repeat_rule, s.first_date, s.last_date
+            FROM reservations r
+            JOIN meeting_rooms m ON m.id = r.room_id
+            JOIN floors f ON f.id = m.floor_id
+            JOIN sites si ON si.id = f.site_id
+            JOIN employees e ON e.id = r.organizer_id
+            JOIN departments d ON d.id = e.department_id
+            LEFT JOIN reservation_series s ON s.id = r.series_id
+            WHERE r.id = %s
+            """,
+            (reservation_id,),
+        ).fetchone()
+        if row is None:
+            raise _error(404, "RESERVATION_NOT_FOUND")
+        attendees = conn.execute(
+            """
+            SELECT e.emp_no, e.name, e.rank_name AS rank, d.name AS department, e.id = %(me)s AS is_me,
+                   z.color_key, CASE WHEN p.expires_at IS NULL OR p.expires_at > now() THEN p.status END AS presence
+            FROM reservation_attendees ra
+            JOIN employees e ON e.id = ra.employee_id
+            JOIN departments d ON d.id = e.department_id
+            LEFT JOIN LATERAL (
+                SELECT s.zone_id FROM seat_assignments a JOIN seats s ON s.id = a.seat_id
+                WHERE a.employee_id = e.id AND a.starts_at <= now() AND (a.ends_at IS NULL OR a.ends_at > now())
+                ORDER BY a.kind = 'FIXED' DESC LIMIT 1
+            ) cur ON true
+            LEFT JOIN zones z ON z.id = cur.zone_id
+            LEFT JOIN presence_status p ON p.employee_id = e.id
+            WHERE ra.reservation_id = %(id)s
+            ORDER BY d.name, e.name
+            """,
+            {"id": reservation_id, "me": user["employee_id"]},
+        ).fetchall()
+
+    is_organizer = row["organizer_id"] == user["employee_id"]
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "starts_at": row["starts_at"],
+        "ends_at": row["ends_at"],
+        "status": row["status"],
+        "created_at": row["created_at"],
+        "checked_in_at": row["checked_in_at"],
+        "room": {
+            "name": row["room"],
+            "capacity": row["capacity"],
+            "equipment": row["equipment"],
+            "floor_id": row["floor_id"],
+            "floor": row["floor"],
+            "site": row["site"],
+        },
+        "organizer": {
+            "emp_no": row["emp_no"],
+            "name": row["name"],
+            "rank": row["rank_name"],
+            "department": row["department"],
+            "extension": row["extension"],
+            "email": row["email"],
+        },
+        "attendees": attendees,
+        "series": (
+            {"repeat": row["repeat_rule"], "first_date": row["first_date"], "last_date": row["last_date"]}
+            if row["repeat_rule"]
+            else None
+        ),
+        "ended": not row["open"],
+        "is_organizer": is_organizer,
+        "can_cancel": is_organizer and row["status"] == "CONFIRMED" and row["open"],
+    }
 
 
 @router.delete("/reservations/{reservation_id}", status_code=204)
@@ -332,7 +414,7 @@ def cancel_reservation(reservation_id: int, user: CurrentUser) -> Response:
             raise _error(404, "RESERVATION_NOT_FOUND")
         if row["organizer_id"] != user["employee_id"]:
             raise _error(403, "NOT_ORGANIZER")
-        if row["status"] not in ACTIVE or not row["open"]:
+        if row["status"] != "CONFIRMED" or not row["open"]:
             raise _error(409, "NOT_CANCELLABLE")
         conn.execute(
             "UPDATE reservations SET status = 'CANCELLED', cancelled_at = now(), updated_at = now() WHERE id = %s",

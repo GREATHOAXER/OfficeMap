@@ -19,8 +19,15 @@
   cursor: pointer;
 }
 
-.button:hover {
+.button:hover:not(:disabled) {
   background: var(--surface-sunken);
+}
+
+.button:disabled {
+  border-color: var(--border);
+  background: var(--surface-sunken);
+  color: var(--muted);
+  cursor: default;
 }
 
 .panel {

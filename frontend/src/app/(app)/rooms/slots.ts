@@ -7,13 +7,17 @@ export type Repeat = "NONE" | "WEEKLY" | "WEEKDAYS";
 /** 참석자. sameName: 고를 때 같은 이름이 또 있었다 (칩에 직급까지 붙여 구별) */
 export type Attendee = EmployeeHit & { sameName?: boolean };
 
+/** 팀 전체를 한 번에 넣은 참석자 묶음. members에 나는 빠져 있다 */
+export type TeamGroup = { id: number; name: string; members: Attendee[] };
+
 /** 작성 중인 예약. 날짜는 화면에서 보고 있는 날(day.date)을 쓴다 */
 export type Draft = {
   roomId: number | null;
   start: number | null;
   end: number | null;
   title: string;
-  attendees: Attendee[];
+  attendees: Attendee[]; // 한 사람씩 넣은 참석자
+  teams: TeamGroup[];
   repeat: Repeat;
   repeatUntil: string | null;
   notify: boolean;
@@ -25,6 +29,7 @@ export const EMPTY_DRAFT: Draft = {
   end: null,
   title: "",
   attendees: [],
+  teams: [],
   repeat: "NONE",
   repeatUntil: null,
   notify: true,
@@ -58,4 +63,13 @@ export function canStartAt(day: RoomsDay, room: RoomDay, start: number): boolean
 /** 빈 칸을 눌렀을 때 새로 잡는 시간: 기본 1시간, 다음 예약 전까지 */
 export function defaultRange(day: RoomsDay, room: RoomDay, start: number) {
   return { start, end: Math.min(start + 60, latestEnd(day, room, start)) };
+}
+
+/** 실제로 초대할 사람 (한 사람씩 넣은 사람 + 팀 묶음, 겹치면 한 번만) */
+export function allAttendees(draft: Draft): Attendee[] {
+  const byEmpNo = new Map<string, Attendee>();
+  for (const person of [...draft.attendees, ...draft.teams.flatMap((t) => t.members)]) {
+    if (!byEmpNo.has(person.emp_no)) byEmpNo.set(person.emp_no, person);
+  }
+  return [...byEmpNo.values()];
 }

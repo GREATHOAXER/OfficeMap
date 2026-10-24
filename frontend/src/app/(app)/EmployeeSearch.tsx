@@ -7,7 +7,7 @@ import { PRESENCE_LABEL } from "@/lib/presence";
 import { useEmployeeSearch } from "@/lib/useEmployeeSearch";
 import styles from "./office.module.css";
 
-/** 머리글의 직원 검색창. 이름·팀·사번을 치면 아래에 결과 목록이 뜨고, 고르면 그 사람 자리로 간다 */
+/** 머리글의 직원 검색창. 이름·사번이나 팀·부서 이름을 치면 아래에 결과 목록이 뜨고, 고르면 그 사람 자리로 간다 */
 export default function EmployeeSearch({ onPick }: { onPick: (hit: EmployeeHit) => void }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -68,7 +68,7 @@ export default function EmployeeSearch({ onPick }: { onPick: (hit: EmployeeHit) 
           aria-controls={listId}
           aria-autocomplete="list"
           aria-activedescendant={showList && activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined}
-          placeholder="이름·팀·사번으로 직원 찾기"
+          placeholder="이름·팀·부서·사번으로 직원 찾기"
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);

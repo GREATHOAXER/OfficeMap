@@ -68,7 +68,7 @@ SELECT v.emp_no, v.name, d.id, v.rank_name, v.position_name, v.email, v.extensio
 FROM (VALUES
     ('20090001', '한도윤', 'D110', '부장', '팀장', 'doyun.han@example.com',   '1001', '2009-03-02'),  -- 전사 관리자
     ('20120002', '강지아', 'D110', '차장', NULL,   'jia.kang@example.com',    '1002', '2012-01-02'),  -- 사업장 관리자. 고정석 없이 자율석 사용
-    ('20100009', '윤하은', 'D110', '차장', NULL,   'haeun.yoon@example.com',  '1003', '2010-03-02'),  -- 10F 비서석, 임원 회의실 승인자
+    ('20100009', '윤하은', 'D110', '차장', NULL,   'haeun.yoon@example.com',  '1003', '2010-03-02'),  -- 10F 비서석
     ('20130003', '정민호', 'D210', '차장', NULL,   'minho.jung@example.com',  '4001', '2013-07-01'),  -- 7F 층 관리자
     ('20170008', '김민준', 'D210', '과장', NULL,   'mj.kim@example.com',      '4002', '2017-01-02'),
     ('20150004', '오서연', 'D120', '과장', NULL,   'seoyeon.oh@example.com',  '3001', '2015-01-05'),  -- 재무팀 B구역 관리자
@@ -270,28 +270,28 @@ CROSS JOIN LATERAL generate_series(0, CASE WHEN (z.shape->>'h')::numeric > 0.3 T
 CROSS JOIN generate_series(0, 2) AS c;
 
 -- ② 회의실 (권한·예약보다 먼저). 대부분 위쪽 띠의 slot 1, 2. 2F 대강당은 아래쪽 세 칸
-INSERT INTO meeting_rooms (floor_id, name, capacity, equipment, requires_approval, shape, sort_order)
-SELECT f.id, v.name, v.capacity, v.equipment::text[], v.requires_approval, v.shape, v.sort_order
+INSERT INTO meeting_rooms (floor_id, name, capacity, equipment, shape, sort_order)
+SELECT f.id, v.name, v.capacity, v.equipment::text[], v.shape, v.sort_order
 FROM (VALUES
-    ('1F',  '접견실 101',       8, '{TV}',              false, pg_temp.slot(1),            1),
-    ('1F',  '접견실 102',       6, '{TV}',              false, pg_temp.slot(2),            2),
-    ('2F',  '대강당 201',     200, '{VIDEO,PROJECTOR}', true,  pg_temp.cell(0, 'full', 3), 1),
-    ('2F',  '세미나실 202',    30, '{PROJECTOR}',       false, pg_temp.slot(1),            2),
-    ('4F',  '회의실 401',      12, '{VIDEO}',           false, pg_temp.slot(1),            1),
-    ('4F',  '회의실 402',       6, '{TV}',              false, pg_temp.slot(2),            2),
-    ('5F',  '회의실 501',       8, '{VIDEO}',           false, pg_temp.slot(1),            1),
-    ('5F',  '회의실 502',       6, '{TV}',              false, pg_temp.slot(2),            2),
-    ('6F',  '회의실 601',       8, '{VIDEO}',           false, pg_temp.slot(1),            1),
-    ('6F',  '회의실 602',       6, '{TV}',              false, pg_temp.slot(2),            2),
-    ('7F',  '대회의실 701',    12, '{VIDEO}',           false, pg_temp.slot(1),            1),
-    ('7F',  '소회의실 702',     6, '{TV}',              false, pg_temp.slot(2),            2),
-    ('8F',  '회의실 801',       8, '{VIDEO}',           false, pg_temp.slot(1),            1),
-    ('8F',  '회의실 802',       6, '{TV}',              false, pg_temp.slot(2),            2),
-    ('9F',  '회의실 901',       8, '{VIDEO}',           false, pg_temp.slot(1),            1),
-    ('9F',  '회의실 902',       6, '{TV}',              false, pg_temp.slot(2),            2),
-    ('10F', '임원 회의실 1001', 10, '{VIDEO}',          true,  pg_temp.slot(1),            1),
-    ('10F', '회의실 1002',      6, '{TV}',              false, pg_temp.slot(2),            2)
-) AS v(floor_name, name, capacity, equipment, requires_approval, shape, sort_order)
+    ('1F',  '접견실 101',       8, '{TV}',              pg_temp.slot(1),            1),
+    ('1F',  '접견실 102',       6, '{TV}',              pg_temp.slot(2),            2),
+    ('2F',  '대강당 201',     200, '{VIDEO,PROJECTOR}', pg_temp.cell(0, 'full', 3), 1),
+    ('2F',  '세미나실 202',    30, '{PROJECTOR}',       pg_temp.slot(1),            2),
+    ('4F',  '회의실 401',      12, '{VIDEO}',           pg_temp.slot(1),            1),
+    ('4F',  '회의실 402',       6, '{TV}',              pg_temp.slot(2),            2),
+    ('5F',  '회의실 501',       8, '{VIDEO}',           pg_temp.slot(1),            1),
+    ('5F',  '회의실 502',       6, '{TV}',              pg_temp.slot(2),            2),
+    ('6F',  '회의실 601',       8, '{VIDEO}',           pg_temp.slot(1),            1),
+    ('6F',  '회의실 602',       6, '{TV}',              pg_temp.slot(2),            2),
+    ('7F',  '대회의실 701',    12, '{VIDEO}',           pg_temp.slot(1),            1),
+    ('7F',  '소회의실 702',     6, '{TV}',              pg_temp.slot(2),            2),
+    ('8F',  '회의실 801',       8, '{VIDEO}',           pg_temp.slot(1),            1),
+    ('8F',  '회의실 802',       6, '{TV}',              pg_temp.slot(2),            2),
+    ('9F',  '회의실 901',       8, '{VIDEO}',           pg_temp.slot(1),            1),
+    ('9F',  '회의실 902',       6, '{TV}',              pg_temp.slot(2),            2),
+    ('10F', '임원 회의실 1001', 10, '{VIDEO}',          pg_temp.slot(1),            1),
+    ('10F', '회의실 1002',      6, '{TV}',              pg_temp.slot(2),            2)
+) AS v(floor_name, name, capacity, equipment, shape, sort_order)
 JOIN floors f ON f.name = v.floor_name;
 
 -- ⑤ 권한: 위 단계가 바로 아래 단계를 지정 --------------------------------------
@@ -308,12 +308,6 @@ INSERT INTO admin_grants (employee_id, role, zone_id, apply_mode, granted_by, gr
 VALUES ((SELECT id FROM employees WHERE emp_no = '20150004'), 'ZONE_ADMIN',
         (SELECT z.id FROM zones z JOIN floors f ON f.id = z.floor_id WHERE f.name = '7F' AND z.code = 'B'),
         'NEEDS_APPROVAL', (SELECT id FROM employees WHERE emp_no = '20130003'), '2026-09-03 10:00+09');
-INSERT INTO admin_grants (employee_id, role, room_id, granted_by, granted_at)
-SELECT e.id, 'ROOM_APPROVER', m.id, (SELECT id FROM employees WHERE emp_no = v.granted_by), '2026-09-03 11:00+09'
-FROM (VALUES ('20100009', '임원 회의실 1001', '20120002'),
-             ('20120002', '대강당 201',       '20090001')) AS v(emp_no, room, granted_by)
-JOIN employees e ON e.emp_no = v.emp_no
-JOIN meeting_rooms m ON m.name = v.room;
 
 -- ④ 좌석 배정 ----------------------------------------------------------------
 
@@ -436,22 +430,20 @@ FROM reservation_series s,
      generate_series(s.first_date, s.last_date, interval '7 days') AS d
 WHERE s.title = '재무팀 주간회의';
 
--- 승인제 회의실(대강당, 임원 회의실)은 승인자가 승인해야 확정. 이사회 준비는 아직 승인 대기
-INSERT INTO reservations (room_id, organizer_id, title, starts_at, ends_at, status, checked_in_at, decided_by, decided_at)
-SELECT m.id, e.id, v.title, pg_temp.kst(v.day, v.starts), pg_temp.kst(v.day, v.ends), v.status,
-       CASE WHEN v.checked_in THEN pg_temp.kst(v.day, v.starts) + interval '4 minutes' END,
-       a.id, CASE WHEN a.id IS NOT NULL THEN pg_temp.kst(-1, '17:00') END
+-- 오늘·내일 예약 (승인 절차 없이 모두 확정)
+INSERT INTO reservations (room_id, organizer_id, title, starts_at, ends_at, checked_in_at)
+SELECT m.id, e.id, v.title, pg_temp.kst(v.day, v.starts), pg_temp.kst(v.day, v.ends),
+       CASE WHEN v.checked_in THEN pg_temp.kst(v.day, v.starts) + interval '4 minutes' END
 FROM (VALUES
-    ('대강당 201',       '20090001', '신규 입사자 교육', 0, time '10:00', time '12:00', 'CONFIRMED',        true,  '20120002'),
-    ('대회의실 701',     '20150004', '분기 결산 보고',   0, time '13:00', time '14:30', 'CONFIRMED',        true,  NULL),
-    ('회의실 601',       '20170008', '장애 대응 상황실', 0, time '09:00', time '18:00', 'CONFIRMED',        true,  NULL),
-    ('회의실 501',       '20190005', '정산 시스템 점검', 0, time '16:00', time '17:00', 'CONFIRMED',        false, NULL),
-    ('접견실 101',       '20120002', '협력사 방문 미팅', 0, time '11:00', time '12:00', 'CONFIRMED',        false, NULL),
-    ('임원 회의실 1001', '20090001', '이사회 준비',      1, time '14:00', time '16:00', 'PENDING_APPROVAL', false, NULL)
-) AS v(room, organizer, title, day, starts, ends, status, checked_in, approver)
+    ('대강당 201',       '20090001', '신규 입사자 교육', 0, time '10:00', time '12:00', true),
+    ('대회의실 701',     '20150004', '분기 결산 보고',   0, time '13:00', time '14:30', true),
+    ('회의실 601',       '20170008', '장애 대응 상황실', 0, time '09:00', time '18:00', true),
+    ('회의실 501',       '20190005', '정산 시스템 점검', 0, time '16:00', time '17:00', false),
+    ('접견실 101',       '20120002', '협력사 방문 미팅', 0, time '11:00', time '12:00', false),
+    ('임원 회의실 1001', '20090001', '이사회 준비',      1, time '14:00', time '16:00', false)
+) AS v(room, organizer, title, day, starts, ends, checked_in)
 JOIN meeting_rooms m ON m.name = v.room
-JOIN employees e ON e.emp_no = v.organizer
-LEFT JOIN employees a ON a.emp_no = v.approver;
+JOIN employees e ON e.emp_no = v.organizer;
 
 -- 참석자: 주간회의 전 회차에 재무팀 2명 + 경영기획팀 김민준
 INSERT INTO reservation_attendees (reservation_id, employee_id)

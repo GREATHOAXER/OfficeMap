@@ -52,12 +52,12 @@ CREATE TABLE audit_logs (
 CREATE INDEX audit_logs_target_idx ON audit_logs (target_type, target_id);
 CREATE INDEX audit_logs_created_at_idx ON audit_logs (created_at);
 
--- 알림 발송 기록: 회의 초대, 승인 요청 등 (메신저 연동 이후)
+-- 알림 발송 기록: 회의 초대 등 (메신저 연동 이후)
 CREATE TABLE notifications (
     id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     recipient_id bigint      NOT NULL REFERENCES employees(id),
     channel      varchar(10) NOT NULL CHECK (channel IN ('MESSENGER', 'IN_APP')),
-    type         varchar(50) NOT NULL,                    -- 예: RESERVATION_INVITE, APPROVAL_REQUEST
+    type         varchar(50) NOT NULL,                    -- 예: RESERVATION_INVITE
     payload      jsonb       NOT NULL,
     status       varchar(10) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'SENT', 'FAILED')),
     sent_at      timestamptz,
