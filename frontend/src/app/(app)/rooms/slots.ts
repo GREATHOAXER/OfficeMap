@@ -1,4 +1,6 @@
 import type { EmployeeHit, RoomDay, RoomsDay } from "@/lib/api";
+import { addDays } from "@/lib/dates";
+import type { SearchWhen } from "@/lib/useEmployeeSearch";
 
 // 예약 현황표의 칸 계산. 시간은 모두 그날 0시부터 분, 칸 하나 = policy.slot분
 
@@ -10,11 +12,15 @@ export type Attendee = EmployeeHit & { sameName?: boolean };
 /** 팀 전체를 한 번에 넣은 참석자 묶음. members에 나는 빠져 있다 */
 export type TeamGroup = { id: number; name: string; members: Attendee[] };
 
-/** 작성 중인 예약. 날짜는 화면에서 보고 있는 날(day.date)을 쓴다 */
+/**
+ * 작성 중인 예약. 시작 날짜는 화면에서 보고 있는 날(day.date)이고, 끝나는 날은 거기서 endDays일 뒤.
+ * 시작 날짜를 바꾸면 끝나는 날도 같이 밀려서 기간이 유지된다.
+ */
 export type Draft = {
   roomId: number | null;
-  start: number | null;
-  end: number | null;
+  start: number | null; // 시작 날의 분
+  endDays: number; // 0이면 같은 날에 끝남
+  end: number | null; // 끝나는 날의 분
   title: string;
   attendees: Attendee[]; // 한 사람씩 넣은 참석자
   teams: TeamGroup[];
@@ -26,6 +32,7 @@ export type Draft = {
 export const EMPTY_DRAFT: Draft = {
   roomId: null,
   start: null,
+  endDays: 0,
   end: null,
   title: "",
   attendees: [],
@@ -62,7 +69,36 @@ export function canStartAt(day: RoomsDay, room: RoomDay, start: number): boolean
 
 /** 빈 칸을 눌렀을 때 새로 잡는 시간: 기본 1시간, 다음 예약 전까지 */
 export function defaultRange(day: RoomsDay, room: RoomDay, start: number) {
-  return { start, end: Math.min(start + 60, latestEnd(day, room, start)) };
+  return { start, endDays: 0, end: Math.min(start + 60, latestEnd(day, room, start)) };
+}
+
+/** 한 번에 잡을 수 있는 최대 일수 (policy.max가 7일이면 끝나는 날은 시작 날 + 7일까지) */
+export const maxEndDays = (day: RoomsDay) => Math.floor(day.policy.max / 1440);
+
+/** 예약 길이 (분) */
+export const lengthOf = (d: Draft) => (d.start === null || d.end === null ? 0 : d.endDays * 1440 + d.end - d.start);
+
+/**
+ * 고를 수 있는 끝 시각.
+ * 같은 날: 다음 예약·문 닫는 시각 전까지 (현황표로 빈 시간을 알 수 있다).
+ * 다른 날: 그날 운영 시간 안 아무 칸이나 (겹치는지는 서버에 물어서 따로 보여 준다).
+ */
+export function endOptions(day: RoomsDay, room: RoomDay, d: Draft): number[] {
+  if (d.start === null) return [];
+  const { slot, open_start, open_end, max } = day.policy;
+  const ends: number[] = [];
+  if (d.endDays === 0) {
+    for (let e = d.start + slot; e <= latestEnd(day, room, d.start); e += slot) ends.push(e);
+  } else {
+    for (let e = open_start; e <= open_end; e += slot) if (d.endDays * 1440 + e - d.start <= max) ends.push(e);
+  }
+  return ends;
+}
+
+/** 참석자 일정 확인용 기간 */
+export function whenOf(day: RoomsDay, d: Draft): SearchWhen | null {
+  if (d.start === null || d.end === null) return null;
+  return { date: day.date, start_min: d.start, end_date: addDays(day.date, d.endDays), end_min: d.end };
 }
 
 /** 실제로 초대할 사람 (한 사람씩 넣은 사람 + 팀 묶음, 겹치면 한 번만) */

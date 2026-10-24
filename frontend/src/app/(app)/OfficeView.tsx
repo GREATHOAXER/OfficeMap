@@ -29,7 +29,7 @@ export default function OfficeView({ floors, myFloorId, myEmpNo, myPresence, map
   const live = useLivePresence();
   const map = useMemo(() => withLivePresence(fetchedMap, live), [fetchedMap, live]);
   const mine = withLiveMine(myPresence, live.get(myEmpNo), fetchedMap.fetched_at);
-  useRefreshAtExpiry(map, mine);
+  useRefreshAtExpiry([mine?.expires_at, ...map.seats.map((s) => s.occupant?.presence?.expires_at)]);
 
   const floorId = map.floor.id;
   const [aiOpen, setAiOpen] = useState(false);

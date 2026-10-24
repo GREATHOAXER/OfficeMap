@@ -203,6 +203,8 @@ export type Booking = {
   id: number;
   title: string;
   status: "CONFIRMED";
+  starts_at: string; // 여러 날에 걸친 예약이면 그날 밖의 시각
+  ends_at: string;
   start_min: number;
   end_min: number;
   organizer: string;
@@ -298,4 +300,13 @@ export async function fetchMyReservations(
 ): Promise<MyReservation[]> {
   return (await apiGet<{ reservations: MyReservation[] }>(`/api/reservations/mine?scope=${scope}`, cookieHeader))
     .reservations;
+}
+
+// 내 재실 상태 ---------------------------------------------------------------------
+
+/** 우리 팀(내 부서) 사람들의 재실 상태와 자리 */
+export type MyTeam = { team: { id: number; name: string }; fetched_at: string; members: EmployeeHit[] };
+
+export function fetchMyTeam(cookieHeader: string | null) {
+  return apiGet<MyTeam>("/api/presence/team", cookieHeader);
 }

@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { ReservationDetail as Detail } from "@/lib/api";
-import { formatShortDay, kstDate } from "@/lib/dates";
+import { formatDuration, formatShortDay, kstDate } from "@/lib/dates";
 import { PRESENCE_LABEL } from "@/lib/presence";
-import { hhmm } from "@/lib/rooms";
+import { rangeText } from "@/lib/rooms";
 import Dialog from "./Dialog";
 import styles from "./ReservationDetail.module.css";
 
@@ -75,7 +75,7 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
   if (!current) body = <p className={styles.state}>불러오는 중…</p>;
   else if (!detail) body = <p className={styles.state}>예약 정보를 불러오지 못했어요.</p>;
   else {
-    const day = kstDate(detail.starts_at);
+    const minutes = Math.round((Date.parse(detail.ends_at) - Date.parse(detail.starts_at)) / 60_000);
     const byTeam = new Map<string, Detail["attendees"]>();
     for (const a of detail.attendees) byTeam.set(a.department, [...(byTeam.get(a.department) ?? []), a]);
     body = (
@@ -90,9 +90,8 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
         <dl className={styles.facts}>
           <dt>일시</dt>
           <dd>
-            <span className="mono">
-              {formatShortDay(day)} {hhmm.format(new Date(detail.starts_at))}–{hhmm.format(new Date(detail.ends_at))}
-            </span>
+            <span className="mono">{rangeText(detail.starts_at, detail.ends_at)}</span>
+            <span className={styles.sub}>{formatDuration(minutes)}</span>
             {detail.series && (
               <span className={styles.sub}>
                 {REPEAT_LABEL[detail.series.repeat]} 반복 · {formatShortDay(detail.series.first_date)} ~{" "}

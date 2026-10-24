@@ -28,7 +28,7 @@ def _policy(conn: Connection) -> dict[str, int]:
     hours = get_setting(conn, "room.open_hours", {"start": "08:00", "end": "20:00"})
     return {
         "slot": int(get_setting(conn, "room.slot_minutes", 30)),
-        "max": int(get_setting(conn, "room.max_minutes", 120)),
+        "max": int(get_setting(conn, "room.max_minutes", 7 * 24 * 60)),
         "open_start": _minutes(hours["start"]),
         "open_end": _minutes(hours["end"]),
     }
@@ -79,7 +79,7 @@ def rooms_day(user: CurrentUser, date: dt.date | None = None, site_id: int | Non
         day_start = _at(day, 0)
         bookings = conn.execute(
             """
-            SELECT r.id, r.room_id, r.title, r.status,
+            SELECT r.id, r.room_id, r.title, r.status, r.starts_at, r.ends_at,
                    greatest(0, extract(epoch FROM r.starts_at - %(start)s) / 60)::int AS start_min,
                    least(1440, extract(epoch FROM r.ends_at - %(start)s) / 60)::int AS end_min,
                    e.name AS organizer, d.name AS department,
@@ -128,8 +128,9 @@ def rooms_day(user: CurrentUser, date: dt.date | None = None, site_id: int | Non
 
 class ReservationIn(BaseModel):
     room_id: int
-    date: dt.date
+    date: dt.date  # 시작 날짜
     start_min: int = Field(ge=0, le=1440)
+    end_date: dt.date | None = None  # 끝나는 날짜. 없으면 시작 날짜 (여러 날에 걸친 예약은 다른 날)
     end_min: int = Field(ge=0, le=1440)
     title: str = Field(max_length=200)
     attendees: list[str] = Field(default_factory=list, max_length=50)  # 사번
@@ -159,26 +160,34 @@ def _occurrences(body: ReservationIn) -> list[dt.date]:
 def create_reservation(body: ReservationIn, user: CurrentUser) -> dict[str, Any]:
     """예약을 만든다. 승인 절차 없이 바로 확정(CONFIRMED)된다.
 
+    여러 날에 걸쳐 잡을 수 있다 (예: 10-26 10:00 ~ 10-28 11:00). 시작·끝 시각은 각각 그날 운영 시간 안,
+    전체 길이는 room.max_minutes(기본 7일)까지. 반복 예약은 하루 안의 예약만 된다.
     반복 예약은 회차마다 한 행씩 만들고, 한 회차라도 겹치면 아무것도 만들지 않고 겹치는 날짜를 알려 준다.
     """
     title = body.title.strip()
     if not title:
         raise _error(422, "TITLE_REQUIRED")
+    span_days = ((body.end_date or body.date) - body.date).days
+    if span_days < 0:
+        raise _error(422, "INVALID_TIME")
+    if span_days > 0 and body.repeat != "NONE":
+        raise _error(422, "REPEAT_SINGLE_DAY")
     days = _occurrences(body)
     now = dt.datetime.now(KST)
 
     with pool.connection() as conn:
         policy = _policy(conn)
         slot = policy["slot"]
+        length = span_days * 24 * 60 + body.end_min - body.start_min
         if (
             body.start_min % slot
             or body.end_min % slot
-            or body.start_min < policy["open_start"]
-            or body.end_min > policy["open_end"]
-            or body.end_min <= body.start_min
+            or not policy["open_start"] <= body.start_min < policy["open_end"]
+            or not policy["open_start"] <= body.end_min <= policy["open_end"]
+            or length <= 0
         ):
             raise _error(422, "INVALID_TIME", **policy)
-        if body.end_min - body.start_min > policy["max"]:
+        if length > policy["max"]:
             raise _error(422, "TOO_LONG", max=policy["max"])
         # 지금 칸(예: 13:40이면 13:30 칸)부터 예약할 수 있다
         current_slot = now.replace(minute=now.minute - now.minute % slot, second=0, microsecond=0)
@@ -200,13 +209,14 @@ def create_reservation(body: ReservationIn, user: CurrentUser) -> dict[str, Any]
             raise _error(422, "UNKNOWN_ATTENDEE", emp_nos=sorted(unknown))
         attendee_ids = [a["id"] for a in attendees if a["id"] != user["employee_id"]]
 
-        spans = [(_at(d, body.start_min), _at(d, body.end_min)) for d in days]
+        spans = [(_at(d, body.start_min), _at(d + dt.timedelta(days=span_days), body.end_min)) for d in days]
         taken = conn.execute(
             """
-            SELECT DISTINCT (r.starts_at AT TIME ZONE 'Asia/Seoul')::date AS day
+            SELECT DISTINCT r.id, r.title, r.starts_at, r.ends_at,
+                   (r.starts_at AT TIME ZONE 'Asia/Seoul')::date AS day
             FROM reservations r, unnest(%(starts)s::timestamptz[], %(ends)s::timestamptz[]) AS w(s, e)
             WHERE r.room_id = %(room)s AND r.status = 'CONFIRMED' AND r.starts_at < w.e AND r.ends_at > w.s
-            ORDER BY 1
+            ORDER BY r.starts_at
             """,
             {
                 "starts": [s for s, _ in spans],
@@ -215,7 +225,15 @@ def create_reservation(body: ReservationIn, user: CurrentUser) -> dict[str, Any]
             },
         ).fetchall()
         if taken:
-            raise _error(409, "TIME_TAKEN", dates=[t["day"].isoformat() for t in taken])
+            raise _error(
+                409,
+                "TIME_TAKEN",
+                dates=sorted({t["day"].isoformat() for t in taken}),
+                conflicts=[
+                    {"title": t["title"], "starts_at": t["starts_at"].isoformat(), "ends_at": t["ends_at"].isoformat()}
+                    for t in taken[:5]
+                ],
+            )
 
         try:
             with conn.transaction():
@@ -279,6 +297,36 @@ def create_reservation(body: ReservationIn, user: CurrentUser) -> dict[str, Any]
         "room": room["name"],
         "first": {"id": ids[0], "starts_at": spans[0][0], "ends_at": spans[0][1]},
     }
+
+
+@router.get("/rooms/{room_id}/conflicts")
+def room_conflicts(
+    room_id: int,
+    user: CurrentUser,
+    start_date: dt.date,
+    start_min: int = Query(ge=0, le=1440),
+    end_date: dt.date | None = None,
+    end_min: int = Query(ge=0, le=1440),
+) -> dict[str, Any]:
+    """그 시간(여러 날도 됨)에 이 회의실에 이미 잡힌 예약. 예약 폼이 여러 날 예약을 고를 때 미리 보여 준다."""
+    starts_at = _at(start_date, start_min)
+    ends_at = _at(end_date or start_date, end_min)
+    if ends_at <= starts_at:
+        return {"conflicts": []}
+    with pool.connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT r.id, r.title, r.starts_at, r.ends_at, e.name AS organizer, d.name AS department
+            FROM reservations r
+            JOIN employees e ON e.id = r.organizer_id
+            JOIN departments d ON d.id = e.department_id
+            WHERE r.room_id = %s AND r.status = 'CONFIRMED' AND r.starts_at < %s AND r.ends_at > %s
+            ORDER BY r.starts_at
+            LIMIT 20
+            """,
+            (room_id, ends_at, starts_at),
+        ).fetchall()
+    return {"conflicts": rows}
 
 
 @router.get("/reservations/mine")

@@ -3,8 +3,8 @@ import type { EmployeeHit, TeamHit } from "./api";
 
 const DEBOUNCE_MS = 200;
 
-/** 회의 시간을 같이 넘기면 그 시간에 겹치는 회의·휴가도 알려 준다 */
-export type SearchWhen = { date: string; start_min: number; end_min: number };
+/** 회의 시간을 같이 넘기면 그 시간에 겹치는 회의·휴가도 알려 준다 (여러 날이면 end_date) */
+export type SearchWhen = { date: string; start_min: number; end_date: string; end_min: number };
 
 type Loaded<T> = { url: string; data: T | null; failed: boolean };
 
@@ -12,7 +12,7 @@ type Loaded<T> = { url: string; data: T | null; failed: boolean };
  * 입력이 멈추고 0.2초 뒤에 url을 읽는다. url이 null이면 읽지 않는다.
  * 지금 url에 대한 결과가 아직 없으면 loading이 true다.
  */
-function useDebouncedJson<T>(url: string | null) {
+export function useDebouncedJson<T>(url: string | null) {
   const [loaded, setLoaded] = useState<Loaded<T>>({ url: "", data: null, failed: false });
 
   useEffect(() => {
@@ -44,6 +44,7 @@ export function useEmployeeSearch(query: string, when?: SearchWhen | null, limit
   if (when) {
     params.set("date", when.date);
     params.set("start_min", String(when.start_min));
+    params.set("end_date", when.end_date);
     params.set("end_min", String(when.end_min));
   }
   const { data, loading, failed } = useDebouncedJson<{ results: EmployeeHit[] }>(

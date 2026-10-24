@@ -72,14 +72,17 @@ scripts/
 | `GET /api/rooms/day?date=2026-10-23&site_id=1` | 한 사업장 회의실들의 하루 예약 현황. 날짜·사업장을 빼면 오늘, 내 자리가 있는 사업장 |
 | `POST /api/reservations` | 예약 만들기 (아래) |
 | `GET /api/reservations/mine?scope=upcoming` | 내가 만들었거나 참석하는 예약. `upcoming`: 아직 안 끝난 것, `past`: 최근 30일 지난·취소된 것 |
+| `GET /api/rooms/{id}/conflicts?start_date&start_min&end_date&end_min` | 그 기간에 이 회의실에 이미 잡힌 예약 (여러 날 예약을 고를 때 미리 확인) |
 | `GET /api/reservations/{id}` | 예약 자세히: 회의실, 일시, 만든 사람(내선), 참석자(재실 상태), 반복 규칙, 내가 취소할 수 있는지 |
 | `DELETE /api/reservations/{id}` | 예약 취소 (만든 사람만, 끝나기 전에만). 반복 예약은 그 회차만 |
 
 - 시간은 모두 서울 기준 그날 0시부터 분(`start_min`, `end_min`)입니다. 13:30 → 810.
-- 예약 정책은 `app_settings`에서 읽습니다: `room.slot_minutes`(30분 단위), `room.max_minutes`(최대 2시간),
-  `room.open_hours`(08:00~20:00).
+- 예약 정책은 `app_settings`에서 읽습니다: `room.slot_minutes`(30분 단위), `room.max_minutes`(최대 길이, 7일),
+  `room.open_hours`(08:00~20:00, 시작·끝 시각이 이 안에 있어야 함).
+- 여러 날에 걸친 예약이 됩니다 (예: 10-26 10:00 ~ 10-28 11:00). 가운데 날은 하루 종일 막힙니다.
 - `POST /api/reservations` 본문:
-  `{"room_id", "date", "start_min", "end_min", "title", "attendees": [사번], "repeat": "NONE"|"WEEKLY"|"WEEKDAYS", "repeat_until", "notify"}`
+  `{"room_id", "date", "start_min", "end_date", "end_min", "title", "attendees": [사번], "repeat": "NONE"|"WEEKLY"|"WEEKDAYS", "repeat_until", "notify"}`
+  - `end_date`가 없으면 시작 날짜와 같은 날에 끝납니다. 여러 날 예약은 반복할 수 없습니다(`REPEAT_SINGLE_DAY`).
   - 승인 절차는 없습니다. 임원 회의실·대강당도 바로 확정(`CONFIRMED`)됩니다.
   - 반복 예약은 회차마다 한 행씩 만듭니다(`reservation_series`가 규칙). 석 달(92일), 60회까지.
     한 회차라도 겹치면 아무것도 만들지 않고 겹치는 날짜를 돌려줍니다.
@@ -88,9 +91,10 @@ scripts/
 
 | 상태 | code | 뜻 |
 |---|---|---|
-| 409 | `TIME_TAKEN` | 그 시간에 이미 예약이 있음 (`dates`: 겹치는 날짜) |
-| 422 | `INVALID_TIME` | 30분 단위가 아니거나 운영 시간 밖 |
-| 422 | `TOO_LONG` | 최대 시간 넘음 |
+| 409 | `TIME_TAKEN` | 그 시간에 이미 예약이 있음 (`dates`: 겹치는 날짜, `conflicts`: 겹치는 예약 5건까지) |
+| 422 | `INVALID_TIME` | 30분 단위가 아니거나, 시작·끝 시각이 운영 시간 밖이거나, 끝이 시작보다 앞 |
+| 422 | `TOO_LONG` | 최대 길이(7일) 넘음 |
+| 422 | `REPEAT_SINGLE_DAY` | 여러 날 예약을 반복하려 함 |
 | 422 | `IN_PAST` | 지난 시간 (지금 진행 중인 칸은 됨) |
 | 422 | `TITLE_REQUIRED`, `INVALID_REPEAT`, `REPEAT_TOO_LONG`, `UNKNOWN_ATTENDEE` | 입력 확인 |
 | 403 | `NOT_ORGANIZER` | 남의 예약 취소 |
@@ -103,6 +107,7 @@ scripts/
 | 요청 | 하는 일 |
 |---|---|
 | `GET /api/presence/me` | 지금 내 상태. 없거나 자동 해제 시각이 지났으면 `{"presence": null}` |
+| `GET /api/presence/team` | 우리 팀(내 부서) 사람들의 재실 상태와 자리 (내 재실 상태 화면) |
 | `PUT /api/presence/me` | 상태 저장. `{"status", "message", "duration"}` |
 | `DELETE /api/presence/me` | 상태 지우기 (204) |
 | `GET /api/presence/stream` | 누구든 상태가 바뀔 때마다 보내는 실시간 알림 (SSE, 아래 참고) |

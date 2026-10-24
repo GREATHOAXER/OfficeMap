@@ -3,6 +3,7 @@
 import type { CSSProperties } from "react";
 import type { RoomDay, RoomsDay } from "@/lib/api";
 import { minToHHMM } from "@/lib/dates";
+import { rangeText, spanDays } from "@/lib/rooms";
 import { equipmentText } from "./ReservationForm";
 import { type Draft, isPast, slotStarts } from "./slots";
 import styles from "./rooms.module.css";
@@ -62,7 +63,13 @@ export default function Timeline({ day, rooms, draft, onPick, onOpenBooking }: P
             {starts.map((s) => {
               if (room.bookings.some((b) => b.start_min <= s && b.end_min > s)) return null; // 예약 블록이 덮는 칸
               const past = isPast(day, s);
-              const selected = draft.roomId === room.id && draft.start !== null && draft.end !== null && s >= draft.start && s < draft.end;
+              // 여러 날 예약을 고르면 시작 날에는 시작 칸부터 문 닫을 때까지 칠한다
+              const selected =
+                draft.roomId === room.id &&
+                draft.start !== null &&
+                draft.end !== null &&
+                s >= draft.start &&
+                (draft.endDays > 0 || s < draft.end);
               return (
                 <button
                   key={s}
@@ -80,25 +87,34 @@ export default function Timeline({ day, rooms, draft, onPick, onOpenBooking }: P
                 />
               );
             })}
-            {room.bookings.map((b) => (
-              <button
-                key={b.id}
-                type="button"
-                role="gridcell"
-                className={styles.ttBooking}
-                data-mine={b.mine || undefined}
-                style={{ gridColumn: `${col(b.start_min)} / ${col(b.end_min)}` }}
-                title={`${b.title} · ${b.department} ${b.organizer} · ${minToHHMM(b.start_min)}–${minToHHMM(b.end_min)}`}
-                aria-haspopup="dialog"
-                aria-label={`${room.name} ${minToHHMM(b.start_min)}–${minToHHMM(b.end_min)} ${b.title}, ${b.department} ${
-                  b.organizer
-                }${b.mine ? ", 내 예약" : ""}. 누르면 자세히`}
-                onClick={() => onOpenBooking(b.id)}
-              >
-                <strong>{b.title}</strong>
-                <span>{b.mine ? "내 예약" : b.department}</span>
-              </button>
-            ))}
+            {room.bookings.map((b) => {
+              const days = spanDays(b.starts_at, b.ends_at);
+              const when = days
+                ? `${rangeText(b.starts_at, b.ends_at)} (${days}일)`
+                : `${minToHHMM(b.start_min)}–${minToHHMM(b.end_min)}`;
+              return (
+                <button
+                  key={b.id}
+                  type="button"
+                  role="gridcell"
+                  className={styles.ttBooking}
+                  data-mine={b.mine || undefined}
+                  style={{ gridColumn: `${col(b.start_min)} / ${col(b.end_min)}` }}
+                  title={`${b.title} · ${b.department} ${b.organizer} · ${when}`}
+                  aria-haspopup="dialog"
+                  aria-label={`${room.name} ${when} ${b.title}, ${b.department} ${b.organizer}${
+                    b.mine ? ", 내 예약" : ""
+                  }. 누르면 자세히`}
+                  onClick={() => onOpenBooking(b.id)}
+                >
+                  <strong>{b.title}</strong>
+                  <span>
+                    {days ? `${days}일 예약 · ` : ""}
+                    {b.mine ? "내 예약" : b.department}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         ))}
 

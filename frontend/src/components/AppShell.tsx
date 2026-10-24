@@ -3,7 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { type CSSProperties, type KeyboardEvent, type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import type { SiteSummary, User } from "@/lib/api";
 import { SIDEBAR_COOKIE } from "@/lib/sidebar";
 import {
@@ -31,7 +32,7 @@ const MAIN_MENU: MenuItem[] = [
   { label: "자리·재실 현황", icon: <GridIcon />, href: "/" },
   { label: "회의실 확인·예약", icon: <CalendarIcon />, href: "/rooms" },
   { label: "내 예약", icon: <ChecklistIcon />, href: "/reservations" },
-  { label: "내 재실 상태", icon: <PersonIcon /> },
+  { label: "내 재실 상태", icon: <PersonIcon />, href: "/presence" },
 ];
 
 const ADMIN_MENU: MenuItem[] = [
@@ -286,17 +287,43 @@ function MenuEntry({ item, active, collapsed }: { item: MenuItem; active: boolea
 
 function UserCard({ user }: { user: User }) {
   const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState<CSSProperties>({});
   const boxRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  // 메뉴 밖을 누르면 닫는다
+  // 메뉴 밖을 누르거나 창 크기가 바뀌면 닫는다
   useEffect(() => {
     if (!open) return;
     function onPointerDown(event: PointerEvent) {
-      if (!boxRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!boxRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
     }
+    const close = () => setOpen(false);
     document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
+    window.addEventListener("resize", close);
+    menuRef.current?.querySelector<HTMLElement>("button, a")?.focus();
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("resize", close);
+    };
   }, [open]);
+
+  // 계정 메뉴는 왼쪽 메뉴 밖(body)에 띄운다. 접힌 메뉴는 폭이 좁고 넘치는 부분을 잘라서, 안에 두면 가려진다.
+  // 펼친 메뉴에서는 사용자 칸 바로 위에, 접힌 메뉴에서는 아바타 오른쪽에 붙인다
+  function toggle() {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    const box = boxRef.current!.getBoundingClientRect();
+    const rail = box.width < 120;
+    setPosition(
+      rail
+        ? { left: box.right + 8, bottom: window.innerHeight - box.bottom, width: 220 }
+        : { left: box.left, bottom: window.innerHeight - box.top + 8, width: box.width },
+    );
+    setOpen(true);
+  }
 
   const role = user.role === "ADMIN" ? "관리자" : "직원";
   const initials = user.name.slice(-2);
@@ -305,7 +332,7 @@ function UserCard({ user }: { user: User }) {
     "aria-label": "내 계정 메뉴",
     "aria-expanded": open,
     "aria-controls": "account-menu",
-    onClick: () => setOpen((v) => !v),
+    onClick: toggle,
   };
 
   return (
@@ -332,14 +359,16 @@ function UserCard({ user }: { user: User }) {
       <button {...menuButtonProps} className={styles.avatarButton} title={`${user.name} · ${user.department}`}>
         {initials}
       </button>
-      {open && (
-        <div id="account-menu" className={styles.popover}>
-          <p className={styles.popoverWho}>
-            {user.name} {user.rank} · <span className="mono">{user.emp_no}</span>
-          </p>
-          <LogoutButton className={styles.popoverItem} />
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div id="account-menu" ref={menuRef} className={styles.popover} style={position}>
+            <p className={styles.popoverWho}>
+              {user.name} {user.rank} · <span className="mono">{user.emp_no}</span>
+            </p>
+            <LogoutButton className={styles.popoverItem} />
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

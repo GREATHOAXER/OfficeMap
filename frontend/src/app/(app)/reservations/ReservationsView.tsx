@@ -7,7 +7,7 @@ import { PlusIcon } from "@/components/icons";
 import ReservationDetail from "@/components/ReservationDetail";
 import type { MyReservation } from "@/lib/api";
 import { addDays, formatShortDay, kstDate } from "@/lib/dates";
-import { hhmm } from "@/lib/rooms";
+import { hhmm, spanDays } from "@/lib/rooms";
 import styles from "./reservations.module.css";
 
 type Tab = "upcoming" | "past";
@@ -125,45 +125,52 @@ export default function ReservationsView({ upcoming, past, today }: Props) {
               {dayTitle(day)} <span>{items.length}건</span>
             </h2>
             <ul className={styles.list}>
-              {items.map((r) => (
-                <li key={r.id}>
-                  <button
-                    type="button"
-                    className={styles.item}
-                    data-status={r.status}
-                    aria-haspopup="dialog"
-                    onClick={() => setDetailId(r.id)}
-                  >
-                    <span className={`mono ${styles.time}`}>
-                      <strong>{hhmm.format(new Date(r.starts_at))}</strong>
-                      <span>{hhmm.format(new Date(r.ends_at))}</span>
-                    </span>
-                    <span className={styles.body}>
-                      <span className={styles.head}>
-                        <strong>{r.title}</strong>
-                        <span className={styles.tags}>
-                          <span className={styles.tag} data-tone={r.is_organizer ? "dark" : undefined}>
-                            {r.is_organizer ? "주최" : "참석"}
-                          </span>
-                          {r.series_id && <span className={styles.tag}>반복</span>}
-                          {r.status !== "CONFIRMED" && (
-                            <span className={styles.tag} data-tone="danger">
-                              {STATUS_TAG[r.status]}
-                            </span>
-                          )}
+              {items.map((r) => {
+                const days = spanDays(r.starts_at, r.ends_at);
+                return (
+                  <li key={r.id}>
+                    <button
+                      type="button"
+                      className={styles.item}
+                      data-status={r.status}
+                      aria-haspopup="dialog"
+                      onClick={() => setDetailId(r.id)}
+                    >
+                      <span className={`mono ${styles.time}`}>
+                        <strong>{hhmm.format(new Date(r.starts_at))}</strong>
+                        <span>
+                          {days ? `~${kstDate(r.ends_at).slice(5)} ` : ""}
+                          {hhmm.format(new Date(r.ends_at))}
                         </span>
                       </span>
-                      <span className={styles.meta}>
-                        {r.floor} {r.room} · 참석자 {r.attendees}명
-                        {!r.is_organizer && ` · ${r.organizer_department} ${r.organizer}`}
+                      <span className={styles.body}>
+                        <span className={styles.head}>
+                          <strong>{r.title}</strong>
+                          <span className={styles.tags}>
+                            <span className={styles.tag} data-tone={r.is_organizer ? "dark" : undefined}>
+                              {r.is_organizer ? "주최" : "참석"}
+                            </span>
+                            {days && <span className={styles.tag}>{days}일</span>}
+                            {r.series_id && <span className={styles.tag}>반복</span>}
+                            {r.status !== "CONFIRMED" && (
+                              <span className={styles.tag} data-tone="danger">
+                                {STATUS_TAG[r.status]}
+                              </span>
+                            )}
+                          </span>
+                        </span>
+                        <span className={styles.meta}>
+                          {r.floor} {r.room} · 참석자 {r.attendees}명
+                          {!r.is_organizer && ` · ${r.organizer_department} ${r.organizer}`}
+                        </span>
                       </span>
-                    </span>
-                    <span className={styles.more} aria-hidden="true">
-                      자세히 ›
-                    </span>
-                  </button>
-                </li>
-              ))}
+                      <span className={styles.more} aria-hidden="true">
+                        자세히 ›
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           </section>
         ))}

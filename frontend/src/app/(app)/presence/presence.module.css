@@ -1,0 +1,319 @@
+/* 내 재실 상태 (초안). 자리 현황·회의실·내 예약 화면과 같은 머리글·카드·버튼 모양을 쓴다 */
+
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--divider);
+  background: var(--surface);
+}
+
+.title {
+  margin: 0;
+  font-size: 18px;
+  white-space: nowrap;
+}
+
+.secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.main {
+  width: 100%;
+  max-width: 1120px;
+  padding: 16px 24px 32px;
+  container-type: inline-size;
+}
+
+/* 넓으면 두 단: 왼쪽 내 상태·바꾸기, 오른쪽 오늘 일정·팀 현황 */
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+@container (min-width: 860px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 15px;
+}
+
+.cardTitle span {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* 지금 내 상태: 크게 */
+.now {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.bigMark {
+  width: 28px;
+  height: 28px;
+}
+
+.bigMark[data-status="AWAY"] {
+  border-width: 3px;
+}
+
+.nowText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nowText strong {
+  font-size: 22px;
+}
+
+.nowText span {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 8px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.facts dt {
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 0;
+}
+
+.note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.muted {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.empty {
+  margin: 0;
+  padding: 12px 0;
+  font-size: 13px;
+  color: var(--muted);
+  list-style: none;
+}
+
+.textLink {
+  font-size: 12px;
+  color: var(--link);
+  text-decoration: none;
+}
+
+/* 오늘 내 일정 */
+.schedule {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.schedule li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid #e4e4e0;
+  border-left: 3px solid var(--ink);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.schedule li .mono {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* 우리 팀 */
+.liveTag {
+  padding: 1px 6px;
+  border: 1px solid var(--link);
+  border-radius: 4px;
+  color: var(--link);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.count strong {
+  font-size: 13px;
+}
+
+.count[aria-pressed="true"] {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+  font-weight: 600;
+}
+
+.members {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.member {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 6px 4px;
+  border-top: 1px solid #e4e4e0;
+  font-size: 13px;
+}
+
+.member:first-child {
+  border-top: 0;
+}
+
+.markSlot {
+  display: flex;
+  flex: none;
+  width: 12px;
+}
+
+.memberMain {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.memberMain .muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.me {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+
+.seat {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* 상태 바꾸기 폼은 자리 현황 화면의 패널 폼을 그대로 쓰고, 카드 안에서는 여백만 맞춘다 */
+.card form {
+  padding: 0;
+}
+
+@media (max-width: 720px) {
+  .header {
+    padding: 12px 16px;
+  }
+
+  .main {
+    padding: 12px 12px 24px;
+  }
+
+  .nowText strong {
+    font-size: 19px;
+  }
+}

@@ -26,17 +26,37 @@ class TimeWindow:
         self,
         date: dt.date | None = None,
         start_min: int | None = Query(default=None, ge=0, le=1440),
+        end_date: dt.date | None = None,  # 여러 날에 걸친 회의면 끝나는 날
         end_min: int | None = Query(default=None, ge=0, le=1440),
     ) -> None:
-        self.check = date is not None and start_min is not None and end_min is not None and end_min > start_min
-        self.params = {"check": self.check, "date": date, "start_min": start_min or 0, "end_min": end_min or 0}
+        end_day = end_date or date
+        self.check = (
+            date is not None
+            and end_day is not None
+            and start_min is not None
+            and end_min is not None
+            and (end_day, end_min) > (date, start_min)
+        )
+        self.params = {
+            "check": self.check,
+            "date": date,
+            "start_min": start_min or 0,
+            "end_date": end_day,
+            "end_min": end_min or 0,
+        }
 
 
 Window = Annotated[TimeWindow, Depends()]
 
+# 시간 없이 찾을 때 (다른 일정 확인 안 함)
+NO_WINDOW: dict[str, Any] = {"check": False, "date": None, "start_min": 0, "end_date": None, "end_min": 0}
 
-def _hits(conn: Connection, where: str, order: str, params: dict[str, Any]) -> list[dict[str, Any]]:
-    """직원 목록을 자리·재실 상태·(시간을 줬으면) 그 시간의 다른 일정과 함께 읽는다."""
+
+def find_employees(conn: Connection, where: str, order: str, params: dict[str, Any]) -> list[dict[str, Any]]:
+    """직원 목록을 자리·재실 상태·(시간을 줬으면) 그 시간의 다른 일정과 함께 읽는다.
+
+    params에는 me(로그인한 사람), limit, TimeWindow.params 값이 있어야 한다.
+    """
     rows = conn.execute(
         f"""
         WITH RECURSIVE dept_path AS (  -- 부서마다 위 부서 이름까지 이은 경로 (예: "IT본부 IT운영팀")
@@ -46,7 +66,7 @@ def _hits(conn: Connection, where: str, order: str, params: dict[str, Any]) -> l
         ), win AS (
             SELECT tstzrange(
                 (%(date)s::date + make_interval(mins => %(start_min)s)) AT TIME ZONE 'Asia/Seoul',
-                (%(date)s::date + make_interval(mins => %(end_min)s)) AT TIME ZONE 'Asia/Seoul') AS span
+                (%(end_date)s::date + make_interval(mins => %(end_min)s)) AT TIME ZONE 'Asia/Seoul') AS span
         )
         SELECT e.emp_no, e.name, e.rank_name, d.name AS department, pd.name AS division,
                e.extension, e.id = %(me)s AS is_me,
@@ -120,7 +140,7 @@ def search(
         conditions.append(f"(e.name ILIKE %(t{i})s OR dp.path ILIKE %(t{i})s OR e.emp_no LIKE %(p{i})s)")
 
     with pool.connection() as conn:
-        results = _hits(
+        results = find_employees(
             conn,
             " AND ".join(conditions),
             "e.name = %(q)s DESC, e.name LIKE %(p0)s DESC, e.name ILIKE %(t0)s DESC, d.sort_order, e.name, e.emp_no",
@@ -177,7 +197,7 @@ def team_members(department_id: int, user: CurrentUser, window: Window) -> dict[
         team = conn.execute("SELECT id, name FROM departments WHERE id = %s AND is_active", (department_id,)).fetchone()
         if team is None:
             raise HTTPException(status_code=404, detail={"code": "TEAM_NOT_FOUND"})
-        members = _hits(
+        members = find_employees(
             conn,
             f"e.department_id IN ({_SUBTREE})",
             "d.sort_order, e.name, e.emp_no",
