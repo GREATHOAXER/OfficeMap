@@ -2,14 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ChevronDownIcon } from "@/components/icons";
-import type { MyPresence } from "@/lib/api";
+import type { MyPresenceInfo } from "@/lib/api";
 import { PRESENCE_LABEL } from "@/lib/presence";
 import PresenceForm from "./PresenceForm";
 import styles from "./office.module.css";
 
 // 머리글의 "내 상태" 버튼과, 눌렀을 때 뜨는 상태 바꾸기 패널.
 // 저장하면 서버 데이터를 다시 읽어서 도면의 내 자리 표시도 같이 바뀐다
-export default function MyStatus({ presence }: { presence: MyPresence }) {
+export default function MyStatus({ info }: { info: MyPresenceInfo }) {
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -33,7 +33,7 @@ export default function MyStatus({ presence }: { presence: MyPresence }) {
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
 
-  const current = presence?.status;
+  const current = info.presence?.status;
 
   return (
     <div
@@ -54,7 +54,7 @@ export default function MyStatus({ presence }: { presence: MyPresence }) {
       >
         <span className={styles.myStatusCaption}>내 상태</span>
         {current && <span className="mk" data-status={current} aria-hidden="true" />}
-        <strong>{current ? PRESENCE_LABEL[current] : "정하지 않음"}</strong>
+        <strong>{current ? PRESENCE_LABEL[current] : "상태 정하기"}</strong>
         <ChevronDownIcon size={16} />
       </button>
 
@@ -68,7 +68,7 @@ export default function MyStatus({ presence }: { presence: MyPresence }) {
         >
           {/* 열 때마다 새로 그려서 지금 상태로 채운다 */}
           <PresenceForm
-            presence={presence}
+            info={info}
             heading="내 재실 상태"
             headingId="my-status-title"
             onSaved={() => setOpen(false)}

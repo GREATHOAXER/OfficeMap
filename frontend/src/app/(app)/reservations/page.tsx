@@ -18,7 +18,7 @@ export default async function ReservationsPage() {
     ]);
     data = { upcoming, past };
   } catch (error) {
-    if (error instanceof ApiError && error.status === 401) redirect("/login");
+    if (error instanceof ApiError && error.status === 401) redirect("/login?reason=expired");
     throw error;
   }
   return <ReservationsView upcoming={data.upcoming} past={data.past} today={todayInSeoul()} />;

@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { ReservationDetail as Detail } from "@/lib/api";
 import { formatDuration, formatShortDay, kstDate } from "@/lib/dates";
-import { PRESENCE_LABEL } from "@/lib/presence";
-import { rangeText } from "@/lib/rooms";
+import { NO_STATUS_LABEL, PRESENCE_LABEL } from "@/lib/presence";
+import { hhmm, rangeText, spanDays } from "@/lib/rooms";
 import Dialog from "./Dialog";
 import styles from "./ReservationDetail.module.css";
 
@@ -17,8 +17,8 @@ type Props = {
   /** 보여 줄 예약. null이면 닫혀 있다 */
   reservationId: number | null;
   onClose: () => void;
-  /** 취소했을 때 (목록·현황표를 다시 읽는다) */
-  onCancelled: (title: string) => void;
+  /** 취소했을 때 (목록·현황표를 다시 읽는다). count: 취소한 회차 수 */
+  onCancelled: (title: string, count: number) => void;
   /** 예약 현황표 링크를 보여 줄지 (내 예약 화면에서) */
   showTimetableLink?: boolean;
 };
@@ -55,15 +55,16 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
     onClose();
   }
 
-  async function cancel() {
+  async function cancel(scope: "one" | "following") {
     if (!detail) return;
     setCancelling(true);
     setCancelError(null);
     try {
-      const res = await fetch(`/api/reservations/${detail.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/reservations/${detail.id}?scope=${scope}`, { method: "DELETE" });
       if (!res.ok) throw new Error(String(res.status));
+      const { cancelled } = (await res.json()) as { cancelled: number };
       setConfirming(false);
-      onCancelled(detail.title);
+      onCancelled(detail.title, cancelled);
     } catch {
       setCancelError("취소하지 못했어요. 이미 끝났거나 취소된 예약일 수 있어요.");
     } finally {
@@ -76,6 +77,7 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
   else if (!detail) body = <p className={styles.state}>예약 정보를 불러오지 못했어요.</p>;
   else {
     const minutes = Math.round((Date.parse(detail.ends_at) - Date.parse(detail.starts_at)) / 60_000);
+    const days = spanDays(detail.starts_at, detail.ends_at);
     const byTeam = new Map<string, Detail["attendees"]>();
     for (const a of detail.attendees) byTeam.set(a.department, [...(byTeam.get(a.department) ?? []), a]);
     body = (
@@ -83,6 +85,8 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
         {detail.status !== "CONFIRMED" ? (
           <p className={styles.badge} data-tone="danger">
             {STATUS_LABEL[detail.status]}
+            {detail.cancelled_at &&
+              ` · ${formatShortDay(kstDate(detail.cancelled_at))} ${hhmm.format(new Date(detail.cancelled_at))}에 주최자가 취소`}
           </p>
         ) : (
           detail.ended && <p className={styles.badge}>끝난 회의</p>
@@ -91,7 +95,8 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
           <dt>일시</dt>
           <dd>
             <span className="mono">{rangeText(detail.starts_at, detail.ends_at)}</span>
-            <span className={styles.sub}>{formatDuration(minutes)}</span>
+            {/* 여러 날 예약은 현황표·목록과 같이 "n일간"으로 */}
+            <span className={styles.sub}>{days ? `${days}일간` : formatDuration(minutes)}</span>
             {detail.series && (
               <span className={styles.sub}>
                 {REPEAT_LABEL[detail.series.repeat]} 반복 · {formatShortDay(detail.series.first_date)} ~{" "}
@@ -121,8 +126,10 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
         </dl>
 
         <section className={styles.attendees} aria-labelledby="detail-attendees">
-          <h3 id="detail-attendees">참석자 {detail.attendees.length}명</h3>
-          {detail.attendees.length === 0 && <p className={styles.sub}>따로 초대한 사람이 없어요.</p>}
+          <h3 id="detail-attendees">
+            참석자 {detail.attendees.length + 1}명 <span className={styles.sub}>주최자 포함</span>
+          </h3>
+          {detail.attendees.length === 0 && <p className={styles.sub}>주최자 말고 따로 초대한 사람이 없어요.</p>}
           {[...byTeam.entries()].map(([team, people]) => (
             <div key={team} className={styles.team}>
               <h4>
@@ -136,7 +143,7 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
                     </span>
                     {p.name} {p.rank}
                     {p.is_me && <span className={styles.me}>나</span>}
-                    {p.presence && <span className={styles.presence}>{PRESENCE_LABEL[p.presence]}</span>}
+                    <span className={styles.presence}>{p.presence ? PRESENCE_LABEL[p.presence] : NO_STATUS_LABEL}</span>
                   </li>
                 ))}
               </ul>
@@ -153,32 +160,63 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
     );
   }
 
+  const day = detail && kstDate(detail.starts_at);
+  const series = detail?.series && detail.series.left > 1 ? detail.series : null;
   const footer = detail && (
     <>
-      <Link className={styles.link} href={`/?floor=${detail.room.floor_id}`}>
+      <Link className={styles.link} onClick={close} href={`/?floor=${detail.room.floor_id}`}>
         도면에서 보기
       </Link>
       {showTimetableLink && (
-        <Link className={styles.link} href={`/rooms?date=${kstDate(detail.starts_at)}`}>
+        <Link className={styles.link} onClick={close} href={`/rooms?date=${day}&floor=${detail.room.floor_id}`}>
           예약 현황표에서 보기
+        </Link>
+      )}
+      {detail.status === "CANCELLED" && detail.is_organizer && !detail.ended && (
+        <Link className={styles.link} onClick={close} href={`/rooms?date=${day}&floor=${detail.room.floor_id}`}>
+          다시 예약하기
         </Link>
       )}
       <span className={styles.spacer} />
       {detail.can_cancel &&
         (confirming ? (
           <span className={styles.confirm} role="group" aria-label="예약 취소 확인">
-            <span>이 회의를 취소할까요?{detail.series ? " (이 회차만)" : ""}</span>
-            <button type="button" className={styles.danger} disabled={cancelling} onClick={cancel}>
-              {cancelling ? "취소하는 중…" : "취소하기"}
-            </button>
+            <span>
+              이 회의를 취소할까요?
+              {detail.attendees.length > 0 && ` 참석자 ${detail.attendees.length}명의 내 예약에 ‘취소됨’으로 표시돼요.`}
+            </span>
+            {series ? (
+              <>
+                <button type="button" className={styles.danger} disabled={cancelling} onClick={() => cancel("one")}>
+                  이 회차만
+                </button>
+                <button
+                  type="button"
+                  className={styles.danger}
+                  disabled={cancelling}
+                  onClick={() => cancel("following")}
+                >
+                  이후 회차 모두 ({series.left}회)
+                </button>
+              </>
+            ) : (
+              <button type="button" className={styles.danger} disabled={cancelling} onClick={() => cancel("one")}>
+                {cancelling ? "취소하는 중…" : "취소하기"}
+              </button>
+            )}
             <button type="button" className={styles.secondary} onClick={() => setConfirming(false)}>
               아니요
             </button>
           </span>
         ) : (
-          <button type="button" className={styles.secondary} onClick={() => setConfirming(true)}>
-            예약 취소
-          </button>
+          <>
+            <Link className={styles.secondary} onClick={close} href={`/rooms?date=${day}&edit=${detail.id}`}>
+              수정
+            </Link>
+            <button type="button" className={styles.secondary} onClick={() => setConfirming(true)}>
+              예약 취소
+            </button>
+          </>
         ))}
     </>
   );

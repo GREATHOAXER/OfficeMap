@@ -36,7 +36,8 @@
 
   --radius: 8px;
   --font-body: var(--font-sans), "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-  --font-code: var(--font-mono), ui-monospace, monospace;
+  /* 숫자는 고정폭, 한글은 본문 글꼴로 (고정폭 대체 글꼴로 한글이 넓게 벌어지지 않게) */
+  --font-code: var(--font-mono), var(--font-sans), ui-monospace, monospace;
 }
 
 *,

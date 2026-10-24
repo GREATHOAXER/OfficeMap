@@ -9,15 +9,18 @@ import { rangeText } from "@/lib/rooms";
 import AttendeePicker from "./AttendeePicker";
 import {
   allAttendees,
-  canStartAt,
+  defaultRepeatUntil,
   type Draft,
-  endOptions,
+  freeRoomsFor,
+  isFree,
   isPast,
   latestEnd,
   lengthOf,
   maxEndDays,
+  occurrenceCount,
   type Repeat,
   slotStarts,
+  timeIsFree,
   whenOf,
 } from "./slots";
 import type { Conflict } from "./useConflicts";
@@ -43,6 +46,14 @@ type Props = {
   /** 여러 날 예약일 때 그 기간에 이미 잡힌 예약 (서버에 물어본 결과) */
   conflicts: Conflict[];
   checking: boolean;
+  /** 이미 있는 예약을 고치는 중 (반복은 못 바꾼다) */
+  editing: boolean;
+  /** 앞에서 쓰던 제목·참석자를 새 칸에 이어서 쓰는 중 */
+  carried: boolean;
+  onClearCarried: () => void;
+  /** 반복 예약 중 겹치는 날이 있을 때: 그날만 빼고 예약하기 */
+  skipDates: string[] | null;
+  onSkipConflicts: () => void;
 };
 
 /** 예약 폼이 다 채워졌나 (팝업 아래 "예약 확정" 버튼을 켜고 끈다) */
@@ -55,6 +66,7 @@ export const isReady = (draft: Draft) =>
  */
 export default function ReservationForm(props: Props) {
   const { formId, day, draft, onDraftChange, onDateChange, onSubmit, error, conflicts, checking } = props;
+  const { editing, carried, onClearCarried, skipDates, onSkipConflicts } = props;
   const ids = useId();
   const room = day.rooms.find((r) => r.id === draft.roomId) ?? null;
   const set = (patch: Partial<Draft>) => onDraftChange((d) => ({ ...d, ...patch }));
@@ -62,23 +74,42 @@ export default function ReservationForm(props: Props) {
   const endDate = addDays(day.date, draft.endDays);
   const multiDay = draft.endDays > 0;
 
-  const starts = room ? slotStarts(day).filter((s) => canStartAt(day, room, s) || s === draft.start) : [];
-  const ends = room ? endOptions(day, room, draft) : [];
+  // 시작·끝 시각 목록: 차 있거나 지난 시각도 보여 주되 고를 수 없게 (왜 빠졌는지 알 수 있게)
+  const starts = room
+    ? slotStarts(day).map((s) => ({
+        value: s,
+        note: isPast(day, s) ? "지남" : isFree(room, s, s + slot) ? null : "예약 있음",
+      }))
+    : [];
+  const ends = room ? endChoices() : [];
+  const freeStarts = starts.filter((s) => !s.note).length;
+  const dayClosed = day.past || (day.now_min !== null && day.now_min >= close - slot);
   const when = whenOf(day, draft);
   const invited = allAttendees(draft).length;
   const overCapacity = room && invited + 1 > room.capacity;
+  const taken = room !== null && !timeIsFree(day, room, draft);
+  const alternatives = taken ? freeRoomsFor(day, draft).slice(0, 4) : [];
+  const occurrences = occurrenceCount(day.date, draft.repeat, draft.repeatUntil);
+  const timeChosen = room !== null && draft.start !== null && draft.end !== null;
 
+  /** 끝 시각 목록. 같은 날이면 다음 예약 뒤 시각은 "예약 있음"으로 막는다 */
+  function endChoices(): { value: number; note: string | null }[] {
+    if (!room || draft.start === null) return [];
+    const list: { value: number; note: string | null }[] = [];
+    if (draft.endDays === 0) {
+      const limit = latestEnd(day, room, draft.start);
+      for (let e = draft.start + slot; e <= close; e += slot) list.push({ value: e, note: e > limit ? "예약 있음" : null });
+    } else {
+      for (let e = open; e <= close; e += slot) {
+        if (draft.endDays * 1440 + e - draft.start <= day.policy.max) list.push({ value: e, note: null });
+      }
+    }
+    return list;
+  }
+
+  /** 회의실을 바꿔도 고른 시간은 그대로 둔다. 새 회의실에서 그 시간이 차 있으면 아래에 알려 주고 빈 회의실을 권한다 */
   function changeRoom(roomId: number) {
-    const next = day.rooms.find((r) => r.id === roomId);
-    onDraftChange((d) => {
-      if (!next || d.start === null) return { ...d, roomId };
-      // 새 회의실에서도 같은 시간이 비어 있으면 그대로 두고, 아니면 시간을 다시 고르게 한다
-      // 여러 날 예약은 시작 칸만 보고, 나머지 기간은 서버에 물어서 겹침을 보여 준다
-      const keep =
-        canStartAt(day, next, d.start) &&
-        (d.endDays > 0 || (d.end !== null && d.end <= latestEnd(day, next, d.start)));
-      return keep ? { ...d, roomId } : { ...d, roomId, start: null, end: null };
-    });
+    onDraftChange((d) => ({ ...d, roomId }));
   }
 
   function changeStart(start: number) {
@@ -86,7 +117,7 @@ export default function ReservationForm(props: Props) {
       if (!room) return d;
       if (d.endDays > 0) return { ...d, start }; // 여러 날 예약은 끝 시각을 그대로 둔다
       const length = d.start !== null && d.end !== null ? d.end - d.start : 60;
-      return { ...d, start, end: Math.min(start + length, latestEnd(day, room, start)) };
+      return { ...d, start, end: Math.max(start + slot, Math.min(start + length, latestEnd(day, room, start))) };
     });
   }
 
@@ -96,7 +127,7 @@ export default function ReservationForm(props: Props) {
     onDraftChange((d) => {
       const next: Draft = { ...d, endDays, ...(endDays > 0 ? { repeat: "NONE", repeatUntil: null } : {}) };
       if (!room || d.start === null) return next;
-      const options = endOptions(day, room, next);
+      const options = endChoicesFor(next);
       if (d.end !== null && options.includes(d.end)) return next;
       // 지금 끝 시각을 그날 쓸 수 없으면: 같은 날이면 시작 1시간 뒤(또는 가장 늦은 칸), 다른 날이면 시작과 같은 시각
       const fallback = endDays === 0 ? Math.min(d.start + 60, options.at(-1) ?? d.start + slot) : d.start;
@@ -104,22 +135,47 @@ export default function ReservationForm(props: Props) {
     });
   }
 
+  /** 끝나는 날을 바꿀 때 쓸 수 있는 끝 시각 (endChoices와 같은 규칙, 바뀔 draft 기준) */
+  function endChoicesFor(next: Draft): number[] {
+    if (!room || next.start === null) return [];
+    const result: number[] = [];
+    if (next.endDays === 0) {
+      for (let e = next.start + slot; e <= latestEnd(day, room, next.start); e += slot) result.push(e);
+    } else {
+      for (let e = open; e <= close; e += slot) if (next.endDays * 1440 + e - next.start <= day.policy.max) result.push(e);
+    }
+    return result;
+  }
+
+  // 빠진 칸이 있어도 버튼을 막지 않고, 누르면 무엇이 빠졌는지 알려 준다 (화면이 판단)
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (isReady(draft)) onSubmit();
+    onSubmit();
   }
 
   return (
     <form id={formId} className={styles.form} onSubmit={submit}>
       <div className={styles.formCols}>
         <div className={styles.formCol}>
+          {carried && (
+            <p className={styles.carried}>
+              앞에서 쓰던 제목·참석자를 이어서 쓰고 있어요.
+              <button type="button" onClick={onClearCarried}>
+                지우고 새로 쓰기
+              </button>
+            </p>
+          )}
           <div className={styles.summary} aria-live="polite">
             {room && draft.start !== null && draft.end !== null ? (
               <>
                 <strong>{room.name}</strong>
                 <span className="mono">
                   {formatShortDay(day.date)} {minToHHMM(draft.start)} – {multiDay && `${formatShortDay(endDate)} `}
-                  {minToHHMM(draft.end)} ({formatDuration(lengthOf(draft))})
+                  {minToHHMM(draft.end)}
+                </span>
+                {/* 여러 날 예약은 현황표·내 예약과 같이 "n일간" */}
+                <span className={styles.muted}>
+                  {multiDay ? `${draft.endDays + 1}일간` : formatDuration(lengthOf(draft))}
                 </span>
                 <span className={styles.muted}>
                   {room.floor.name} · 최대 {room.capacity}인
@@ -133,7 +189,11 @@ export default function ReservationForm(props: Props) {
 
           <label className={styles.field}>
             회의실
-            <select value={draft.roomId ?? ""} onChange={(event) => changeRoom(Number(event.target.value))} required>
+            <select
+              value={draft.roomId ?? ""}
+              onChange={(event) => changeRoom(Number(event.target.value))}
+              data-autofocus={!timeChosen || undefined}
+            >
               <option value="" disabled>
                 회의실 고르기
               </option>
@@ -158,11 +218,12 @@ export default function ReservationForm(props: Props) {
                 required
               >
                 <option value="" disabled>
-                  {room ? (starts.length ? "시각" : "빈 시간 없음") : "회의실 먼저"}
+                  {room ? (dayClosed ? "이날은 마감" : freeStarts ? "시각" : "빈 시간 없음") : "회의실 먼저"}
                 </option>
                 {starts.map((s) => (
-                  <option key={s} value={s} disabled={!!room && isPast(day, s)}>
-                    {minToHHMM(s)}
+                  <option key={s.value} value={s.value} disabled={!!s.note}>
+                    {minToHHMM(s.value)}
+                    {s.note ? ` (${s.note})` : ""}
                   </option>
                 ))}
               </select>
@@ -191,11 +252,12 @@ export default function ReservationForm(props: Props) {
                   시각
                 </option>
                 {ends.map((e) => (
-                  <option key={e} value={e}>
-                    {minToHHMM(e)}
+                  <option key={e.value} value={e.value} disabled={!!e.note}>
+                    {minToHHMM(e.value)}
+                    {e.note ? ` (${e.note})` : ""}
                   </option>
                 ))}
-                {draft.end !== null && !ends.includes(draft.end) && (
+                {draft.end !== null && !ends.some((e) => e.value === draft.end) && (
                   <option value={draft.end} disabled>
                     {minToHHMM(draft.end)}
                   </option>
@@ -203,6 +265,31 @@ export default function ReservationForm(props: Props) {
               </select>
             </label>
           </fieldset>
+          {dayClosed && (
+            <p className={styles.closedNote}>
+              이날({formatShortDay(day.date)})은 더 예약할 수 있는 시간이 없어요 (운영 {minToHHMM(open)}–{minToHHMM(close)}).
+              <button type="button" onClick={() => onDateChange(addDays(day.date < day.today ? day.today : day.date, 1))}>
+                다음 날로
+              </button>
+            </p>
+          )}
+          {taken && (
+            <div className={styles.conflictBox} data-ok={false} role="status">
+              <strong>
+                이 시간에 {room.name}에 이미 예약이 있어요. 시간을 바꾸거나 다른 회의실을 고르세요.
+              </strong>
+              {alternatives.length > 0 && (
+                <span className={styles.alternatives}>
+                  이 시간에 비어 있는 곳:
+                  {alternatives.map((r) => (
+                    <button key={r.id} type="button" onClick={() => changeRoom(r.id)}>
+                      {r.floor.name} {r.name} · {r.capacity}인
+                    </button>
+                  ))}
+                </span>
+              )}
+            </div>
+          )}
           <p id={`${ids}-end-note`} className={styles.policy}>
             여러 날에 걸쳐 잡을 수 있어요 (최대 {maxEndDays(day)}일) · 시작·끝 시각은 {minToHHMM(open)}–{minToHHMM(close)} 사이
             · {slot}분 단위
@@ -212,7 +299,7 @@ export default function ReservationForm(props: Props) {
               {checking ? (
                 "이 기간에 겹치는 예약을 확인하는 중…"
               ) : conflicts.length === 0 ? (
-                `${formatShortDay(day.date)} ~ ${formatShortDay(endDate)} 동안 ${room.name}이 비어 있어요.`
+                `${formatShortDay(day.date)} ~ ${formatShortDay(endDate)} 동안 ${room.name}에 다른 예약이 없어요.`
               ) : (
                 <>
                   <strong>이 기간에 이미 잡힌 예약이 있어요 ({conflicts.length}건)</strong>
@@ -230,16 +317,21 @@ export default function ReservationForm(props: Props) {
           )}
 
           <label className={styles.field}>
-            회의 제목
+            <span>
+              회의 제목 <span className={styles.required}>(필수)</span>
+            </span>
             <input
               value={draft.title}
               maxLength={200}
               placeholder="예: 주간 업무 점검"
               onChange={(event) => set({ title: event.target.value })}
-              required
+              data-autofocus={timeChosen || undefined}
             />
           </label>
 
+          {editing ? (
+            <p className={styles.policy}>예약을 고치면 이 회차만 바뀌어요. 반복 설정은 바꿀 수 없어요.</p>
+          ) : (
           <div className={styles.fieldRow}>
             <label className={styles.field}>
               반복
@@ -249,7 +341,7 @@ export default function ReservationForm(props: Props) {
                 aria-describedby={multiDay ? `${ids}-repeat-note` : undefined}
                 onChange={(event) => {
                   const repeat = event.target.value as Repeat;
-                  set({ repeat, repeatUntil: repeat === "NONE" ? null : (draft.repeatUntil ?? addDays(day.date, 27)) });
+                  set({ repeat, repeatUntil: repeat === "NONE" ? null : defaultRepeatUntil(day.date, repeat) });
                 }}
               >
                 {REPEATS.map((r) => (
@@ -272,7 +364,13 @@ export default function ReservationForm(props: Props) {
                 />
               </div>
             )}
+            {draft.repeat !== "NONE" && (
+              <p className={styles.occurrences} aria-live="polite">
+                총 <strong className="mono">{occurrences}</strong>회
+              </p>
+            )}
           </div>
+          )}
 
           {multiDay && (
             <p id={`${ids}-repeat-note`} className={styles.policy}>
@@ -281,9 +379,17 @@ export default function ReservationForm(props: Props) {
           )}
 
           <label className={styles.check}>
-            <input type="checkbox" checked={draft.notify} onChange={(event) => set({ notify: event.target.checked })} />
-            참석자에게 알림 보내기
+            <input
+              type="checkbox"
+              checked={draft.notify}
+              onChange={(event) => set({ notify: event.target.checked })}
+              aria-describedby={`${ids}-notify-note`}
+            />
+            참석자에게 메신저 알림 보내기
           </label>
+          <p id={`${ids}-notify-note`} className={styles.policy}>
+            사내 메신저 연동 전이라 지금은 참석자의 ‘내 예약’에 바로 보이는 것으로 알려요.
+          </p>
         </div>
 
         <div className={styles.formCol}>
@@ -315,9 +421,14 @@ export default function ReservationForm(props: Props) {
       </div>
 
       {error && (
-        <p role="alert" className={styles.error}>
+        <div role="alert" className={styles.error}>
           {error}
-        </p>
+          {skipDates && skipDates.length > 0 && (
+            <button type="button" className={styles.skipButton} onClick={onSkipConflicts}>
+              겹치는 날 {skipDates.length}일 빼고 예약
+            </button>
+          )}
+        </div>
       )}
     </form>
   );

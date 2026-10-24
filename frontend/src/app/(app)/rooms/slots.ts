@@ -1,5 +1,5 @@
 import type { EmployeeHit, RoomDay, RoomsDay } from "@/lib/api";
-import { addDays } from "@/lib/dates";
+import { addDays, daysBetween, weekdayOf } from "@/lib/dates";
 import type { SearchWhen } from "@/lib/useEmployeeSearch";
 
 // 예약 현황표의 칸 계산. 시간은 모두 그날 0시부터 분, 칸 하나 = policy.slot분
@@ -108,4 +108,44 @@ export function allAttendees(draft: Draft): Attendee[] {
     if (!byEmpNo.has(person.emp_no)) byEmpNo.set(person.emp_no, person);
   }
   return [...byEmpNo.values()];
+}
+
+/** 반복 예약 회차 수 (서버와 같은 규칙: 매주는 7일 간격, 평일은 토·일 빼고) */
+export function occurrenceCount(date: string, repeat: Repeat, until: string | null): number {
+  if (repeat === "NONE") return 1;
+  if (!until || until < date) return 0;
+  const span = daysBetween(date, until);
+  let count = 0;
+  for (let i = 0; i <= span; i += repeat === "WEEKLY" ? 7 : 1) {
+    const weekday = weekdayOf(addDays(date, i));
+    if (repeat === "WEEKLY" || (weekday !== 0 && weekday !== 6)) count += 1;
+  }
+  return count;
+}
+
+/** 반복을 처음 켰을 때의 종료일: 4주 뒤 같은 요일(매주), 4주 안의 마지막 평일(평일) */
+export function defaultRepeatUntil(date: string, repeat: Repeat): string {
+  let until = addDays(date, 28);
+  if (repeat === "WEEKDAYS") {
+    while (weekdayOf(until) === 0 || weekdayOf(until) === 6) until = addDays(until, -1);
+  }
+  return until;
+}
+
+/** 하루 안의 예약에서 고른 시간이 이 회의실에 비어 있나 (지난 시간·다른 예약과 겹침) */
+export function timeIsFree(day: RoomsDay, room: RoomDay, d: Draft): boolean {
+  if (d.start === null || d.end === null || d.endDays > 0) return true; // 여러 날은 서버에 따로 묻는다
+  return canStartAt(day, room, d.start) && d.end <= latestEnd(day, room, d.start);
+}
+
+/** 고른 시간(하루 안)에 비어 있는 다른 회의실 */
+export function freeRoomsFor(day: RoomsDay, d: Draft): RoomDay[] {
+  if (d.start === null || d.end === null || d.endDays > 0) return [];
+  return day.rooms.filter((r) => r.id !== d.roomId && timeIsFree(day, r, d));
+}
+
+/** 고치는 예약은 현황에서 빼고 계산한다 (자기 자신과 겹친다고 막지 않게) */
+export function withoutBooking(day: RoomsDay, id: number | null): RoomsDay {
+  if (id === null) return day;
+  return { ...day, rooms: day.rooms.map((r) => ({ ...r, bookings: r.bookings.filter((b) => b.id !== id) })) };
 }

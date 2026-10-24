@@ -1,10 +1,15 @@
 "use client";
 
+import Link from "next/link";
 import { type CSSProperties, type FocusEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { CloseIcon } from "@/components/icons";
-import type { FloorMap, PresenceStatus, Rect, Room, Seat, Zone } from "@/lib/api";
-import { PRESENCE_LABEL } from "@/lib/presence";
-import { roomStatusText } from "@/lib/rooms";
+import type { FloorMap, Occupant, Rect, Room, Seat, Zone } from "@/lib/api";
+import { agoText } from "@/lib/dates";
+import { NO_STATUS_LABEL, PRESENCE_LABEL, type StatusFilter } from "@/lib/presence";
+import { hhmm, roomStatusText } from "@/lib/rooms";
+import { useMediaQuery } from "@/lib/useMediaQuery";
+import { useNow } from "@/lib/useNow";
 import styles from "./office.module.css";
 
 // 좌석 하나의 크기 (도면 너비·높이 대비). 좌석 좌표는 중심점이다
@@ -17,6 +22,8 @@ const DRAG_THRESHOLD_PX = 5; // 이보다 적게 움직이면 끌기가 아니�
 export const ZOOM_MIN = 0.5;
 export const ZOOM_MAX = 3;
 export const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+// − / + 버튼이 멈추는 배율 (핀치·Ctrl+휠은 그 사이 어디든)
+export const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
 
 const pct = (v: number) => `${(v * 100).toFixed(3)}%`;
 const rectStyle = (r: Rect): CSSProperties => ({ left: pct(r.x), top: pct(r.y), width: pct(r.w), height: pct(r.h) });
@@ -26,10 +33,11 @@ type GestureLike = Event & { scale: number; clientX: number; clientY: number };
 
 type Props = {
   map: FloorMap;
+  myEmpNo: string;
   zoom: number;
   onZoomChange: (zoom: number) => void;
   focusZoneId: number | null;
-  visibleStatuses: Set<PresenceStatus>;
+  visibleStatuses: Set<StatusFilter>;
   selectedSeatId: number | null;
   onSelectSeat: (seatId: number) => void;
   /** 눌러서 고정한 정보 카드 (좁은 화면에서는 오른쪽 패널 대신 이걸 띄운다) */
@@ -38,7 +46,7 @@ type Props = {
 };
 
 export default function FloorPlan(props: Props) {
-  const { map, zoom, onZoomChange, focusZoneId, visibleStatuses, selectedSeatId, onSelectSeat } = props;
+  const { map, myEmpNo, zoom, onZoomChange, focusZoneId, visibleStatuses, selectedSeatId, onSelectSeat } = props;
   const { pinnedSeatId, onUnpin } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
   const planRef = useRef<HTMLDivElement>(null);
@@ -91,7 +99,7 @@ export default function FloorPlan(props: Props) {
     }
     function onPointerDown(event: PointerEvent) {
       const target = event.target as Element;
-      if (!target.closest(`.${styles.popover}, .${styles.seat}`)) onUnpin();
+      if (!target.closest(`.${styles.popover}, .${styles.sheet}, .${styles.seat}`)) onUnpin();
     }
     document.addEventListener("keydown", onKeyDown);
     document.addEventListener("pointerdown", onPointerDown);
@@ -242,7 +250,9 @@ export default function FloorPlan(props: Props) {
         {geometry.pillars?.map((p, i) => (
           <div key={`pillar-${i}`} className={styles.pillar} style={{ left: pct(p.x - 0.0075), top: pct(p.y - 0.0125) }} />
         ))}
-        {map.rooms.map((room) => room.shape && <RoomBox key={room.id} room={room} shape={room.shape} />)}
+        {map.rooms.map(
+          (room) => room.shape && <RoomBox key={room.id} room={room} shape={room.shape} floorId={map.floor.id} />,
+        )}
         {map.zones.map((zone) => (
           <div
             key={zone.id}
@@ -265,8 +275,9 @@ export default function FloorPlan(props: Props) {
             zone={seat.zone_id ? zones.get(seat.zone_id) : undefined}
             dimmed={
               (focusZoneId !== null && seat.zone_id !== focusZoneId) ||
-              (!!seat.occupant?.presence && !visibleStatuses.has(seat.occupant.presence.status))
+              (!!seat.occupant && !visibleStatuses.has(seat.occupant.presence?.status ?? "NONE"))
             }
+            mine={seat.occupant?.emp_no === myEmpNo}
             selected={seat.id === selectedSeatId}
             onSelect={onSelectSeat}
             onHoverStart={startHover}
@@ -288,15 +299,24 @@ export default function FloorPlan(props: Props) {
   );
 }
 
-function RoomBox({ room, shape }: { room: Room; shape: Rect }) {
+/** 도면 위 회의실. 누르면 회의실 화면에서 이 층 예약 현황을 연다 */
+function RoomBox({ room, shape, floorId }: { room: Room; shape: Rect; floorId: number }) {
+  const status = roomStatusText(room);
   return (
-    <div className={styles.room} style={rectStyle(shape)} data-busy={!!room.busy_until}>
+    <Link
+      href={`/rooms?floor=${floorId}`}
+      className={styles.room}
+      style={rectStyle(shape)}
+      data-busy={!!room.busy_until}
+      aria-label={`${room.name}, ${status}. 예약 현황 보기`}
+      title="예약 현황 보기"
+    >
       <span>
         {room.name}
         <br />
-        <span className={styles.roomStatus}>{roomStatusText(room)}</span>
+        <span className={styles.roomStatus}>{status}</span>
       </span>
-    </div>
+    </Link>
   );
 }
 
@@ -304,13 +324,14 @@ type SeatProps = {
   seat: Seat;
   zone: Zone | undefined;
   dimmed: boolean;
+  mine: boolean;
   selected: boolean;
   onSelect: (seatId: number) => void;
   onHoverStart: (seatId: number) => void;
   onHoverEnd: () => void;
 };
 
-function SeatButton({ seat, zone, dimmed, selected, onSelect, onHoverStart, onHoverEnd }: SeatProps) {
+function SeatButton({ seat, zone, dimmed, mine, selected, onSelect, onHoverStart, onHoverEnd }: SeatProps) {
   const { occupant } = seat;
   const presence = occupant?.presence?.status;
   const outOfService = seat.status === "OUT_OF_SERVICE";
@@ -319,7 +340,9 @@ function SeatButton({ seat, zone, dimmed, selected, onSelect, onHoverStart, onHo
   let label: string;
   if (occupant) {
     text = occupant.name;
-    label = `${occupant.name}, ${occupant.department} ${seat.code}${presence ? `, ${PRESENCE_LABEL[presence]}` : ""}`;
+    label = `${mine ? "내 자리, " : ""}${occupant.name}, ${occupant.department} ${seat.code}, ${
+      presence ? PRESENCE_LABEL[presence] : NO_STATUS_LABEL
+    }`;
   } else if (outOfService) {
     text = "사용 중지";
     label = `사용 중지 좌석 ${seat.code}`;
@@ -336,6 +359,7 @@ function SeatButton({ seat, zone, dimmed, selected, onSelect, onHoverStart, onHo
     presence === "AWAY" ? styles.seatAway : "",
     dimmed ? styles.dim : "",
     selected ? styles.seatSelected : "",
+    mine ? styles.seatMine : "",
   ].join(" ");
 
   return (
@@ -365,6 +389,11 @@ function SeatButton({ seat, zone, dimmed, selected, onSelect, onHoverStart, onHo
       <span className={`${styles.chair} ${chair}`} aria-hidden="true" />
       {presence && <span className={`mk ${styles.seatMark}`} data-status={presence} aria-hidden="true" />}
       <span className={styles.seatName}>{text}</span>
+      {mine && (
+        <span className={styles.seatMeTag} aria-hidden="true">
+          나
+        </span>
+      )}
     </button>
   );
 }
@@ -377,23 +406,15 @@ type CardProps = {
   onClose: () => void;
 };
 
-/** 자리 위(위쪽 자리면 아래)에 뜨는 사람 정보 카드. 글자 크기는 배율과 상관없이 같다 */
+/**
+ * 자리 위(위쪽 자리면 아래)에 뜨는 사람 정보 카드. 글자 크기는 배율과 상관없이 같다.
+ * 휴대폰에서 눌러 고정한 카드는 도면 밖, 화면 아래에서 올라오는 시트로 띄운다 (도면 가장자리에서 잘리지 않게)
+ */
 function SeatCard({ seat, zone, floorName, pinned, onClose }: CardProps) {
+  const phone = useMediaQuery("(max-width: 720px)");
   const occupant = seat.occupant!;
-  const presence = occupant.presence;
-  const below = seat.y < 0.3;
-  const align = seat.x < 0.2 ? "start" : seat.x > 0.8 ? "end" : "center";
-  const left = align === "start" ? seat.x - SEAT_W / 2 : align === "end" ? seat.x + SEAT_W / 2 : seat.x;
-  return (
-    <div
-      className={styles.popover}
-      data-place={below ? "below" : "above"}
-      data-align={align}
-      data-pinned={pinned}
-      style={{ left: pct(left), top: pct(below ? seat.y + SEAT_H / 2 : seat.y - SEAT_H / 2) }}
-      role={pinned ? "dialog" : "tooltip"}
-      aria-label={`${occupant.name} 정보`}
-    >
+  const body = (
+    <>
       <div className={styles.popoverHead}>
         <strong>
           {occupant.name} <span>{occupant.rank}</span>
@@ -408,22 +429,68 @@ function SeatCard({ seat, zone, floorName, pinned, onClose }: CardProps) {
         <span className={styles.swatch} aria-hidden="true" />
         {occupant.department}
       </span>
-      <span className={styles.popoverStatus}>
-        {presence ? (
-          <>
-            <span className="mk" data-status={presence.status} aria-hidden="true" />
-            <strong>{PRESENCE_LABEL[presence.status]}</strong>
-            {presence.message && <span>· {presence.message}</span>}
-          </>
-        ) : (
-          <span className={styles.popoverMuted}>상태 정보 없음</span>
-        )}
-      </span>
+      <PresenceLine occupant={occupant} />
       <span className={`mono ${styles.popoverMuted}`}>
         {floorName} {seat.code}
         {occupant.extension && ` · 내선 ${occupant.extension}`}
         {occupant.kind === "DAILY" && " · 오늘만 이 자리"}
       </span>
+    </>
+  );
+
+  if (pinned && phone) {
+    return createPortal(
+      <div className={styles.sheet} role="dialog" aria-label={`${occupant.name} 정보`}>
+        {body}
+      </div>,
+      document.body,
+    );
+  }
+
+  const below = seat.y < 0.3;
+  const align = seat.x < 0.2 ? "start" : seat.x > 0.8 ? "end" : "center";
+  const left = align === "start" ? seat.x - SEAT_W / 2 : align === "end" ? seat.x + SEAT_W / 2 : seat.x;
+  return (
+    <div
+      className={styles.popover}
+      data-place={below ? "below" : "above"}
+      data-align={align}
+      data-pinned={pinned}
+      style={{ left: pct(left), top: pct(below ? seat.y + SEAT_H / 2 : seat.y - SEAT_H / 2) }}
+      role={pinned ? "dialog" : "tooltip"}
+      aria-label={`${occupant.name} 정보`}
+    >
+      {body}
     </div>
+  );
+}
+
+/** 재실 상태 한 줄 + 언제 바꿨는지·언제 풀리는지 (오래된 상태를 알아보게) */
+export function PresenceLine({ occupant }: { occupant: Occupant }) {
+  const now = useNow();
+  const presence = occupant.presence;
+  if (!presence) {
+    return (
+      <span className={styles.popoverStatus}>
+        <span className={styles.popoverMuted}>{NO_STATUS_LABEL}</span>
+      </span>
+    );
+  }
+  const ago = presence.updated_at ? agoText(presence.updated_at, now) : "";
+  return (
+    <>
+      <span className={styles.popoverStatus}>
+        <span className="mk" data-status={presence.status} aria-hidden="true" />
+        <strong>{PRESENCE_LABEL[presence.status]}</strong>
+        {presence.message && <span>· {presence.message}</span>}
+      </span>
+      {(ago || presence.expires_at) && (
+        <span className={styles.popoverMuted}>
+          {ago && `${ago} 변경`}
+          {ago && presence.expires_at && " · "}
+          {presence.expires_at && `${hhmm.format(new Date(presence.expires_at))}에 자동 해제`}
+        </span>
+      )}
+    </>
   );
 }

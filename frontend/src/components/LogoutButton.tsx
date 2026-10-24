@@ -3,10 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { LogoutIcon } from "./icons";
+import { announceLogout } from "./SessionWatch";
 
 type Props = { className?: string; endpoint?: string; redirectTo?: string };
 
-/** 로그아웃. 관리자 페이지는 관리자 세션만 끝낸다 (직원 화면 로그인은 그대로) */
+/** 로그아웃. 직원 화면·관리자 페이지 어디서 눌러도 이 브라우저의 두 로그인이 모두 끝난다 (서버가 처리) */
 export default function LogoutButton({ className, endpoint = "/api/auth/logout", redirectTo = "/login" }: Props) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -15,6 +16,7 @@ export default function LogoutButton({ className, endpoint = "/api/auth/logout",
     setPending(true);
     try {
       await fetch(endpoint, { method: "POST" });
+      announceLogout(); // 열려 있는 다른 탭도 로그인 화면으로
     } finally {
       router.replace(redirectTo);
       router.refresh();

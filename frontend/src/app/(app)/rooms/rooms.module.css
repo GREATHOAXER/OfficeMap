@@ -199,6 +199,74 @@
   white-space: nowrap;
 }
 
+/* 운영 시간 밖: 카드 대신 한 줄 */
+.closedLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 13px;
+}
+
+/* 앞에서 쓰던 제목·참석자를 이어 쓰는 중 */
+.carried,
+.closedNote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--link);
+  border-radius: 6px;
+  background: var(--info-bg);
+  font-size: 12px;
+}
+
+.carried button,
+.closedNote button,
+.alternatives button,
+.skipButton {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.alternatives {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.required {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--danger-text);
+}
+
+.occurrences {
+  align-self: flex-end;
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+
+.skipButton {
+  margin-left: 8px;
+}
+
 /* 지금 회의실 상태 */
 .nowGrid {
   display: grid;
@@ -301,6 +369,11 @@
   background: #dbe4ff;
 }
 
+.lgPast {
+  border: 1px solid var(--divider);
+  background-image: repeating-linear-gradient(45deg, transparent 0 3px, #d4d4d0 3px 4px);
+}
+
 .legend > .lgNow {
   width: 2px;
   background: var(--link);
@@ -320,9 +393,21 @@
   color: var(--muted);
 }
 
+/* 위아래도 이 안에서 스크롤해서 시간 머리줄이 늘 보이게 한다 */
 .ttScroll {
-  overflow-x: auto;
+  overflow: auto;
+  max-height: max(420px, calc(100vh - 220px));
   overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.scrollHint {
+  margin: 0;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--divider);
+  background: var(--surface-sunken);
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .tt {
@@ -342,6 +427,9 @@
 }
 
 .ttHead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   padding: 8px 0 6px 4px;
   border-bottom: 1px solid var(--divider);
   border-left: 1px solid var(--divider);
@@ -353,7 +441,7 @@
 .ttCorner {
   position: sticky;
   left: 0;
-  z-index: 3;
+  z-index: 4;
   grid-column: 1;
   padding-left: 12px;
   border-left: 0;
@@ -1002,6 +1090,25 @@
   .ttRoom {
     padding: 6px 8px;
     font-size: 12px;
+  }
+
+  /* 휴대폰: 날짜 줄이 넘치지 않게, 층 버튼은 한 줄로 밀어서 */
+  .dateNav {
+    flex-wrap: wrap;
+  }
+
+  .seg {
+    flex-wrap: nowrap;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .seg button {
+    flex: none;
+  }
+
+  .ttRoom span {
+    white-space: normal;
   }
 }
 

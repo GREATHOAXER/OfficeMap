@@ -5,6 +5,9 @@ import { cache } from "react";
 
 export const API_URL = process.env.API_URL ?? "http://localhost:8000";
 
+/** 직원 화면 세션 쿠키 이름 (server/app/config.py 의 session_cookie_name 과 같아야 한다) */
+export const SESSION_COOKIE = "officemap_session";
+
 export type User = {
   emp_no: string;
   name: string;
@@ -71,7 +74,8 @@ export type FloorSummary = {
   teams: string[];
 };
 export type SiteSummary = { id: number; name: string; floors: FloorSummary[] };
-export type SitesResponse = { sites: SiteSummary[]; my_floor_id: number | null };
+/** my_floor_id: 내 자리가 있는 층. team_floor_id: 우리 팀 구역이 있는 층 (자리가 아직 없는 사람에게 먼저 보여 준다) */
+export type SitesResponse = { sites: SiteSummary[]; my_floor_id: number | null; team_floor_id: number | null };
 
 export type PlanSpace = Rect & { kind: string; label: string };
 
@@ -103,7 +107,12 @@ export type Occupant = {
   extension: string | null;
   email: string | null;
   kind: "FIXED" | "DAILY";
-  presence: { status: PresenceStatus; message: string | null; expires_at: string | null } | null;
+  presence: {
+    status: PresenceStatus;
+    message: string | null;
+    expires_at: string | null;
+    updated_at?: string; // 언제 바꾼 상태인지
+  } | null;
 };
 
 export type Seat = {
@@ -143,8 +152,11 @@ export type MyPresence = {
 /** 실시간 알림(/api/presence/stream)의 presence 이벤트. presence가 null이면 상태를 지웠다 */
 export type PresenceEvent = { emp_no: string; presence: MyPresence; at: string };
 
-/** 재실 상태 자동 해제: 계속 / 30분 / 1시간 / 퇴근 시 */
-export type PresenceDuration = "NONE" | "30M" | "1H" | "END_OF_DAY";
+/** 재실 상태 자동 해제: 해제 안 함 / 30분 / 1시간 / 퇴근 시 / 지금 해제 시각 그대로 */
+export type PresenceDuration = "NONE" | "30M" | "1H" | "END_OF_DAY" | "KEEP";
+
+/** 내 재실 상태 + 지금 "퇴근 시"를 고르면 풀리는 시각 (퇴근 시각이 지났으면 오늘 자정) */
+export type MyPresenceInfo = { presence: MyPresence; end_of_day_at: string; workday_end: string };
 
 export class ApiError extends Error {
   constructor(readonly status: number) {
@@ -170,8 +182,8 @@ export function fetchFloor(cookieHeader: string | null, floorId: number): Promis
   return apiGet<FloorMap>(`/api/office/floors/${floorId}`, cookieHeader);
 }
 
-export async function fetchMyPresence(cookieHeader: string | null): Promise<MyPresence> {
-  return (await apiGet<{ presence: MyPresence }>("/api/presence/me", cookieHeader)).presence;
+export function fetchMyPresence(cookieHeader: string | null): Promise<MyPresenceInfo> {
+  return apiGet<MyPresenceInfo>("/api/presence/me", cookieHeader);
 }
 
 // 직원 검색 ----------------------------------------------------------------------
@@ -245,6 +257,7 @@ export type MyReservation = {
   ends_at: string;
   status: ReservationStatus;
   series_id: number | null;
+  cancelled_at: string | null;
   room: string;
   floor_id: number;
   floor: string;
@@ -262,7 +275,16 @@ export type ReservationDetail = {
   status: ReservationStatus;
   created_at: string;
   checked_in_at: string | null;
-  room: { name: string; capacity: number; equipment: string[]; floor_id: number; floor: string; site: string };
+  cancelled_at: string | null;
+  room: {
+    id: number;
+    name: string;
+    capacity: number;
+    equipment: string[];
+    floor_id: number;
+    floor: string;
+    site: string;
+  };
   organizer: {
     emp_no: string;
     name: string;
@@ -280,7 +302,8 @@ export type ReservationDetail = {
     color_key: string | null;
     presence: PresenceStatus | null;
   }[];
-  series: { repeat: "WEEKLY" | "WEEKDAYS"; first_date: string; last_date: string } | null;
+  /** left: 이 회차를 포함해 앞으로 남은 확정 회차 수 */
+  series: { repeat: "WEEKLY" | "WEEKDAYS"; first_date: string; last_date: string; left: number } | null;
   ended: boolean; // 이미 끝난 회의
   is_organizer: boolean;
   can_cancel: boolean;
@@ -354,8 +377,9 @@ export type AdminFloor = {
   id: number;
   name: string;
   description: string | null;
-  seats: number;
-  occupied: number;
+  seats: number; // 개인석(고정석)
+  flex: number; // 자율석 (배정하지 않음)
+  occupied: number; // 배정된 개인석
   rooms: number;
   zones: { code: string; name: string; color_key: string; department: string | null }[];
   floor_admins: string[];
@@ -376,9 +400,15 @@ export type AdminSite = {
 };
 
 export type AdminOverview = {
+  /** seats·flex·occupied·rooms·reservations_today·pending_requests 는 내 관리 범위 안의 숫자.
+   *  employees·unseated·admins 는 전사 숫자. pending_requests: 층 관리 권한이면 내가 승인할 요청,
+   *  구역만 맡았으면 내가 올려서 승인을 기다리는 요청 */
   summary: {
+    scope: "ALL" | "FLOORS" | "ZONES";
     employees: number;
+    unseated: number;
     seats: number;
+    flex: number;
     occupied: number;
     rooms: number;
     reservations_today: number;

@@ -1,24 +1,29 @@
 "use client";
 
+import Link from "next/link";
 import { CloseIcon } from "@/components/icons";
-import type { FloorMap, Seat } from "@/lib/api";
-import { PRESENCE_LABEL, PRESENCE_ORDER } from "@/lib/presence";
-import { roomStatusText } from "@/lib/rooms";
+import type { FloorMap, Occupant, Seat } from "@/lib/api";
+import { agoText } from "@/lib/dates";
+import { NO_STATUS_LABEL, PRESENCE_LABEL, PRESENCE_ORDER } from "@/lib/presence";
+import { hhmm, roomStatusText } from "@/lib/rooms";
+import { useNow } from "@/lib/useNow";
 import styles from "./office.module.css";
 
 type Props = {
   map: FloorMap;
   seat: Seat | null;
+  myEmpNo: string;
   onClear: () => void;
 };
 
 // 오른쪽 패널: 자리를 고르면 앉은 사람 정보, 안 고르면 이 층 요약
-export default function SeatPanel({ map, seat, onClear }: Props) {
+export default function SeatPanel({ map, seat, myEmpNo, onClear }: Props) {
   if (!seat) return <FloorSummaryCard map={map} />;
 
   const zone = map.zones.find((z) => z.id === seat.zone_id);
   const where = `${map.floor.site.name} ${map.floor.name} · ${seat.code}`;
   const { occupant } = seat;
+  const mine = occupant?.emp_no === myEmpNo;
 
   return (
     <section className={styles.card} aria-labelledby="seat-title" data-color={zone?.color_key ?? "t0"}>
@@ -35,6 +40,7 @@ export default function SeatPanel({ map, seat, onClear }: Props) {
             <div>
               <h2 id="seat-title" className={styles.personName}>
                 {occupant.name} {occupant.rank}
+                {mine && <span className={styles.tag}>내 자리</span>}
               </h2>
               <p className={styles.personTeam}>
                 <span className={styles.swatch} aria-hidden="true" />
@@ -54,7 +60,13 @@ export default function SeatPanel({ map, seat, onClear }: Props) {
             ) : (
               <span>재실 상태를 정하지 않았어요</span>
             )}
+            <Freshness presence={occupant.presence} />
           </div>
+          {mine && (
+            <Link href="/presence" className={styles.cardLink}>
+              내 재실 상태 바꾸기 ›
+            </Link>
+          )}
           <dl className={styles.facts}>
             <dt>위치</dt>
             <dd>
@@ -93,9 +105,11 @@ function FloorSummaryCard({ map }: { map: FloorMap }) {
   const seated = map.seats.filter((s) => s.occupant);
   const flex = map.seats.filter((s) => s.seat_type === "FLEX").length;
   const counts = new Map(PRESENCE_ORDER.map((status) => [status, 0]));
+  let noStatus = 0;
   for (const seat of seated) {
     const status = seat.occupant?.presence?.status;
     if (status) counts.set(status, (counts.get(status) ?? 0) + 1);
+    else noStatus += 1;
   }
 
   return (
@@ -109,7 +123,7 @@ function FloorSummaryCard({ map }: { map: FloorMap }) {
           <dd className="mono">{map.seats.length}</dd>
         </div>
         <div>
-          <dt>앉은 사람</dt>
+          <dt>배정 인원</dt>
           <dd className="mono">{seated.length}</dd>
         </div>
         <div>
@@ -125,6 +139,11 @@ function FloorSummaryCard({ map }: { map: FloorMap }) {
             <span className="mono">{counts.get(status)}</span>
           </li>
         ))}
+        <li>
+          <span className={styles.noStatusMark} aria-hidden="true" />
+          {NO_STATUS_LABEL}
+          <span className="mono">{noStatus}</span>
+        </li>
       </ul>
       <p className={styles.cardHint}>
         자리를 누르면 앉은 사람의 재실 상태와 연락처가 여기에 보여요.
@@ -157,5 +176,20 @@ function SharedFloorCard({ map }: { map: FloorMap }) {
         </ul>
       )}
     </section>
+  );
+}
+
+/** 언제 바꾼 상태인지, 언제 풀리는지. 오래된 상태(예: 어제 정한 "방문 가능")를 알아보게 */
+function Freshness({ presence }: { presence: Occupant["presence"] }) {
+  const now = useNow();
+  if (!presence) return null;
+  const ago = presence.updated_at ? agoText(presence.updated_at, now) : "";
+  if (!ago && !presence.expires_at) return null;
+  return (
+    <span className={styles.freshness}>
+      {ago && `${ago} 변경`}
+      {ago && " · "}
+      {presence.expires_at ? `${hhmm.format(new Date(presence.expires_at))}에 자동 해제` : "직접 바꿀 때까지 유지"}
+    </span>
   );
 }

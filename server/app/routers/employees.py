@@ -143,7 +143,10 @@ def search(
         results = find_employees(
             conn,
             " AND ".join(conditions),
-            "e.name = %(q)s DESC, e.name LIKE %(p0)s DESC, e.name ILIKE %(t0)s DESC, d.sort_order, e.name, e.emp_no",
+            # 이름이 정확히·앞부분이·어디든 맞는 순서, 같은 단계에서는 우리 팀 사람 먼저, 그다음 이름 가나다순
+            "e.name = %(q)s DESC, e.name LIKE %(p0)s DESC, e.name ILIKE %(t0)s DESC,"
+            " e.department_id = (SELECT department_id FROM employees WHERE id = %(me)s) DESC,"
+            " e.name, d.sort_order, e.emp_no",
             params,
         )
     return {"results": results}

@@ -101,10 +101,9 @@ FROM gen
 JOIN departments d ON d.dept_code = gen.dept_code;
 
 -- 신규 입사자만 임시 비밀번호 상태
-INSERT INTO user_accounts (employee_id, password_hash, role, must_change_password, password_changed_at)
+INSERT INTO user_accounts (employee_id, password_hash, must_change_password, password_changed_at)
 SELECT id,
        '$2b$12$YQWCooIW9V1YrWJ5vD7EDujBSKuP2HW49Z852NdLGSIWLnTG5B7b2',  -- officemap1234
-       CASE WHEN emp_no = '20090001' THEN 'ADMIN' ELSE 'USER' END,
        emp_no = '20260006',
        CASE WHEN emp_no = '20260006' THEN NULL ELSE timestamptz '2026-09-01 09:00+09' END
 FROM employees;
@@ -150,7 +149,7 @@ INSERT INTO app_settings (key, value, description) VALUES
     ('room.max_minutes',           '10080',                             '1회 최대 예약 시간 (7일, 여러 날 예약 가능)'),
     ('room.checkin_grace_minutes', '15',                                '체크인 없으면 자동 반납까지'),
     ('room.open_hours',            '{"start": "08:00", "end": "20:00"}', '예약 가능 시간'),
-    ('support.contact',            '"정보보호팀 내선 0000"',              '로그인 화면 계정 문의'),
+    ('support.contact',            '"정보보호팀(내선 2580)"',             '로그인 화면 계정 문의'),
     ('presence.workday_end',       '"18:00"',                           '재실 상태 "퇴근 시" 자동 해제 시각');
 
 INSERT INTO org_sync_runs (source, file_id, status, created_count, run_by, started_at, finished_at)
@@ -160,7 +159,7 @@ VALUES ('EXCEL', (SELECT id FROM files WHERE stored_path = 'org/20261001.xlsx'),
 
 -- ① 공간: 사업장 · 층 · 도면 · 구역 · 좌석 -------------------------------------
 
-INSERT INTO sites (kind, name, address, sort_order) VALUES ('HQ', '서울 본사', '[서울 주소]', 1);
+INSERT INTO sites (kind, name, address, sort_order) VALUES ('HQ', '서울 본사', NULL, 1);  -- 주소는 관리자가 입력
 
 INSERT INTO floors (site_id, name, description, sort_order)
 SELECT s.id, n || 'F',
@@ -317,10 +316,6 @@ SELECT g.employee_id,
        g.granted_at, g.granted_by
 FROM admin_grants g
 WHERE g.revoked_at IS NULL;
-
--- 권한을 받은 사람은 직원 화면 왼쪽 메뉴에도 "관리자 페이지" 링크가 보인다
-UPDATE user_accounts SET role = 'ADMIN'
-WHERE employee_id IN (SELECT employee_id FROM admin_grants WHERE revoked_at IS NULL);
 
 -- ④ 좌석 배정 ----------------------------------------------------------------
 

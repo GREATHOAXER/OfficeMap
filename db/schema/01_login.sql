@@ -41,7 +41,6 @@ CREATE INDEX employees_name_idx ON employees (name);  -- 이름 검색, 동명�
 CREATE TABLE user_accounts (
     employee_id          bigint      PRIMARY KEY REFERENCES employees(id),
     password_hash        varchar(255),                   -- SSO만 쓰는 계정은 NULL
-    role                 varchar(10) NOT NULL DEFAULT 'USER' CHECK (role IN ('USER', 'ADMIN')),
     must_change_password boolean     NOT NULL DEFAULT true,  -- 임시 비밀번호를 받은 상태
     password_changed_at  timestamptz,
     failed_login_count   smallint    NOT NULL DEFAULT 0,     -- 5회면 잠금, 로그인 성공 시 0

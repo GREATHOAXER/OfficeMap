@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import { type CSSProperties, type KeyboardEvent, useEffect, useRef, useState } from "react";
 import type { RoomDay, RoomsDay } from "@/lib/api";
 import { minToHHMM } from "@/lib/dates";
 import { rangeText, spanDays } from "@/lib/rooms";
@@ -16,9 +16,13 @@ type Props = {
   onOpenBooking: (reservationId: number) => void;
 };
 
+/** 표 안에서 방향키로 옮겨 다닐 칸: 행·시작 열·칸 수 */
+type NavCell = { el: HTMLElement; r: number; c: number; span: number };
+
 /**
  * 예약 현황표. 회의실마다 한 줄, 칸 하나 = 30분. 빈 칸을 누르면 그 시간을 고른다.
  * 예약은 칸 여러 개를 이어 붙인 블록 하나로 그리고, 누르면 자세한 내용을 띄운다 (내 예약은 검정).
+ * 키보드: 표 전체가 Tab 한 번이고, 안에서는 방향키·Home·End로 옮긴다 (칸 수백 개를 Tab으로 지나가지 않게)
  */
 export default function Timeline({ day, rooms, draft, onPick, onOpenBooking }: Props) {
   const { open_start: open, open_end: close, slot } = day.policy;
@@ -26,111 +30,201 @@ export default function Timeline({ day, rooms, draft, onPick, onOpenBooking }: P
   const col = (minute: number) => 2 + Math.round((Math.min(Math.max(minute, open), close) - open) / slot);
   const hours = starts.filter((s) => s % 60 === 0);
   const nowVisible = day.now_min !== null && day.now_min >= open && day.now_min < close;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [overflowing, setOverflowing] = useState(false);
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+
+  // 표가 옆으로 넘치면 알려 주고, 오늘이면 지금 시각이 보이게 처음에 옆으로 밀어 둔다
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => setOverflowing(el.scrollWidth > el.clientWidth + 1));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    const el = scrollRef.current;
+    const now = el?.querySelector<HTMLElement>(`.${styles.ttNow}`);
+    const corner = el?.querySelector<HTMLElement>(`.${styles.ttCorner}`);
+    if (el && now && corner) el.scrollLeft = Math.max(0, now.offsetLeft - corner.offsetWidth - 60);
+  }, [day.date]);
+
+  // 방향키로 옮길 수 있는 칸 (지난 칸은 고를 수 없어서 빠진다)
+  function navCells(): NavCell[] {
+    return [...(gridRef.current?.querySelectorAll<HTMLElement>("[data-nav]") ?? [])].map((el) => ({
+      el,
+      r: Number(el.dataset.r),
+      c: Number(el.dataset.c),
+      span: Number(el.dataset.span),
+    }));
+  }
+
+  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement;
+    if (!target.dataset.nav || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
+      return;
+    }
+    const cells = navCells();
+    const cur = cells.find((x) => x.el === target);
+    if (!cur) return;
+    const row = (r: number) => cells.filter((x) => x.r === r).sort((a, b) => a.c - b.c);
+    let next: NavCell | undefined;
+    if (event.key === "ArrowRight") next = row(cur.r).find((x) => x.c >= cur.c + cur.span);
+    else if (event.key === "ArrowLeft") next = row(cur.r).filter((x) => x.c < cur.c).at(-1);
+    else if (event.key === "Home") next = row(cur.r)[0];
+    else if (event.key === "End") next = row(cur.r).at(-1);
+    else {
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      for (let r = cur.r + step; !next && r >= 0 && r < rooms.length; r += step) {
+        const candidates = row(r);
+        next =
+          candidates.find((x) => x.c <= cur.c && cur.c < x.c + x.span) ??
+          candidates.sort((a, b) => Math.abs(a.c - cur.c) - Math.abs(b.c - cur.c))[0];
+      }
+    }
+    event.preventDefault();
+    if (next) {
+      next.el.focus();
+      next.el.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+  }
+
+  // Tab으로 들어올 칸: 마지막에 머문 칸, 없으면 고른 칸, 없으면 맨 위 줄의 첫 빈 칸
+  const firstFree = rooms
+    .flatMap((room, r) => starts.filter((s) => !isPast(day, s)).map((s) => ({ r, s, room })))
+    .find(({ s, room }) => !room.bookings.some((b) => b.start_min <= s && b.end_min > s));
+  const selectedKey =
+    draft.roomId !== null && draft.start !== null
+      ? `${rooms.findIndex((r) => r.id === draft.roomId)}:${col(draft.start)}`
+      : null;
+  const tabKey = activeKey ?? selectedKey ?? (firstFree ? `${firstFree.r}:${col(firstFree.s)}` : null);
 
   return (
-    <div className={styles.ttScroll}>
-      <div
-        className={styles.tt}
-        style={{ "--slots": starts.length, "--rows": rooms.length } as CSSProperties}
-        role="grid"
-        aria-label="예약 현황표"
-        aria-rowcount={rooms.length + 1}
-      >
-        <div role="row" className={styles.ttRow} style={{ "--row": 1 } as CSSProperties}>
-          <div role="columnheader" className={`${styles.ttHead} ${styles.ttCorner}`}>
-            회의실
+    <>
+      {overflowing && <p className={styles.scrollHint}>표를 옆으로 밀면 다른 시간이 보여요 · 칸에서 방향키로도 옮길 수 있어요</p>}
+      <div ref={scrollRef} className={styles.ttScroll}>
+        <div
+          ref={gridRef}
+          className={styles.tt}
+          style={{ "--slots": starts.length, "--rows": rooms.length } as CSSProperties}
+          role="grid"
+          aria-label="예약 현황표"
+          aria-rowcount={rooms.length + 1}
+          onKeyDown={onKeyDown}
+          onFocus={(event) => {
+            const el = event.target as HTMLElement;
+            if (el.dataset.nav) setActiveKey(`${el.dataset.r}:${el.dataset.c}`);
+          }}
+        >
+          <div role="row" className={styles.ttRow} style={{ "--row": 1 } as CSSProperties}>
+            <div role="columnheader" className={`${styles.ttHead} ${styles.ttCorner}`}>
+              회의실
+            </div>
+            {hours.map((h) => (
+              <div
+                key={h}
+                role="columnheader"
+                className={`${styles.ttHead} mono`}
+                style={{ gridColumn: `${col(h)} / span ${60 / slot}` }}
+              >
+                {String(h / 60).padStart(2, "0")}
+              </div>
+            ))}
           </div>
-          {hours.map((h) => (
-            <div
-              key={h}
-              role="columnheader"
-              className={`${styles.ttHead} mono`}
-              style={{ gridColumn: `${col(h)} / span ${60 / slot}` }}
-            >
-              {String(h / 60).padStart(2, "0")}
+
+          {rooms.map((room, r) => (
+            <div key={room.id} role="row" className={styles.ttRow} style={{ "--row": r + 2 } as CSSProperties}>
+              <div role="rowheader" className={styles.ttRoom}>
+                <strong>{room.name}</strong>
+                <span className="mono">
+                  {room.floor.name} · {room.capacity}인{room.equipment.length ? ` · ${equipmentText(room.equipment)}` : ""}
+                </span>
+              </div>
+              {starts.map((s) => {
+                if (room.bookings.some((b) => b.start_min <= s && b.end_min > s)) return null; // 예약 블록이 덮는 칸
+                const past = isPast(day, s);
+                // 여러 날 예약을 고르면 시작 날에는 시작 칸부터 문 닫을 때까지 칠한다
+                const selected =
+                  draft.roomId === room.id &&
+                  draft.start !== null &&
+                  draft.end !== null &&
+                  s >= draft.start &&
+                  (draft.endDays > 0 || s < draft.end);
+                const key = `${r}:${col(s)}`;
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    role="gridcell"
+                    className={styles.ttCell}
+                    data-hour={s % 60 === 0 || undefined}
+                    data-past={past || undefined}
+                    data-selected={selected || undefined}
+                    data-nav={past ? undefined : true}
+                    data-r={r}
+                    data-c={col(s)}
+                    data-span={1}
+                    tabIndex={key === tabKey ? 0 : -1}
+                    style={{ gridColumn: col(s) }}
+                    disabled={past}
+                    aria-selected={selected}
+                    aria-label={`${room.name} ${minToHHMM(s)}–${minToHHMM(s + slot)} ${past ? "지난 시간" : "비어 있음"}`}
+                    onClick={() => onPick(room, s)}
+                  />
+                );
+              })}
+              {room.bookings.map((b) => {
+                const days = spanDays(b.starts_at, b.ends_at);
+                const when = days
+                  ? `${rangeText(b.starts_at, b.ends_at)} (${days}일)`
+                  : `${minToHHMM(b.start_min)}–${minToHHMM(b.end_min)}`;
+                const c = col(b.start_min);
+                return (
+                  <button
+                    key={b.id}
+                    type="button"
+                    role="gridcell"
+                    className={styles.ttBooking}
+                    data-mine={b.mine || undefined}
+                    data-nav
+                    data-r={r}
+                    data-c={c}
+                    data-span={Math.max(1, col(b.end_min) - c)}
+                    tabIndex={`${r}:${c}` === tabKey ? 0 : -1}
+                    style={{ gridColumn: `${c} / ${col(b.end_min)}` }}
+                    title={`${b.title} · ${b.department} ${b.organizer} · ${when}`}
+                    aria-haspopup="dialog"
+                    aria-label={`${room.name} ${when} ${b.title}, ${b.department} ${b.organizer}${
+                      b.mine ? ", 내 예약" : ""
+                    }. 누르면 자세히`}
+                    onClick={() => onOpenBooking(b.id)}
+                  >
+                    <strong>{b.title}</strong>
+                    <span>
+                      {days ? `${days}일 예약 · ` : ""}
+                      {b.mine ? "내 예약" : b.department}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           ))}
+
+          {nowVisible && (
+            <div
+              className={styles.ttNow}
+              style={
+                {
+                  gridColumn: col(day.now_min! - (day.now_min! % slot)),
+                  "--now": `${((day.now_min! % slot) / slot) * 100}%`,
+                } as CSSProperties
+              }
+              aria-hidden="true"
+            />
+          )}
         </div>
-
-        {rooms.map((room, r) => (
-          <div key={room.id} role="row" className={styles.ttRow} style={{ "--row": r + 2 } as CSSProperties}>
-            <div role="rowheader" className={styles.ttRoom}>
-              <strong>{room.name}</strong>
-              <span className="mono">
-                {room.floor.name} · {room.capacity}인{room.equipment.length ? ` · ${equipmentText(room.equipment)}` : ""}
-              </span>
-            </div>
-            {starts.map((s) => {
-              if (room.bookings.some((b) => b.start_min <= s && b.end_min > s)) return null; // 예약 블록이 덮는 칸
-              const past = isPast(day, s);
-              // 여러 날 예약을 고르면 시작 날에는 시작 칸부터 문 닫을 때까지 칠한다
-              const selected =
-                draft.roomId === room.id &&
-                draft.start !== null &&
-                draft.end !== null &&
-                s >= draft.start &&
-                (draft.endDays > 0 || s < draft.end);
-              return (
-                <button
-                  key={s}
-                  type="button"
-                  role="gridcell"
-                  className={styles.ttCell}
-                  data-hour={s % 60 === 0 || undefined}
-                  data-past={past || undefined}
-                  data-selected={selected || undefined}
-                  style={{ gridColumn: col(s) }}
-                  disabled={past}
-                  aria-selected={selected}
-                  aria-label={`${room.name} ${minToHHMM(s)}–${minToHHMM(s + slot)} ${past ? "지난 시간" : "비어 있음"}`}
-                  onClick={() => onPick(room, s)}
-                />
-              );
-            })}
-            {room.bookings.map((b) => {
-              const days = spanDays(b.starts_at, b.ends_at);
-              const when = days
-                ? `${rangeText(b.starts_at, b.ends_at)} (${days}일)`
-                : `${minToHHMM(b.start_min)}–${minToHHMM(b.end_min)}`;
-              return (
-                <button
-                  key={b.id}
-                  type="button"
-                  role="gridcell"
-                  className={styles.ttBooking}
-                  data-mine={b.mine || undefined}
-                  style={{ gridColumn: `${col(b.start_min)} / ${col(b.end_min)}` }}
-                  title={`${b.title} · ${b.department} ${b.organizer} · ${when}`}
-                  aria-haspopup="dialog"
-                  aria-label={`${room.name} ${when} ${b.title}, ${b.department} ${b.organizer}${
-                    b.mine ? ", 내 예약" : ""
-                  }. 누르면 자세히`}
-                  onClick={() => onOpenBooking(b.id)}
-                >
-                  <strong>{b.title}</strong>
-                  <span>
-                    {days ? `${days}일 예약 · ` : ""}
-                    {b.mine ? "내 예약" : b.department}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        ))}
-
-        {nowVisible && (
-          <div
-            className={styles.ttNow}
-            style={
-              {
-                gridColumn: col(day.now_min! - (day.now_min! % slot)),
-                "--now": `${((day.now_min! % slot) / slot) * 100}%`,
-              } as CSSProperties
-            }
-            aria-hidden="true"
-          />
-        )}
       </div>
-    </div>
+    </>
   );
 }

@@ -7,8 +7,11 @@ import styles from "./login.module.css";
 const REMEMBER_KEY = "officemap.rememberedEmpNo";
 
 type LoginError =
+  | { code: "EMPTY_EMP_NO" }
+  | { code: "EMPTY_PASSWORD" }
   | { code: "EMPTY" }
-  | { code: "INVALID_CREDENTIALS"; failedCount?: number; maxFailedCount?: number }
+  | { code: "NOT_DIGITS" }
+  | { code: "INVALID_CREDENTIALS" }
   | { code: "LOCKED"; maxFailedCount: number }
   | { code: "NOT_ACTIVE" }
   | { code: "NETWORK" };
@@ -17,9 +20,11 @@ type Props = {
   ssoEnabled: boolean;
   supportContact: string;
   maxFailedCount: number;
+  /** 로그인 후 갈 곳 (로그인이 끊기기 전에 보던 화면) */
+  next: string;
 };
 
-export default function LoginForm({ ssoEnabled, supportContact, maxFailedCount }: Props) {
+export default function LoginForm({ ssoEnabled, supportContact, maxFailedCount, next }: Props) {
   const router = useRouter();
   const empNoRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -46,9 +51,10 @@ export default function LoginForm({ ssoEnabled, supportContact, maxFailedCount }
     const form = new FormData(event.currentTarget);
     const empNo = String(form.get("empNo") ?? "").trim();
     const password = String(form.get("password") ?? "");
-    if (!empNo || !password) {
-      setError({ code: "EMPTY" });
-      (empNo ? passwordRef : empNoRef).current?.focus();
+    const invalid = checkInput(empNo, password);
+    if (invalid) {
+      setError(invalid);
+      (invalid.code === "EMPTY_PASSWORD" ? passwordRef : empNoRef).current?.focus();
       return;
     }
 
@@ -62,7 +68,7 @@ export default function LoginForm({ ssoEnabled, supportContact, maxFailedCount }
       });
       if (res.ok) {
         writeRememberedEmpNo(rememberRef.current?.checked ? empNo : null);
-        router.replace("/");
+        router.replace(next); // 임시 비밀번호면 화면이 비밀번호 변경으로 보낸다
         router.refresh();
         return;
       }
@@ -78,7 +84,10 @@ export default function LoginForm({ ssoEnabled, supportContact, maxFailedCount }
     }
   }
 
-  const credentialError = error?.code === "INVALID_CREDENTIALS" || error?.code === "EMPTY";
+  const empNoError = ["INVALID_CREDENTIALS", "EMPTY", "EMPTY_EMP_NO", "NOT_DIGITS"].includes(error?.code ?? "");
+  const passwordError = ["INVALID_CREDENTIALS", "EMPTY", "EMPTY_PASSWORD"].includes(error?.code ?? "");
+  // 고치려고 다시 입력하기 시작하면 오류 문구를 내린다
+  const clearError = () => error && error.code !== "LOCKED" && setError(null);
 
   return (
     <>
@@ -105,8 +114,9 @@ export default function LoginForm({ ssoEnabled, supportContact, maxFailedCount }
             autoComplete="username"
             inputMode="numeric"
             maxLength={20}
-            aria-invalid={credentialError || undefined}
-            aria-describedby={error ? "login-error" : undefined}
+            aria-invalid={empNoError || undefined}
+            aria-describedby={error ? "login-error" : "login-rule"}
+            onChange={clearError}
           />
         </label>
         <label className={styles.field}>
@@ -118,8 +128,9 @@ export default function LoginForm({ ssoEnabled, supportContact, maxFailedCount }
             placeholder="비밀번호"
             autoComplete="current-password"
             maxLength={128}
-            aria-invalid={credentialError || undefined}
-            aria-describedby={error ? "login-error" : undefined}
+            aria-invalid={passwordError || undefined}
+            aria-describedby={error ? "login-error" : "login-rule"}
+            onChange={clearError}
           />
         </label>
 
@@ -130,10 +141,15 @@ export default function LoginForm({ ssoEnabled, supportContact, maxFailedCount }
           </div>
         )}
 
-        <label className={styles.remember}>
-          <input ref={rememberRef} type="checkbox" name="remember" />
-          사번 기억하기
-        </label>
+        <div className={styles.rememberRow}>
+          <label className={styles.remember}>
+            <input ref={rememberRef} type="checkbox" name="remember" />
+            사번 기억하기
+          </label>
+          <span id="login-rule" className={styles.muted}>
+            {maxFailedCount}회 연속 틀리면 계정이 잠깁니다
+          </span>
+        </div>
 
         <button
           type="submit"
@@ -158,22 +174,29 @@ export default function LoginForm({ ssoEnabled, supportContact, maxFailedCount }
       </div>
       {showResetHelp && (
         <p id="reset-help" className={styles.resetHelp}>
-          비밀번호를 잊었다면 임시 비밀번호를 다시 받으세요 (문의: {supportContact}). 임시
-          비밀번호로 로그인하면 새 비밀번호로 바꾸게 됩니다.
+          비밀번호를 잊었거나 계정이 잠겼다면 {supportContact}에 임시 비밀번호 발급을 요청하세요. 임시
+          비밀번호로 로그인하면 바로 새 비밀번호를 정하는 화면이 나옵니다.
         </p>
       )}
     </>
   );
 }
 
+type InputError = { code: "EMPTY" | "EMPTY_EMP_NO" | "EMPTY_PASSWORD" | "NOT_DIGITS" };
+
+/** 서버에 보내기 전에 확인: 빈 칸, 숫자가 아닌 사번 (관리자 로그인도 같이 쓴다) */
+export function checkInput(empNo: string, password: string): InputError | null {
+  if (!empNo && !password) return { code: "EMPTY" };
+  if (!empNo) return { code: "EMPTY_EMP_NO" };
+  if (!/^\d+$/.test(empNo)) return { code: "NOT_DIGITS" };
+  if (!password) return { code: "EMPTY_PASSWORD" };
+  return null;
+}
+
 function toLoginError(body: Record<string, unknown>): LoginError {
   switch (body.code) {
     case "INVALID_CREDENTIALS":
-      return {
-        code: "INVALID_CREDENTIALS",
-        failedCount: typeof body.failed_count === "number" ? body.failed_count : undefined,
-        maxFailedCount: typeof body.max_failed_count === "number" ? body.max_failed_count : undefined,
-      };
+      return { code: "INVALID_CREDENTIALS" };
     case "LOCKED":
       return { code: "LOCKED", maxFailedCount: Number(body.max_failed_count) || 5 };
     case "NOT_ACTIVE":
@@ -183,15 +206,19 @@ function toLoginError(body: Record<string, unknown>): LoginError {
   }
 }
 
-function errorMessage(error: LoginError, contact: string, defaultMax: number): string {
+function errorMessage(error: LoginError, contact: string, max: number): string {
   switch (error.code) {
     case "EMPTY":
       return "사번과 비밀번호를 입력하세요.";
-    case "INVALID_CREDENTIALS": {
-      if (error.failedCount === undefined) return "사번 또는 비밀번호가 맞지 않습니다.";
-      const max = error.maxFailedCount ?? defaultMax;
-      return `사번 또는 비밀번호가 맞지 않습니다. (${error.failedCount}/${max}회 · ${max}회 실패 시 계정 잠금)`;
-    }
+    case "EMPTY_EMP_NO":
+      return "사번을 입력하세요.";
+    case "EMPTY_PASSWORD":
+      return "비밀번호를 입력하세요.";
+    case "NOT_DIGITS":
+      return "사번은 숫자로만 입력하세요.";
+    // 실패 횟수는 알려 주지 않는다: 있는 사번에만 횟수가 붙으면 어떤 사번이 있는지 드러난다
+    case "INVALID_CREDENTIALS":
+      return `사번 또는 비밀번호가 맞지 않습니다. ${max}회 연속 틀리면 계정이 잠깁니다.`;
     // 문의처는 설정값이라 끝 글자에 따라 조사(로/으로)가 달라지므로 조사 없이 붙인다
     case "LOCKED":
       return `비밀번호를 ${error.maxFailedCount}회 잘못 입력해 계정이 잠겼습니다. 잠금 해제 문의: ${contact}`;
