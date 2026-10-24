@@ -10,8 +10,8 @@ from pydantic import BaseModel, Field
 
 from app.config import settings
 from app.db import get_setting, pool
-from app.security import new_session_token, verify_password
-from app.session import IS_ADMIN_SQL, end_sessions, load_session
+from app.security import hash_password, new_session_token, verify_password
+from app.session import IS_ADMIN_SQL, CurrentUserAllowTemporary, end_other_identity, end_sessions, load_session
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -70,14 +70,12 @@ def login(body: LoginRequest, request: Request) -> JSONResponse:
                 (body.emp_no, user["id"] if user else None, result, ip, user_agent),
             )
 
-        # 아래 오류 응답은 with 블록 안에서 반환해서 로그인 기록과 실패 횟수가 커밋되게 한다
+        # 아래 오류 응답은 with 블록 안에서 반환해서 로그인 기록과 실패 횟수가 커밋되게 한다.
+        # 비밀번호가 틀리면 없는 사번과 똑같이 답한다 (실패 횟수·퇴사 여부를 알려 주면 어떤 사번이 있는지 드러난다)
         if user is None:
             verify_password(body.password, None)  # 없는 사번도 같은 시간이 걸리게
             record("NO_ACCOUNT")
             return error_response(401, "INVALID_CREDENTIALS")
-        if user["employment_status"] != "ACTIVE":
-            record("NOT_ACTIVE")
-            return error_response(403, "NOT_ACTIVE")
         if user["locked_at"] is not None:
             record("LOCKED")
             return error_response(423, "LOCKED", max_failed_count=max_failed)
@@ -95,7 +93,10 @@ def login(body: LoginRequest, request: Request) -> JSONResponse:
             record("WRONG_PASSWORD")
             if locked:
                 return error_response(423, "LOCKED", max_failed_count=max_failed)
-            return error_response(401, "INVALID_CREDENTIALS", failed_count=failed, max_failed_count=max_failed)
+            return error_response(401, "INVALID_CREDENTIALS")
+        if user["employment_status"] != "ACTIVE":
+            record("NOT_ACTIVE")
+            return error_response(403, "NOT_ACTIVE")
 
         token, token_hash = new_session_token()
         conn.execute(
@@ -114,8 +115,12 @@ def login(body: LoginRequest, request: Request) -> JSONResponse:
             (token_hash, user["id"], timedelta(hours=settings.session_max_hours), ip, user_agent),
         )
         record("SUCCESS")
+        # 같은 브라우저에 다른 사람의 관리자 로그인이 남아 있으면 끝낸다
+        drop_admin = end_other_identity(conn, request, settings.admin_cookie_name, user["id"])
 
     response = JSONResponse({"user": _user_out(user)})
+    if drop_admin:
+        response.delete_cookie(settings.admin_cookie_name, path="/")
     response.set_cookie(
         settings.session_cookie_name,
         token,
@@ -142,10 +147,78 @@ def me(request: Request) -> JSONResponse:
     return JSONResponse({"user": _user_out(user)})
 
 
+@router.get("/session")
+def session_status(request: Request) -> JSONResponse:
+    """자동 로그아웃까지 남은 시간. 확인만 하고 사용 시각은 늘리지 않는다 (열어 둔 화면이 주기적으로 묻는다)"""
+    token = request.cookies.get(settings.session_cookie_name)
+    with pool.connection() as conn:
+        user = load_session(conn, token, touch=False) if token else None
+        idle_minutes = int(get_setting(conn, "session.idle_minutes", 30))
+    if user is None:
+        return error_response(401, "NOT_LOGGED_IN")
+    return JSONResponse({"idle_left": max(0, user["idle_left"]), "idle_minutes": idle_minutes})
+
+
 @router.post("/logout", status_code=204)
 def logout(request: Request) -> Response:
     """직원 화면 로그아웃. 같은 브라우저의 관리자 로그인도 같이 끝낸다"""
     return end_sessions(request)
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=1, max_length=128)
+
+
+PASSWORD_MIN_LENGTH = 8
+
+
+def password_problems(password: str, emp_no: str) -> list[str]:
+    """새 비밀번호 규칙. 화면(PasswordForm)도 같은 규칙을 입력하는 동안 보여 준다"""
+    problems = []
+    if len(password) < PASSWORD_MIN_LENGTH:
+        problems.append("TOO_SHORT")
+    if not (any(c.isascii() and c.isalpha() for c in password) and any(c.isdigit() for c in password)):
+        problems.append("NEEDS_LETTER_AND_DIGIT")
+    if emp_no in password:
+        problems.append("CONTAINS_EMP_NO")
+    return problems
+
+
+@router.post("/password", status_code=204)
+def change_password(body: PasswordChange, user: CurrentUserAllowTemporary) -> Response:
+    """비밀번호 변경. 임시 비밀번호 상태에서도 쓸 수 있는 유일한 API.
+
+    바꾸면 이 브라우저 말고 다른 곳에 로그인해 있던 직원 화면 세션은 끝낸다."""
+    with pool.connection() as conn:
+        account = conn.execute(
+            "SELECT password_hash FROM user_accounts WHERE employee_id = %s FOR UPDATE",
+            (user["employee_id"],),
+        ).fetchone()
+        if not verify_password(body.current_password, account["password_hash"]):
+            return error_response(400, "WRONG_CURRENT")
+        problems = password_problems(body.new_password, user["emp_no"])
+        if problems:
+            return error_response(422, "WEAK_PASSWORD", problems=problems)
+        if body.new_password == body.current_password:
+            return error_response(422, "SAME_AS_OLD")
+        conn.execute(
+            """
+            UPDATE user_accounts
+            SET password_hash = %s, must_change_password = false, password_changed_at = now(),
+                failed_login_count = 0, updated_at = now()
+            WHERE employee_id = %s
+            """,
+            (hash_password(body.new_password), user["employee_id"]),
+        )
+        conn.execute(
+            """
+            UPDATE user_sessions SET revoked_at = now()
+            WHERE employee_id = %s AND kind = 'USER' AND token_hash <> %s AND revoked_at IS NULL
+            """,
+            (user["employee_id"], user["token_hash"]),
+        )
+    return Response(status_code=204)
 
 
 def _user_out(user: dict[str, Any]) -> dict[str, Any]:

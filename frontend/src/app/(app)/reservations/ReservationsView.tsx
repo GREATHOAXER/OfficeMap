@@ -38,10 +38,12 @@ export default function ReservationsView({ upcoming, past, today }: Props) {
   }, [notice]);
 
   const weekEnd = addDays(today, 7);
+  // 요약 숫자에는 취소된 회의를 넣지 않는다 (목록에는 "취소됨"으로 며칠 남겨 둔다)
+  const confirmed = upcoming.filter((r) => r.status === "CONFIRMED");
   const stats = [
-    { label: "오늘 회의", value: upcoming.filter((r) => kstDate(r.starts_at) === today).length },
-    { label: "7일 안에", value: upcoming.filter((r) => kstDate(r.starts_at) < weekEnd).length },
-    { label: "내가 만든 예약", value: upcoming.filter((r) => r.is_organizer).length },
+    { label: "오늘 남은 회의", value: confirmed.filter((r) => kstDate(r.starts_at) === today).length },
+    { label: "7일 안에", value: confirmed.filter((r) => kstDate(r.starts_at) < weekEnd).length },
+    { label: "내가 만든", value: confirmed.filter((r) => r.is_organizer).length },
   ];
 
   const list = (tab === "upcoming" ? upcoming : past).filter(
@@ -87,7 +89,7 @@ export default function ReservationsView({ upcoming, past, today }: Props) {
         <div className={styles.toolbar}>
           <div className={styles.seg} role="group" aria-label="기간">
             <button type="button" aria-pressed={tab === "upcoming"} onClick={() => setTab("upcoming")}>
-              예정 <span className="mono">{upcoming.length}</span>
+              예정 <span className="mono">{confirmed.length}</span>
             </button>
             <button type="button" aria-pressed={tab === "past"} onClick={() => setTab("past")}>
               지난 예약 (30일) <span className="mono">{past.length}</span>
@@ -138,10 +140,15 @@ export default function ReservationsView({ upcoming, past, today }: Props) {
                     >
                       <span className={`mono ${styles.time}`}>
                         <strong>{hhmm.format(new Date(r.starts_at))}</strong>
-                        <span>
-                          {days ? `~${kstDate(r.ends_at).slice(5)} ` : ""}
-                          {hhmm.format(new Date(r.ends_at))}
-                        </span>
+                        {days ? (
+                          <span>
+                            ~{kstDate(r.ends_at).slice(5)}
+                            <br />
+                            {hhmm.format(new Date(r.ends_at))}
+                          </span>
+                        ) : (
+                          <span>~{hhmm.format(new Date(r.ends_at))}</span>
+                        )}
                       </span>
                       <span className={styles.body}>
                         <span className={styles.head}>
@@ -160,8 +167,9 @@ export default function ReservationsView({ upcoming, past, today }: Props) {
                           </span>
                         </span>
                         <span className={styles.meta}>
-                          {r.floor} {r.room} · 참석자 {r.attendees}명
+                          {r.floor} {r.room} · {r.attendees + 1}명 (주최자 포함)
                           {!r.is_organizer && ` · ${r.organizer_department} ${r.organizer}`}
+                          {r.status === "CANCELLED" && r.cancelled_at && " · 주최자가 취소했어요"}
                         </span>
                       </span>
                       <span className={styles.more} aria-hidden="true">
@@ -179,9 +187,9 @@ export default function ReservationsView({ upcoming, past, today }: Props) {
       <ReservationDetail
         reservationId={detailId}
         onClose={() => setDetailId(null)}
-        onCancelled={(title) => {
+        onCancelled={(title, count) => {
           setDetailId(null);
-          setNotice(`‘${title}’ 예약을 취소했어요.`);
+          setNotice(count > 1 ? `‘${title}’ 예약 ${count}회를 취소했어요.` : `‘${title}’ 예약을 취소했어요.`);
           router.refresh();
         }}
         showTimetableLink

@@ -9,7 +9,7 @@ export type Conflict = { id: number; title: string; starts_at: string; ends_at: 
  * 여러 날에 걸친 예약을 고르면, 그 기간에 이 회의실에 이미 잡힌 예약을 서버에 물어본다.
  * (하루 안의 예약은 현황표로 빈 시간만 고르게 해서 물어볼 필요가 없다)
  */
-export function useConflicts(day: RoomsDay, draft: Draft) {
+export function useConflicts(day: RoomsDay, draft: Draft, exclude: number | null = null) {
   const ready = draft.roomId !== null && draft.start !== null && draft.end !== null && draft.endDays > 0;
   const params = ready
     ? new URLSearchParams({
@@ -17,6 +17,7 @@ export function useConflicts(day: RoomsDay, draft: Draft) {
         start_min: String(draft.start),
         end_date: addDays(day.date, draft.endDays),
         end_min: String(draft.end),
+        ...(exclude ? { exclude: String(exclude) } : {}), // 고치는 예약은 자기 자신과 겹치지 않는다
       })
     : null;
   const { data, loading } = useDebouncedJson<{ conflicts: Conflict[] }>(

@@ -21,13 +21,13 @@ export default async function PresencePage() {
     if (!me) redirect("/login");
     data = { me, presence, team, upcoming };
   } catch (error) {
-    if (error instanceof ApiError && error.status === 401) redirect("/login");
+    if (error instanceof ApiError && error.status === 401) redirect("/login?reason=expired");
     throw error;
   }
   return (
     <PresenceView
       myEmpNo={data.me.emp_no}
-      presence={data.presence}
+      info={data.presence}
       team={data.team}
       upcoming={data.upcoming}
       today={todayInSeoul()}

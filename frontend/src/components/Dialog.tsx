@@ -25,7 +25,11 @@ export default function Dialog({ open, onClose, title, size = "narrow", children
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
+    if (open && !dialog.open) {
+      dialog.showModal();
+      // 기본은 첫 버튼(닫기)에 포커스가 간다. 안에서 data-autofocus로 표시한 칸이 있으면 그리로
+      dialog.querySelector<HTMLElement>("[data-autofocus]")?.focus();
+    }
     if (!open && dialog.open) dialog.close();
   }, [open]);
 

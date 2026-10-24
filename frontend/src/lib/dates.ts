@@ -62,3 +62,13 @@ const kstDateFormat = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" 
 export const kstDate = (timestamp: string) => kstDateFormat.format(new Date(timestamp));
 
 export const WEEKDAY_NAMES = WEEKDAYS;
+
+/** 얼마 전인지: "방금", "12분 전", "3시간 전", 그보다 오래면 "10-21". now가 0(서버)이면 빈 글자 */
+export function agoText(iso: string, now: number): string {
+  if (!now) return "";
+  const minutes = Math.floor((now - Date.parse(iso)) / 60_000);
+  if (minutes < 1) return "방금";
+  if (minutes < 60) return `${minutes}분 전`;
+  if (minutes < 24 * 60) return `${Math.floor(minutes / 60)}시간 전`;
+  return kstDate(iso).slice(5);
+}

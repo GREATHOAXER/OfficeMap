@@ -151,30 +151,48 @@
   font-weight: 600;
 }
 
+/* AI 도우미: 아직 준비 중이라 눈에 덜 띄는 보조 버튼 + "준비 중" 표시 */
 .aiButton {
   margin-left: auto;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   height: 40px;
-  padding: 0 14px;
-  border: 0;
+  padding: 0 12px;
+  border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--link);
-  color: #fff;
+  background: var(--surface);
+  color: var(--link);
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
 }
 
-.aiButton:hover {
-  background: var(--link-hover);
+.aiButton:hover,
+.aiButton[aria-expanded="true"] {
+  border-color: var(--link);
+  background: var(--info-bg);
 }
 
-.aiButton[aria-expanded="true"] {
-  background: var(--link-hover);
-  box-shadow: inset 0 0 0 2px #fff, 0 0 0 2px var(--link-hover);
+.aiSoon {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* 자리가 아직 없는 사람에게 */
+.seatless {
+  margin: 12px 24px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--link);
+  border-radius: 8px;
+  background: var(--info-bg);
+  font-size: 13px;
 }
 
 /* 내 상태 버튼과 상태 바꾸기 패널 */
@@ -418,12 +436,13 @@
   top: 16px;
 }
 
-/* 층 버튼 */
+/* 층 버튼: 넘치면 옆으로 민다 (얇은 스크롤 막대가 보여서 더 있다는 걸 안다) */
 .floors {
   display: flex;
   gap: 6px;
   overflow-x: auto;
-  padding-bottom: 2px;
+  padding-bottom: 6px;
+  scrollbar-width: thin;
 }
 
 .floor {
@@ -567,6 +586,53 @@
   cursor: default;
 }
 
+/* 재실 상태 필터를 걸었을 때 */
+.filterNotice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.filterNotice button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* 키보드 사용자가 좌석 수십 개를 건너뛰는 링크. 포커스를 받을 때만 보인다 */
+.skip {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.skip:focus {
+  position: static;
+  width: auto;
+  height: auto;
+  clip: auto;
+  align-self: flex-start;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 13px;
+}
+
 /* 도면 */
 .planCard {
   background: var(--surface);
@@ -593,8 +659,8 @@
 /* 도면 안의 크기는 도면 폭(cqw) 기준이라, 메뉴를 접고 펴거나 확대해도 비율이 그대로다 */
 .plan {
   position: relative;
-  /* 기본 폭은 카드 폭(좁은 화면에서는 이름이 읽히는 640px)이고, 배율(--zoom)만큼 커진다 */
-  width: calc(max(100%, 640px) * var(--zoom, 1));
+  /* 기본 폭은 카드 폭(좁은 화면에서는 이름이 읽히는 720px)이고, 배율(--zoom)만큼 커진다 */
+  width: calc(max(100%, 720px) * var(--zoom, 1));
   container-type: inline-size;
   background: var(--surface);
   user-select: none; /* 끌어서 옮길 때 글자가 선택되지 않게 */
@@ -713,11 +779,15 @@
   align-items: center;
   justify-content: center;
   text-align: center;
-  font-size: max(8px, 0.85cqw);
+  font-size: max(9px, 1cqw);
   line-height: 1.45;
 }
 
-.space span {
+/* 이름표는 기둥(검은 네모)보다 위에 그려서 가려지지 않게 */
+.space span,
+.room > span {
+  position: relative;
+  z-index: 1;
   background: var(--surface);
   padding: 0 4px;
 }
@@ -748,9 +818,22 @@
   background: var(--ink);
 }
 
+/* 회의실은 누르면 예약 현황으로 간다 */
 .room {
   border: 2px solid var(--ink);
   background: var(--surface);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.room:hover {
+  color: var(--ink);
+  background: var(--info-bg);
+}
+
+.room:hover > span {
+  background: var(--info-bg);
+  text-decoration: underline;
 }
 
 .roomStatus {
@@ -786,7 +869,7 @@
   border-radius: 6px 0 6px 0;
   background: var(--tc);
   color: #fff;
-  font-size: max(8px, 0.85cqw);
+  font-size: max(9px, 0.95cqw);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -805,7 +888,7 @@
   border-top: 3px solid var(--tc);
   border-radius: 3px;
   background: var(--surface);
-  font-size: max(8px, 1.05cqw); /* 상한이 없어야 확대할 때 이름도 같이 커진다 */
+  font-size: max(8px, 1.15cqw); /* 상한이 없어야 확대할 때 이름도 같이 커진다 */
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
@@ -841,6 +924,24 @@
   font-weight: 400;
 }
 
+/* 내 자리: 굵은 테두리 + "나" 표시 */
+.seatMine {
+  box-shadow: 0 0 0 2px var(--ink); /* 테두리를 두껍게 하면 이름 칸이 좁아져 잘린다 */
+  z-index: 2;
+}
+
+.seatMeTag {
+  position: absolute;
+  top: -0.9em;
+  right: -0.5em;
+  padding: 0 0.35em;
+  border-radius: 0.4em;
+  background: var(--link);
+  color: #fff;
+  font-size: 0.75em;
+  line-height: 1.5;
+}
+
 .seatSelected {
   outline: 3px solid var(--link);
   outline-offset: 1px;
@@ -849,9 +950,9 @@
 
 /* 재실 표시는 이름 바로 앞에 붙여서 어느 자리 것인지 헷갈리지 않게 한다. 확대하면 같이 커진다 */
 .seatMark {
-  width: max(10px, 1.05cqw);
-  height: max(10px, 1.05cqw);
-  margin-right: max(2px, 0.25cqw);
+  width: max(9px, 1em);
+  height: max(9px, 1em);
+  margin-right: max(2px, 0.2em);
 }
 
 .seatMark[data-status="AWAY"] {
@@ -944,35 +1045,77 @@
   accent-color: var(--ink);
 }
 
-.chairLegend {
+/* 상태를 정하지 않은 사람: 빈 회색 원 */
+.noStatusMark {
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid #8a8a85;
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.hatchLegend {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   white-space: nowrap;
 }
 
-.chairSample {
-  position: relative;
-  display: inline-block;
-  width: 26px;
+.hatchSample {
+  width: 22px;
   height: 14px;
-  border: 1px solid #8a8a85;
-  border-radius: 2px;
-  margin-top: 6px;
-}
-
-.chairSample span {
-  position: absolute;
-  left: 30%;
-  bottom: calc(100% + 2px);
-  width: 40%;
-  height: 6px;
-  border: 1.5px solid #8a8a85;
-  border-radius: 7px 7px 1px 1px;
+  border: 1.5px solid var(--ink);
+  background-image: repeating-linear-gradient(45deg, transparent 0 3px, #bdbdb8 3px 4px);
 }
 
 .hint {
   margin-left: auto;
+}
+
+/* 도움말은 마우스가 있는 화면과 터치 화면에서 다르게 */
+.hintTouch {
+  display: none;
+}
+
+@media (hover: none) {
+  .hintMouse {
+    display: none;
+  }
+
+  .hintTouch {
+    display: inline;
+  }
+}
+
+/* 휴대폰에서 눌러 고정한 자리 정보: 화면 아래에서 올라오는 시트 */
+.sheet {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1.5px solid var(--ink);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.18);
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.freshness {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.cardLink {
+  align-self: flex-start;
+  font-size: 13px;
 }
 
 /* 오른쪽 패널 공통 카드 */
@@ -1229,6 +1372,36 @@
 
 .aiBody {
   flex: 1;
+  display: flex;
+  align-items: center;
+  padding: 20px;
+}
+
+.aiEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.aiEmpty strong {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.aiEmpty p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.aiEmpty ul {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .aiForm {
@@ -1307,8 +1480,32 @@
 }
 
 @media (max-width: 720px) {
+  /* 휴대폰 머리글: 제목·AI·내 상태를 한 줄에, 검색은 아래 한 줄. 도면에 자리를 더 준다 */
   .header {
-    padding: 12px 16px;
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .title {
+    font-size: 16px;
+  }
+
+  .aiButton {
+    padding: 0 10px;
+  }
+
+  .aiButtonText,
+  .aiButton .aiSoon,
+  .myStatusCaption {
+    display: none;
+  }
+
+  .myStatusButton {
+    padding: 0 10px;
+  }
+
+  .seatless {
+    margin: 12px 12px 0;
   }
 
   /* 좁은 화면: 검색창은 버튼들 아래 한 줄을 다 쓴다 */

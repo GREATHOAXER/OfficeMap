@@ -1,6 +1,6 @@
 /*
- * data-collapsed: "false" 펼침 / "true" 접힘 / "auto" 아직 고르지 않음
- * "auto"는 넓은 화면에서 펼침, 좁은 화면(720px 이하)에서 접힘으로 보인다
+ * 넓은 화면: data-collapsed "false" 펼침 / "true" 아이콘만 / "auto" 아직 고르지 않음(펼침)
+ * 좁은 화면(720px 이하): 메뉴는 숨어 있고 위쪽 막대의 햄버거로 여는 서랍 (data-drawer="open")
  */
 .shell {
   --sidebar-expanded: 224px;
@@ -187,20 +187,34 @@
   color: var(--muted);
 }
 
-/* 관리자 페이지 표시 (사업장 선택 자리) */
+/* 관리자 페이지 표시 (사업장 선택 자리). 버튼처럼 보이지 않게 옅은 바탕 + 왼쪽 선 */
 .mode {
   display: flex;
   align-items: center;
   gap: 6px;
   margin: 0 4px 4px;
   padding: 8px 10px;
-  border-radius: 6px;
-  background: var(--link);
-  color: #fff;
+  border-left: 3px solid var(--link);
+  border-radius: 0 6px 6px 0;
+  background: var(--info-bg);
+  color: var(--link);
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
   align-self: stretch;
+}
+
+.mobileMode {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--link);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .menu {
@@ -260,6 +274,24 @@
   border-radius: 4px;
   background: var(--link);
   color: #fff;
+}
+
+/* 아직 화면이 없는 메뉴: 눌리지 않고 "준비 중"이 보인다 */
+.itemPending,
+.itemPending:hover {
+  color: var(--muted);
+  cursor: default;
+  background: transparent;
+}
+
+.pending {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  white-space: nowrap;
 }
 
 .groupTitle {
@@ -394,110 +426,121 @@
   background: var(--bg);
 }
 
-/* ── 접힌 메뉴: 아이콘만 ───────────────────────────────────────────
-   아래 규칙은 좁은 화면의 "auto"에도 똑같이 적용한다 (맨 아래 미디어 쿼리) */
-.shell[data-collapsed="true"] {
-  --sidebar-width: var(--sidebar-collapsed);
-}
-
-.shell[data-collapsed="true"] .sidebar {
-  align-items: center;
-}
-
-.shell[data-collapsed="true"] .top {
-  flex-direction: column;
-  gap: 4px;
-}
-
-.shell[data-collapsed="true"] .item {
-  width: 44px;
-  padding: 0;
-  justify-content: center;
-}
-
-.shell[data-collapsed="true"] .user {
-  justify-content: center;
-  padding: 10px 0 0;
-}
-
-.shell[data-collapsed="true"] .symbol,
-.shell[data-collapsed="true"] .divider {
-  display: block;
-}
-
-.shell[data-collapsed="true"] .avatarButton {
-  display: flex;
-}
-
-.shell[data-collapsed="true"] .logo,
-.shell[data-collapsed="true"] .site,
-.shell[data-collapsed="true"] .mode,
-.shell[data-collapsed="true"] .groupTitle,
-.shell[data-collapsed="true"] .label,
-.shell[data-collapsed="true"] .badge,
-.shell[data-collapsed="true"] .avatar,
-.shell[data-collapsed="true"] .userText,
-.shell[data-collapsed="true"] .userButton {
-  display: none;
-}
-
-@media (max-width: 720px) {
-  .shell[data-collapsed="auto"] {
+/* ── 접힌 메뉴: 아이콘만 (넓은 화면에서 햄버거로 접었을 때) ─────────────────── */
+@media (min-width: 721px) {
+  .shell[data-collapsed="true"] {
     --sidebar-width: var(--sidebar-collapsed);
   }
 
-  .shell[data-collapsed="auto"] .sidebar {
+  .shell[data-collapsed="true"] .sidebar {
     align-items: center;
   }
 
-  .shell[data-collapsed="auto"] .top {
+  .shell[data-collapsed="true"] .top {
     flex-direction: column;
     gap: 4px;
   }
 
-  .shell[data-collapsed="auto"] .item {
+  .shell[data-collapsed="true"] .item {
     width: 44px;
     padding: 0;
     justify-content: center;
   }
 
-  .shell[data-collapsed="auto"] .user {
+  .shell[data-collapsed="true"] .user {
     justify-content: center;
     padding: 10px 0 0;
   }
 
-  .shell[data-collapsed="auto"] .symbol,
-  .shell[data-collapsed="auto"] .divider {
+  .shell[data-collapsed="true"] .symbol,
+  .shell[data-collapsed="true"] .divider {
     display: block;
   }
 
-  .shell[data-collapsed="auto"] .avatarButton {
+  .shell[data-collapsed="true"] .avatarButton {
     display: flex;
   }
 
-  .shell[data-collapsed="auto"] .logo,
-  .shell[data-collapsed="auto"] .site,
-  .shell[data-collapsed="auto"] .mode,
-  .shell[data-collapsed="auto"] .groupTitle,
-  .shell[data-collapsed="auto"] .label,
-  .shell[data-collapsed="auto"] .badge,
-  .shell[data-collapsed="auto"] .avatar,
-  .shell[data-collapsed="auto"] .userText,
-  .shell[data-collapsed="auto"] .userButton {
+  /* 관리자 페이지 표시는 방패 아이콘만 남긴다 */
+  .shell[data-collapsed="true"] .mode {
+    justify-content: center;
+    padding: 8px 0;
+    width: 44px;
+  }
+
+  .shell[data-collapsed="true"] .mode span,
+  .shell[data-collapsed="true"] .logo,
+  .shell[data-collapsed="true"] .site,
+  .shell[data-collapsed="true"] .groupTitle,
+  .shell[data-collapsed="true"] .label,
+  .shell[data-collapsed="true"] .badge,
+  .shell[data-collapsed="true"] .pending,
+  .shell[data-collapsed="true"] .avatar,
+  .shell[data-collapsed="true"] .userText,
+  .shell[data-collapsed="true"] .userButton {
     display: none;
   }
+}
 
-  /* 좁은 화면에서 직접 펼치면 본문 위에 겹쳐 띄우고, 본문은 접힌 폭만큼만 비켜 준다 */
-  .shell[data-collapsed="false"]::before {
-    content: "";
-    flex: 0 0 var(--sidebar-collapsed);
+/* ── 휴대폰: 왼쪽 메뉴는 숨겨 두고, 위쪽 막대의 햄버거로 여는 서랍 ─────────────── */
+.mobileBar,
+.backdrop {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .shell {
+    --sidebar-width: 272px;
   }
 
-  .shell[data-collapsed="false"] .sidebar {
+  .sidebar {
     position: fixed;
     left: 0;
     top: 0;
-    z-index: 40;
+    z-index: 50;
+    height: 100dvh;
+    max-width: calc(100vw - 48px);
+    transform: translateX(-100%);
+    visibility: hidden; /* 닫혀 있을 때 Tab으로 들어가지 않게 */
+    transition:
+      transform 0.2s ease,
+      visibility 0.2s;
+  }
+
+  .shell[data-drawer="open"] .sidebar {
+    transform: none;
+    visibility: visible;
     box-shadow: 4px 0 24px rgba(0, 0, 0, 0.18);
+  }
+
+  .shell[data-drawer="open"] .backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    background: rgba(0, 0, 0, 0.35);
+  }
+
+  .mobileBar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 52px;
+    padding: 0 12px 0 4px;
+    background: var(--surface-sunken);
+    border-bottom: 1px solid var(--divider);
+  }
+
+  .mobileBar .logo {
+    height: 28px;
+  }
+}
+
+@media (max-width: 720px) and (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
   }
 }

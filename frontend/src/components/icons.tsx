@@ -93,6 +93,15 @@ export function PenIcon(props: IconProps) {
   );
 }
 
+export function KeyIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="8" cy="15" r="4" />
+      <path d="M11 12l9-9M17 6l3 3M14 9l2 2" />
+    </Svg>
+  );
+}
+
 export function ShieldIcon(props: IconProps) {
   return (
     <Svg {...props}>

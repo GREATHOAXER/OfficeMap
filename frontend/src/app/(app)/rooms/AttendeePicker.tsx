@@ -3,7 +3,7 @@
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { CloseIcon, PersonIcon, SearchIcon } from "@/components/icons";
 import type { EmployeeHit, TeamHit } from "@/lib/api";
-import { PRESENCE_LABEL } from "@/lib/presence";
+import { NO_STATUS_LABEL, PRESENCE_LABEL } from "@/lib/presence";
 import { type SearchWhen, useEmployeeSearch, useTeamSearch } from "@/lib/useEmployeeSearch";
 import type { Attendee, TeamGroup } from "./slots";
 import styles from "./rooms.module.css";
@@ -41,6 +41,7 @@ export default function AttendeePicker({ people, teams, onPeopleChange, onTeamsC
   const [loadingTeam, setLoadingTeam] = useState<number | null>(null);
   const [teamError, setTeamError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<number | null>(null); // 펼쳐 본 팀 묶음
+  const [blockedNote, setBlockedNote] = useState<string | null>(null); // 고를 수 없는 사람을 골랐을 때 이유
   const boxRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listId = useId();
@@ -48,6 +49,8 @@ export default function AttendeePicker({ people, teams, onPeopleChange, onTeamsC
   const teamQuery = query.trimStart().slice(1);
   const search = useEmployeeSearch(query, when, 20, !teamMode);
   const teamSearch = useTeamSearch(teamQuery, open && teamMode);
+  // "총무"처럼 팀 이름을 쓰면 $ 없이도 맨 위에 "총무팀 전체 추가"를 보여 준다 (두 글자부터)
+  const nameTeams = useTeamSearch(query, open && !teamMode && query.trim().length >= 2);
   const showList = open && query.trim() !== "";
 
   const added = new Set(people.map((p) => p.emp_no));
@@ -55,7 +58,10 @@ export default function AttendeePicker({ people, teams, onPeopleChange, onTeamsC
   const addedTeams = new Set(teams.map((t) => t.id));
   const options: Option[] = teamMode
     ? teamSearch.teams.map((team) => ({ kind: "team" as const, team }))
-    : search.results.map((hit) => ({ kind: "person" as const, hit }));
+    : [
+        ...nameTeams.teams.slice(0, 2).map((team) => ({ kind: "team" as const, team })),
+        ...search.results.map((hit) => ({ kind: "person" as const, hit })),
+      ];
   const activeIndex = active < options.length ? active : -1;
 
   useEffect(() => {
@@ -68,7 +74,7 @@ export default function AttendeePicker({ people, teams, onPeopleChange, onTeamsC
   }, [showList]);
 
   function personBlocked(hit: EmployeeHit): string | null {
-    if (hit.is_me) return "주최자";
+    if (hit.is_me) return "주최자 · 자동 포함";
     if (added.has(hit.emp_no)) return "추가됨";
     if (inTeam.has(hit.emp_no)) return "팀으로 추가됨";
     return null;
@@ -77,6 +83,7 @@ export default function AttendeePicker({ people, teams, onPeopleChange, onTeamsC
   function reset() {
     setQuery("");
     setActive(-1);
+    setBlockedNote(null);
     inputRef.current?.focus();
   }
 
@@ -101,7 +108,12 @@ export default function AttendeePicker({ people, teams, onPeopleChange, onTeamsC
   }
 
   function addPerson(hit: EmployeeHit) {
-    if (personBlocked(hit)) return;
+    const reason = personBlocked(hit);
+    if (reason) {
+      // 말없이 무시하지 않고 왜 안 되는지 알려 준다
+      setBlockedNote(hit.is_me ? "주최자(나)는 따로 넣지 않아도 참석자에 포함돼요." : `${hit.name}: 이미 ${reason}`);
+      return;
+    }
     const sameName = search.results.some((r) => r.name === hit.name && r.emp_no !== hit.emp_no);
     onPeopleChange([...people, { ...hit, sameName }]);
     reset();
@@ -230,8 +242,15 @@ export default function AttendeePicker({ people, teams, onPeopleChange, onTeamsC
             setQuery(event.target.value);
             setOpen(true);
             setActive(-1);
+            setBlockedNote(null);
           }}
-          onFocus={() => setOpen(true)}
+          onFocus={(event) => {
+            setOpen(true);
+            // 휴대폰: 결과 목록이 화면 아래 버튼·키보드에 가리지 않게 입력 칸을 위로 올린다
+            if (window.matchMedia("(max-width: 720px)").matches) {
+              event.currentTarget.scrollIntoView({ block: "start", behavior: "smooth" });
+            }
+          }}
           onKeyDown={onKeyDown}
         />
       </label>
@@ -242,8 +261,8 @@ export default function AttendeePicker({ people, teams, onPeopleChange, onTeamsC
       )}
       {showList && (
         <div className={styles.attendeePanel}>
-          <p className={styles.attendeeStatus} role="status" data-warn={sameNameCount > 1 || undefined}>
-            {status}
+          <p className={styles.attendeeStatus} role="status" data-warn={sameNameCount > 1 || !!blockedNote || undefined}>
+            {blockedNote ?? status}
           </p>
           {options.length > 0 && (
             <ul id={listId} role="listbox" aria-label="참석자 검색 결과" className={styles.attendeeList}>
@@ -308,12 +327,10 @@ export default function AttendeePicker({ people, teams, onPeopleChange, onTeamsC
                       </span>
                     </span>
                     <span className={styles.attendeeSide}>
-                      {hit.presence && (
-                        <span className={styles.attendeePresence}>
-                          <span className="mk" data-status={hit.presence.status} aria-hidden="true" />
-                          {PRESENCE_LABEL[hit.presence.status]}
-                        </span>
-                      )}
+                      <span className={styles.attendeePresence}>
+                        {hit.presence && <span className="mk" data-status={hit.presence.status} aria-hidden="true" />}
+                        {hit.presence ? PRESENCE_LABEL[hit.presence.status] : NO_STATUS_LABEL}
+                      </span>
                       {when && (
                         <span className={conflict ? styles.conflict : styles.attendeeFree}>{conflict ?? "이 시간 비어 있음"}</span>
                       )}

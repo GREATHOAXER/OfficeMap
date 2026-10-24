@@ -149,7 +149,7 @@ INSERT INTO app_settings (key, value, description) VALUES
     ('room.max_minutes',           '10080',                             '1회 최대 예약 시간 (7일, 여러 날 예약 가능)'),
     ('room.checkin_grace_minutes', '15',                                '체크인 없으면 자동 반납까지'),
     ('room.open_hours',            '{"start": "08:00", "end": "20:00"}', '예약 가능 시간'),
-    ('support.contact',            '"정보보호팀 내선 0000"',              '로그인 화면 계정 문의'),
+    ('support.contact',            '"정보보호팀(내선 2580)"',             '로그인 화면 계정 문의'),
     ('presence.workday_end',       '"18:00"',                           '재실 상태 "퇴근 시" 자동 해제 시각');
 
 INSERT INTO org_sync_runs (source, file_id, status, created_count, run_by, started_at, finished_at)
@@ -159,7 +159,7 @@ VALUES ('EXCEL', (SELECT id FROM files WHERE stored_path = 'org/20261001.xlsx'),
 
 -- ① 공간: 사업장 · 층 · 도면 · 구역 · 좌석 -------------------------------------
 
-INSERT INTO sites (kind, name, address, sort_order) VALUES ('HQ', '서울 본사', '[서울 주소]', 1);
+INSERT INTO sites (kind, name, address, sort_order) VALUES ('HQ', '서울 본사', NULL, 1);  -- 주소는 관리자가 입력
 
 INSERT INTO floors (site_id, name, description, sort_order)
 SELECT s.id, n || 'F',

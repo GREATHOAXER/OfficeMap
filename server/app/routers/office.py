@@ -42,6 +42,17 @@ def sites(user: CurrentUser) -> dict[str, Any]:
             """,
             (user["employee_id"],),
         ).fetchone()
+        # 자리가 아직 없는 사람(신규 입사자 등)은 우리 팀 구역이 있는 층을 먼저 연다
+        team_floor = conn.execute(
+            """
+            SELECT z.floor_id
+            FROM employees e JOIN zones z ON z.department_id = e.department_id AND z.is_active
+            WHERE e.id = %s
+            ORDER BY z.floor_id
+            LIMIT 1
+            """,
+            (user["employee_id"],),
+        ).fetchone()
 
     result: list[dict[str, Any]] = []
     for row in rows:
@@ -50,7 +61,11 @@ def sites(user: CurrentUser) -> dict[str, Any]:
         result[-1]["floors"].append(
             {"id": row["floor_id"], "name": row["floor_name"], "description": row["description"], "teams": row["teams"]}
         )
-    return {"sites": result, "my_floor_id": my_seat["floor_id"] if my_seat else None}
+    return {
+        "sites": result,
+        "my_floor_id": my_seat["floor_id"] if my_seat else None,
+        "team_floor_id": team_floor["floor_id"] if team_floor else None,
+    }
 
 
 @router.get("/floors/{floor_id}")
@@ -118,7 +133,8 @@ def floor_map(floor_id: int, user: CurrentUser) -> dict[str, Any]:
                    e.extension, e.email,
                    CASE WHEN {_LIVE_PRESENCE} THEN p.status END AS presence_status,
                    CASE WHEN {_LIVE_PRESENCE} THEN p.message END AS presence_message,
-                   CASE WHEN {_LIVE_PRESENCE} THEN p.expires_at END AS presence_expires_at
+                   CASE WHEN {_LIVE_PRESENCE} THEN p.expires_at END AS presence_expires_at,
+                   CASE WHEN {_LIVE_PRESENCE} THEN p.updated_at END AS presence_updated_at
             FROM seats s
             LEFT JOIN seat_assignments a ON a.seat_id = s.id AND {_CURRENT_ASSIGNMENT}
             LEFT JOIN employees e ON e.id = a.employee_id AND e.employment_status = 'ACTIVE'
@@ -174,6 +190,7 @@ def _seat_out(row: dict[str, Any]) -> dict[str, Any]:
                     "status": row["presence_status"],
                     "message": row["presence_message"],
                     "expires_at": row["presence_expires_at"],
+                    "updated_at": row["presence_updated_at"],  # 언제 바꾼 상태인지 (오래된 상태를 알아보게)
                 }
                 if row["presence_status"]
                 else None

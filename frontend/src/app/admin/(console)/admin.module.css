@@ -52,6 +52,16 @@
   display: flex;
   flex-direction: column;
   gap: 24px;
+  container-type: inline-size; /* 아래 카드 칸 수는 본문 폭으로 정한다 */
+}
+
+.readyNote {
+  margin: -8px 0 0;
+  padding: 8px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .muted {
@@ -118,10 +128,10 @@
   font-size: 12px;
 }
 
-/* 요약 숫자 (내 예약의 요약 카드와 같은 모양) */
+/* 요약 숫자 (내 예약의 요약 카드와 같은 모양). 넓으면 한 줄, 중간이면 3칸, 좁으면 2칸 */
 .stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   margin: 0;
   padding: 0;
@@ -143,6 +153,24 @@
 .stats strong {
   font-size: 20px;
   color: var(--ink);
+}
+
+.statNote {
+  font-size: 11px;
+}
+
+@container (min-width: 560px) {
+  .stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 1000px) {
+  .stats {
+    grid-template-columns: none;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+  }
 }
 
 /* 사업장 카드 */
@@ -206,7 +234,7 @@
 }
 
 .tableScroll .table {
-  min-width: 1040px;
+  min-width: 820px;
 }
 
 .table th,
@@ -233,6 +261,19 @@
 .table tbody th {
   font-weight: 400;
   white-space: nowrap;
+}
+
+/* 표를 옆으로 밀어도 층 칸은 왼쪽에 남는다 */
+.tableScroll .table tbody th,
+.tableScroll .table thead th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+
+.tableScroll .table thead th:first-child {
+  background: var(--surface-sunken);
 }
 
 .table tbody th strong {
@@ -266,7 +307,13 @@
 }
 
 .colActions {
-  width: 210px;
+  width: 200px;
+}
+
+.subLine {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .scopeTag,
@@ -340,8 +387,11 @@
   white-space: nowrap;
 }
 
-.actions > * + * {
-  margin-left: 6px;
+.actionRow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 /* 권한 체계 */
@@ -368,13 +418,26 @@
   margin-left: auto;
 }
 
+/* 권한 단계 카드: 넓으면 4칸, 중간이면 2칸(2×2), 좁으면 1칸 */
 .levels {
   margin: 0;
   padding: 0;
   list-style: none;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
+}
+
+@container (min-width: 480px) {
+  .levels {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 1000px) {
+  .levels {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 .levels li {
@@ -410,7 +473,7 @@
 }
 
 .tableCard .table {
-  min-width: 960px;
+  min-width: 860px;
 }
 
 .foot {
@@ -453,5 +516,74 @@
   .siteMeta {
     margin-left: 0;
     width: 100%;
+  }
+
+  /* 휴대폰: 표를 줄마다 카드로 바꾼다 (옆으로 밀어야 보이는 칸이 없게). 칸 이름은 data-label */
+  .tableScroll .table,
+  .tableCard .table {
+    min-width: 0;
+  }
+
+  .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .table,
+  .table tbody,
+  .table tr,
+  .table th,
+  .table td {
+    display: block;
+  }
+
+  .table tbody tr {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--divider);
+  }
+
+  .table tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .table tbody th,
+  .table td {
+    position: static;
+    padding: 3px 0;
+    border: 0;
+  }
+
+  .table td[data-label] {
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr);
+    gap: 8px;
+    align-items: baseline;
+  }
+
+  .table td[data-label]::before {
+    content: attr(data-label);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .table td.actions {
+    padding-top: 8px;
+  }
+
+  .actionRow {
+    justify-content: flex-start;
+  }
+
+  .table tr[data-scope] > :first-child,
+  .table tr[data-me] > :first-child {
+    box-shadow: none;
+  }
+
+  .table tr[data-scope],
+  .table tr[data-me] {
+    box-shadow: inset 3px 0 0 var(--ink);
   }
 }

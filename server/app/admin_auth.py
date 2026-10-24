@@ -88,7 +88,8 @@ def load_admin(conn: Connection, token: str, *, touch: bool = True) -> dict[str,
     idle_minutes = int(get_setting(conn, "admin.session.idle_minutes", 15))
     admin = conn.execute(
         """
-        SELECT s.id AS session_id, e.id AS employee_id, e.emp_no, e.name, e.rank_name, d.name AS department
+        SELECT s.id AS session_id, e.id AS employee_id, e.emp_no, e.name, e.rank_name, d.name AS department,
+               extract(epoch FROM s.last_active_at + make_interval(mins => %s) - now())::int AS idle_left
         FROM user_sessions s
         JOIN employees e ON e.id = s.employee_id
         JOIN departments d ON d.id = e.department_id
@@ -101,7 +102,7 @@ def load_admin(conn: Connection, token: str, *, touch: bool = True) -> dict[str,
           AND e.employment_status = 'ACTIVE'
           AND a.locked_at IS NULL
         """,
-        (hash_token(token), idle_minutes),
+        (idle_minutes, hash_token(token), idle_minutes),
     ).fetchone()
     if admin is None:
         return None

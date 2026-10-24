@@ -3,7 +3,17 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { type CSSProperties, Fragment, type KeyboardEvent, type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  type CSSProperties,
+  Fragment,
+  type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { createPortal } from "react-dom";
 import type { Admin, SiteSummary, User } from "@/lib/api";
 import { SIDEBAR_COOKIE } from "@/lib/sidebar";
@@ -12,7 +22,9 @@ import {
   CheckIcon,
   ChecklistIcon,
   ChevronDownIcon,
+  CloseIcon,
   GridIcon,
+  KeyIcon,
   MenuIcon,
   MoreIcon,
   MoveIcon,
@@ -22,14 +34,15 @@ import {
   SparkleIcon,
 } from "./icons";
 import LogoutButton from "./LogoutButton";
+import SessionWatch from "./SessionWatch";
 import styles from "./AppShell.module.css";
 
 type MenuItem = { label: string; icon: ReactNode; href?: string; badge?: string };
 type MenuGroup = { title?: string; items: MenuItem[] };
 
-// href가 없는 메뉴는 아직 화면이 없어서 버튼만 둔다
+// href가 없는 메뉴는 아직 화면이 없어서 "준비 중" 표시를 붙인 버튼만 둔다
 const MAIN_MENU: MenuItem[] = [
-  { label: "AI 도우미", icon: <SparkleIcon />, badge: "NEW" },
+  { label: "AI 도우미", icon: <SparkleIcon /> },
   { label: "자리·재실 현황", icon: <GridIcon />, href: "/" },
   { label: "회의실 확인·예약", icon: <CalendarIcon />, href: "/rooms" },
   { label: "내 예약", icon: <ChecklistIcon />, href: "/reservations" },
@@ -40,18 +53,21 @@ const MAIN_MENU: MenuItem[] = [
 // 관리 메뉴(사업장·권한, 좌석 배치 편집, 도면 편집)는 관리자 페이지 안에 있고, 관리자 비밀번호로 따로 로그인한다
 const ADMIN_MENU: MenuItem[] = [{ label: "관리자 페이지", icon: <ShieldIcon />, href: "/admin" }];
 
-// 관리자 페이지의 왼쪽 메뉴
-const CONSOLE_MENU: MenuGroup[] = [
-  {
-    title: "관리",
-    items: [
-      { label: "사업장·권한", icon: <ShieldIcon />, href: "/admin" },
-      { label: "좌석 배치 편집", icon: <MoveIcon /> },
-      { label: "도면 편집", icon: <PenIcon /> },
-    ],
-  },
-  { title: "직원 화면", items: [{ label: "자리·재실 현황", icon: <GridIcon />, href: "/" }] },
-];
+/** 관리자 페이지의 왼쪽 메뉴. 도면 편집은 사업장 관리자 이상만 할 수 있어서 그 아래 단계에는 보이지 않는다 */
+function consoleMenu(admin: Admin): MenuGroup[] {
+  const plans = admin.role === "COMPANY_ADMIN" || admin.role === "SITE_ADMIN";
+  return [
+    {
+      title: "관리",
+      items: [
+        { label: "사업장·권한", icon: <ShieldIcon />, href: "/admin" },
+        { label: "좌석 배치 편집", icon: <MoveIcon /> },
+        ...(plans ? [{ label: "도면 편집", icon: <PenIcon /> }] : []),
+      ],
+    },
+    { title: "직원 화면", items: [{ label: "자리·재실 현황", icon: <GridIcon />, href: "/" }] },
+  ];
+}
 
 // AppShell.module.css 의 좁은 화면 기준과 같아야 한다
 const NARROW_QUERY = "(max-width: 720px)";
@@ -70,11 +86,13 @@ type Account = {
   department: string;
   roleLabel: string;
   scopes?: string[]; // 관리자: 맡은 범위
+  links?: { label: string; href: string }[]; // 계정 메뉴의 링크 (비밀번호 변경 등)
   logout: { endpoint: string; redirectTo: string };
 };
 
 type Common = {
-  /** 쿠키에 저장된 선택. null이면 아직 고른 적 없음: 넓은 화면은 펼치고 좁은 화면은 접는다 */
+  /** 넓은 화면에서 메뉴를 접었는지 (쿠키에 저장). null이면 아직 고른 적 없음: 펼친다.
+   *  좁은 화면(휴대폰)에서는 메뉴가 숨어 있다가 위쪽 막대의 햄버거로 여는 서랍이 된다 */
   initialCollapsed: boolean | null;
   children: ReactNode;
 };
@@ -92,17 +110,46 @@ export default function AppShell(props: Props) {
     () => window.matchMedia(NARROW_QUERY).matches,
     () => false,
   );
-  const collapsed = choice ?? narrow;
+  // 휴대폰 서랍: 연 화면의 주소를 기억해서, 다른 화면으로 가면 저절로 닫힌다
+  const pathname = usePathname();
+  const [drawerPath, setDrawerPath] = useState<string | null>(null);
+  const drawerOpen = narrow && drawerPath === pathname;
+  const openButtonRef = useRef<HTMLButtonElement>(null);
+  const navRef = useRef<HTMLElement>(null);
+  const collapsed = !narrow && (choice ?? false);
 
   function toggle() {
+    if (narrow) {
+      closeDrawer();
+      return;
+    }
     const next = !collapsed;
     setChoice(next);
     document.cookie = `${SIDEBAR_COOKIE}=${next ? "collapsed" : "expanded"}; path=/; max-age=31536000; samesite=lax`;
   }
 
+  function closeDrawer() {
+    setDrawerPath(null);
+    openButtonRef.current?.focus();
+  }
+
+  // 서랍을 열면 메뉴로 포커스를 옮기고, Esc로 닫는다
+  useEffect(() => {
+    if (!drawerOpen) return;
+    navRef.current?.querySelector<HTMLElement>("a, button")?.focus();
+    function onKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") {
+        setDrawerPath(null);
+        openButtonRef.current?.focus();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [drawerOpen]);
+
   const groups: MenuGroup[] =
     props.variant === "admin"
-      ? CONSOLE_MENU
+      ? consoleMenu(props.admin)
       : [{ items: MAIN_MENU }, ...(props.user.role === "ADMIN" ? [{ title: "관리", items: ADMIN_MENU }] : [])];
   const account: Account =
     props.variant === "admin"
@@ -110,39 +157,55 @@ export default function AppShell(props: Props) {
           ...props.admin,
           roleLabel: props.admin.role_label,
           scopes: props.admin.grants.map((g) => `${g.label} · ${g.scope}`),
-          logout: { endpoint: "/api/admin/auth/logout", redirectTo: "/admin/login" },
+          logout: { endpoint: "/api/admin/auth/logout", redirectTo: "/admin/login?reason=logout" },
         }
       : {
           ...props.user,
-          roleLabel: props.user.role === "ADMIN" ? "관리자" : "직원",
-          logout: { endpoint: "/api/auth/logout", redirectTo: "/login" },
+          // 직원 화면에서는 직급을 보여 준다 (관리자 단계 이름은 관리자 페이지에서만)
+          roleLabel: props.user.rank ?? "직원",
+          links: [{ label: "비밀번호 변경", href: "/password" }],
+          logout: { endpoint: "/api/auth/logout", redirectTo: "/login?reason=logout" },
         };
+  const menuLabel = props.variant === "admin" ? "관리자 메뉴" : "주 메뉴";
 
-  // 화면에 보이는 모양은 CSS가 data-collapsed로 정한다. "auto"는 화면 폭에 따라 CSS가 고른다
-  // (서버는 화면 폭을 몰라서, 이렇게 해야 첫 화면부터 맞는 모양으로 그려진다)
+  // 넓은 화면의 모양은 CSS가 data-collapsed로 정한다 (서버는 화면 폭을 몰라서, 이렇게 해야 첫 화면부터 맞는 모양).
+  // 좁은 화면은 data-drawer로 서랍을 열고 닫는다
   return (
-    <div className={styles.shell} data-collapsed={choice === null ? "auto" : String(choice)}>
-      <nav id="main-menu" aria-label={props.variant === "admin" ? "관리자 메뉴" : "주 메뉴"} className={styles.sidebar}>
+    <div
+      className={styles.shell}
+      data-collapsed={choice === null ? "auto" : String(choice)}
+      data-drawer={drawerOpen ? "open" : undefined}
+    >
+      <nav
+        ref={navRef}
+        id="main-menu"
+        aria-label={menuLabel}
+        className={styles.sidebar}
+        onClick={(event) => {
+          // 서랍에서 메뉴를 고르면 닫는다 (지금 화면을 다시 눌러도)
+          if (narrow && (event.target as Element).closest("a")) setDrawerPath(null);
+        }}
+      >
         <div className={styles.top}>
           <button
             type="button"
             className={styles.iconButton}
             onClick={toggle}
-            aria-expanded={!collapsed}
+            aria-expanded={narrow ? drawerOpen : !collapsed}
             aria-controls="main-menu"
-            aria-label={collapsed ? "메뉴 펼치기" : "메뉴 접기"}
-            title={collapsed ? "메뉴 펼치기" : "메뉴 접기"}
+            aria-label={narrow ? "메뉴 닫기" : collapsed ? "메뉴 펼치기" : "메뉴 접기"}
+            title={narrow ? "메뉴 닫기" : collapsed ? "메뉴 펼치기" : "메뉴 접기"}
           >
-            <MenuIcon />
+            {narrow ? <CloseIcon /> : <MenuIcon />}
           </button>
           <Image src="/kftc-logo.jpg" alt="금융결제원" width={101} height={32} className={styles.logo} priority />
           <Image src="/kftc-symbol.png" alt="금융결제원" width={32} height={32} className={styles.symbol} />
         </div>
 
         {props.variant === "admin" ? (
-          <p className={styles.mode}>
+          <p className={styles.mode} title="관리자 페이지">
             <ShieldIcon size={16} />
-            관리자 페이지
+            <span>관리자 페이지</span>
           </p>
         ) : (
           props.sites.length > 0 && <SiteSelect sites={props.sites} defaultSiteId={props.defaultSiteId} />
@@ -159,7 +222,32 @@ export default function AppShell(props: Props) {
         <div className={styles.spacer} />
         <UserCard account={account} />
       </nav>
-      <div className={styles.content}>{children}</div>
+      <div className={styles.backdrop} aria-hidden="true" onClick={closeDrawer} />
+      <div className={styles.content}>
+        {/* 휴대폰: 왼쪽 메뉴 대신 위쪽 막대 (햄버거로 메뉴 서랍 열기) */}
+        <div className={styles.mobileBar}>
+          <button
+            ref={openButtonRef}
+            type="button"
+            className={styles.iconButton}
+            onClick={() => setDrawerPath(pathname)}
+            aria-expanded={drawerOpen}
+            aria-controls="main-menu"
+            aria-label={`${menuLabel} 열기`}
+          >
+            <MenuIcon />
+          </button>
+          <Image src="/kftc-logo.jpg" alt="금융결제원" width={101} height={32} className={styles.logo} />
+          {props.variant === "admin" && (
+            <span className={styles.mobileMode}>
+              <ShieldIcon size={14} />
+              관리자
+            </span>
+          )}
+        </div>
+        {children}
+      </div>
+      <SessionWatch kind={props.variant === "admin" ? "admin" : "user"} />
     </div>
   );
 }
@@ -310,6 +398,7 @@ function MenuEntry({ item, active, collapsed }: { item: MenuItem; active: boolea
       {item.icon}
       <span className={styles.label}>{item.label}</span>
       {item.badge && <span className={styles.badge}>{item.badge}</span>}
+      {!item.href && <span className={styles.pending}>준비 중</span>}
     </>
   );
   const className = `${styles.item} ${active ? styles.active : ""}`;
@@ -328,7 +417,13 @@ function MenuEntry({ item, active, collapsed }: { item: MenuItem; active: boolea
     );
   }
   return (
-    <button type="button" className={className} aria-label={`${item.label} (준비 중)`} title={`${item.label} · 준비 중`}>
+    <button
+      type="button"
+      className={`${className} ${styles.itemPending}`}
+      aria-disabled="true"
+      aria-label={`${item.label} (준비 중)`}
+      title={`${item.label} · 준비 중`}
+    >
       {body}
     </button>
   );
@@ -339,6 +434,7 @@ function UserCard({ account: user }: { account: Account }) {
   const [position, setPosition] = useState<CSSProperties>({});
   const boxRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
 
   // 메뉴 밖을 누르거나 창 크기가 바뀌면 닫는다
   useEffect(() => {
@@ -350,7 +446,8 @@ function UserCard({ account: user }: { account: Account }) {
     const close = () => setOpen(false);
     document.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("resize", close);
-    menuRef.current?.querySelector<HTMLElement>("button, a")?.focus();
+    // 메뉴 자체로 포커스 (로그아웃 버튼에 두면 Enter를 두 번 눌러 바로 로그아웃될 수 있다)
+    menuRef.current?.focus();
     return () => {
       document.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("resize", close);
@@ -359,11 +456,12 @@ function UserCard({ account: user }: { account: Account }) {
 
   // 계정 메뉴는 왼쪽 메뉴 밖(body)에 띄운다. 접힌 메뉴는 폭이 좁고 넘치는 부분을 잘라서, 안에 두면 가려진다.
   // 펼친 메뉴에서는 사용자 칸 바로 위에, 접힌 메뉴에서는 아바타 오른쪽에 붙인다
-  function toggle() {
+  function toggle(event: ReactMouseEvent<HTMLButtonElement>) {
     if (open) {
       setOpen(false);
       return;
     }
+    triggerRef.current = event.currentTarget;
     const box = boxRef.current!.getBoundingClientRect();
     const rail = box.width < 120;
     setPosition(
@@ -388,7 +486,11 @@ function UserCard({ account: user }: { account: Account }) {
       ref={boxRef}
       className={styles.user}
       onKeyDown={(event) => {
-        if (event.key === "Escape") setOpen(false);
+        if (event.key === "Escape" && open) {
+          event.stopPropagation(); // 휴대폰 메뉴 서랍까지 같이 닫히지 않게
+          setOpen(false);
+          triggerRef.current?.focus();
+        }
       }}
     >
       <span className={styles.avatar} aria-hidden="true">
@@ -409,7 +511,15 @@ function UserCard({ account: user }: { account: Account }) {
       </button>
       {open &&
         createPortal(
-          <div id="account-menu" ref={menuRef} className={styles.popover} style={position}>
+          <div
+            id="account-menu"
+            ref={menuRef}
+            className={styles.popover}
+            style={position}
+            tabIndex={-1}
+            role="group"
+            aria-label="내 계정 메뉴"
+          >
             <p className={styles.popoverWho}>
               {user.name} {user.rank} · <span className="mono">{user.emp_no}</span>
             </p>
@@ -420,6 +530,12 @@ function UserCard({ account: user }: { account: Account }) {
                 ))}
               </ul>
             )}
+            {user.links?.map((link) => (
+              <Link key={link.href} href={link.href} className={styles.popoverItem} onClick={() => setOpen(false)}>
+                <KeyIcon size={18} />
+                {link.label}
+              </Link>
+            ))}
             <LogoutButton className={styles.popoverItem} {...user.logout} />
           </div>,
           document.body,

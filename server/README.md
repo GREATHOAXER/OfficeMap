@@ -26,15 +26,24 @@ scripts/
 | `GET /api/auth/login-info` | 로그인 화면의 공지, 문의처, 자동 로그아웃 시간(직원·관리자), 실패 허용 횟수 |
 | `POST /api/auth/login` | 사번·비밀번호 로그인. 성공하면 HttpOnly 쿠키로 세션 발급 |
 | `GET /api/auth/me` | 쿠키로 로그인한 사람 확인. 30분 미사용, 퇴사·잠금이면 401 |
+| `GET /api/auth/session` | 자동 로그아웃까지 남은 초(`idle_left`). 확인만 하고 사용 시각은 늘리지 않음 (화면의 1분 전 알림용) |
+| `POST /api/auth/password` | 비밀번호 변경 `{"current_password", "new_password"}`. 다른 곳의 직원 세션은 끝냄 |
 | `POST /api/auth/logout` | 로그아웃. 같은 브라우저의 관리자 로그인도 같이 끝내고 두 쿠키를 지움 |
 
 로그인 실패 응답은 `code`로 구분합니다. 화면 문구는 프론트엔드가 정합니다.
 
 | 상태 | code | 같이 오는 값 |
 |---|---|---|
-| 401 | `INVALID_CREDENTIALS` | 있는 사번이면 `failed_count`, `max_failed_count` |
+| 401 | `INVALID_CREDENTIALS` | 없음. 없는 사번·틀린 비밀번호·(비밀번호가 틀린) 퇴사자가 모두 같은 답 |
 | 423 | `LOCKED` | `max_failed_count` |
-| 403 | `NOT_ACTIVE` | 퇴사·휴직 |
+| 403 | `NOT_ACTIVE` | 퇴사·휴직 (비밀번호가 맞을 때만 알려 줌) |
+
+- 실패 횟수는 응답에 넣지 않습니다. 있는 사번에만 횟수가 붙으면 어떤 사번이 있는지(누가 관리자인지) 드러납니다.
+- 로그인하면 같은 브라우저에 남아 있던 **다른 사람의** 관리자 로그인을 끝냅니다 (관리자 로그인도 반대로 같음).
+  공용 PC에서 A의 관리자 페이지에 B가 들어가지 않게 합니다.
+- 임시 비밀번호 상태(`must_change_password`)로는 `/api/auth/password`, `/me`, `/session`, `/logout` 말고는
+  403 `PASSWORD_CHANGE_REQUIRED`입니다. 새 비밀번호: 8자 이상, 영문·숫자 포함, 사번이 들어가지 않음
+  (`WEAK_PASSWORD`의 `problems`로 알려 줌), 지금 비밀번호와 달라야 함(`SAME_AS_OLD`). 현재 비밀번호가 틀리면 400 `WRONG_CURRENT`.
 
 로그인 시도는 성공·실패 모두 `login_history`에 남깁니다.
 
@@ -42,7 +51,7 @@ scripts/
 
 | 요청 | 하는 일 |
 |---|---|
-| `GET /api/office/sites` | 사업장과 층 목록, 층마다 입주 팀 이름. `my_floor_id`는 로그인한 사람의 자리가 있는 층 |
+| `GET /api/office/sites` | 사업장과 층 목록, 층마다 입주 팀 이름. `my_floor_id`는 로그인한 사람의 자리가 있는 층, `team_floor_id`는 우리 팀 구역이 있는 층 (자리가 아직 없으면 이 층을 연다) |
 | `GET /api/office/floors/{층 ID}` | 게시된 도면(벽·기둥·공용 공간), 팀 구역, 회의실 지금 사용 여부, 좌석과 앉은 사람·재실 상태 |
 
 - 좌표(`x`, `y`, `shape`)는 모두 도면 너비·높이 대비 비율(0~1)입니다. 좌석 `x`, `y`는 중심점입니다.
@@ -71,10 +80,11 @@ scripts/
 |---|---|
 | `GET /api/rooms/day?date=2026-10-23&site_id=1` | 한 사업장 회의실들의 하루 예약 현황. 날짜·사업장을 빼면 오늘, 내 자리가 있는 사업장 |
 | `POST /api/reservations` | 예약 만들기 (아래) |
-| `GET /api/reservations/mine?scope=upcoming` | 내가 만들었거나 참석하는 예약. `upcoming`: 아직 안 끝난 것, `past`: 최근 30일 지난·취소된 것 |
-| `GET /api/rooms/{id}/conflicts?start_date&start_min&end_date&end_min` | 그 기간에 이 회의실에 이미 잡힌 예약 (여러 날 예약을 고를 때 미리 확인) |
-| `GET /api/reservations/{id}` | 예약 자세히: 회의실, 일시, 만든 사람(내선), 참석자(재실 상태), 반복 규칙, 내가 취소할 수 있는지 |
-| `DELETE /api/reservations/{id}` | 예약 취소 (만든 사람만, 끝나기 전에만). 반복 예약은 그 회차만 |
+| `PUT /api/reservations/{id}` | 예약 고치기: 회의실·일시·제목·참석자 (만든 사람만, 끝나기 전에만, 반복은 그 회차만). 본문은 만들기와 같고 `repeat`는 `NONE` |
+| `GET /api/reservations/mine?scope=upcoming` | 내가 만들었거나 참석하는 예약. `upcoming`: 아직 안 끝난 것 (최근 7일 안에 취소된 것도 `CANCELLED`로 남김), `past`: 최근 30일 지난·취소된 것 |
+| `GET /api/rooms/{id}/conflicts?start_date&start_min&end_date&end_min&exclude` | 그 기간에 이 회의실에 이미 잡힌 예약 (여러 날 예약을 고를 때 미리 확인). `exclude`: 고치는 예약 |
+| `GET /api/reservations/{id}` | 예약 자세히: 회의실, 일시, 만든 사람(내선), 참석자(재실 상태), 반복 규칙(남은 회차 `left`), 취소 시각, 내가 취소·수정할 수 있는지 |
+| `DELETE /api/reservations/{id}?scope=one\|following` | 예약 취소 (만든 사람만, 끝나기 전에만). 반복 예약은 그 회차만(`one`) 또는 그 뒤 회차 모두(`following`). `{"cancelled": n}` |
 
 - 시간은 모두 서울 기준 그날 0시부터 분(`start_min`, `end_min`)입니다. 13:30 → 810.
 - 예약 정책은 `app_settings`에서 읽습니다: `room.slot_minutes`(30분 단위), `room.max_minutes`(최대 길이, 7일),
@@ -85,8 +95,9 @@ scripts/
   - `end_date`가 없으면 시작 날짜와 같은 날에 끝납니다. 여러 날 예약은 반복할 수 없습니다(`REPEAT_SINGLE_DAY`).
   - 승인 절차는 없습니다. 임원 회의실·대강당도 바로 확정(`CONFIRMED`)됩니다.
   - 반복 예약은 회차마다 한 행씩 만듭니다(`reservation_series`가 규칙). 석 달(92일), 60회까지.
-    한 회차라도 겹치면 아무것도 만들지 않고 겹치는 날짜를 돌려줍니다.
-  - `notify`면 참석자에게 화면 알림(`notifications`)을 쌓아 둡니다 (메신저 연동 전).
+    한 회차라도 겹치면 아무것도 만들지 않고 겹치는 날짜를 돌려줍니다. `"skip_conflicts": true`면 겹치는 날만 빼고
+    만들고, 뺀 날짜를 `skipped`로 돌려줍니다.
+  - `notify`면 참석자에게 화면 알림(`notifications`)을 쌓아 둡니다 (메신저 연동 전). 고치기·취소도 알림을 쌓습니다.
 - 같은 회의실·겹치는 시간은 DB 제약(EXCLUDE)이 마지막으로 막습니다. 검사와 저장 사이에 누가 먼저 잡아도 409.
 
 | 상태 | code | 뜻 |
@@ -97,8 +108,9 @@ scripts/
 | 422 | `REPEAT_SINGLE_DAY` | 여러 날 예약을 반복하려 함 |
 | 422 | `IN_PAST` | 지난 시간 (지금 진행 중인 칸은 됨) |
 | 422 | `TITLE_REQUIRED`, `INVALID_REPEAT`, `REPEAT_TOO_LONG`, `UNKNOWN_ATTENDEE` | 입력 확인 |
-| 403 | `NOT_ORGANIZER` | 남의 예약 취소 |
-| 409 | `NOT_CANCELLABLE` | 이미 끝났거나 취소된 예약 |
+| 403 | `NOT_ORGANIZER` | 남의 예약 취소·수정 |
+| 409 | `NOT_CANCELLABLE`, `NOT_EDITABLE` | 이미 끝났거나 취소된 예약 |
+| 422 | `EDIT_NO_REPEAT` | 고칠 때 반복을 바꾸려 함 |
 
 ## 관리자 페이지 API (`/api/admin`, 관리자 로그인 필요)
 
@@ -110,6 +122,7 @@ scripts/
 |---|---|
 | `POST /api/admin/auth/login` | 사번·관리자 비밀번호 로그인. 관리자 계정과 살아 있는 권한(`admin_grants`)이 있어야 함 |
 | `GET /api/admin/auth/me` | 로그인한 관리자와 권한 목록(가장 넓은 권한이 `role`). 아니면 401 `NOT_ADMIN_LOGGED_IN` |
+| `GET /api/admin/auth/session` | 관리자 자동 로그아웃까지 남은 초. 사용 시각은 늘리지 않음 |
 | `POST /api/admin/auth/logout` | 로그아웃. 직원 로그인도 같이 끝냄 (`/api/auth/logout`과 같음) |
 | `GET /api/admin/overview` | 관리자 첫 화면: 요약 숫자, 사업장별 층(입주 팀 구역·좌석·층 관리자·도면 상태·최종 수정), 관리자 목록 |
 
@@ -122,6 +135,9 @@ scripts/
   (직원 화면 왼쪽 메뉴의 "관리자 페이지" 입구만 정함. 따로 저장하지 않아서 권한을 회수하면 바로 사라짐).
 - 권한 단계: `COMPANY_ADMIN` 전사 > `SITE_ADMIN` 사업장 > `FLOOR_ADMIN` 층 > `ZONE_ADMIN` 구역.
   `overview`는 전체를 보여 주고, 층마다 `in_scope`(`ALL` 내 관리 / `ZONE` 층 안 내 구역만 / `null`)를 붙입니다.
+- `overview.summary`의 좌석·회의실·오늘 예약·대기 요청은 **내 관리 범위 안** 숫자입니다 (`scope`: `ALL`/`FLOORS`/`ZONES`).
+  좌석은 개인석(`seats`, 배정 `occupied`)과 자율석(`flex`)을 나눠 셉니다. `unseated`: 재직 중인데 자리가 없는 사람.
+  `pending_requests`는 층 관리 권한이면 내가 승인할 요청, 구역만 맡았으면 내가 올려 승인을 기다리는 요청.
 
 ## 내 재실 상태 API (로그인 필요)
 
@@ -129,7 +145,7 @@ scripts/
 
 | 요청 | 하는 일 |
 |---|---|
-| `GET /api/presence/me` | 지금 내 상태. 없거나 자동 해제 시각이 지났으면 `{"presence": null}` |
+| `GET /api/presence/me` | 지금 내 상태(없거나 해제 시각이 지났으면 `null`)와 지금 "퇴근 시"를 고르면 풀리는 시각 `end_of_day_at` |
 | `GET /api/presence/team` | 우리 팀(내 부서) 사람들의 재실 상태와 자리 (내 재실 상태 화면) |
 | `PUT /api/presence/me` | 상태 저장. `{"status", "message", "duration"}` |
 | `DELETE /api/presence/me` | 상태 지우기 (204) |
@@ -137,8 +153,9 @@ scripts/
 
 - `status`: `AVAILABLE` 방문 가능, `DO_NOT_DISTURB` 방해 금지, `IN_MEETING` 회의 중, `AWAY` 부재
 - `message`: 100자까지, 빈 문자열이면 지웁니다.
-- `duration`: 자동 해제 시각(`expires_at`). `NONE` 계속, `30M`, `1H`, `END_OF_DAY` 퇴근 시
-  (`app_settings`의 `presence.workday_end`, 기본 18:00. 이미 지났으면 오늘 자정)
+- `duration`: 자동 해제 시각(`expires_at`). `NONE` 해제 안 함, `30M`, `1H`, `END_OF_DAY` 퇴근 시
+  (`app_settings`의 `presence.workday_end`, 기본 18:00. 이미 지났으면 오늘 자정),
+  `KEEP` 지금 걸린 해제 시각 그대로 (메시지만 고칠 때 해제 시각이 바뀌지 않게)
 
 ### 실시간 알림 (`/api/presence/stream`)
 

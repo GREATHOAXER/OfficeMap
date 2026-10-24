@@ -163,9 +163,12 @@
 }
 
 .secondary {
+  display: inline-flex;
+  align-items: center;
   border: 1px solid var(--ink);
   background: var(--surface);
   color: var(--ink);
+  text-decoration: none;
 }
 
 .danger {

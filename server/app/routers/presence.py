@@ -21,8 +21,17 @@ from app.session import CurrentUser, load_session
 router = APIRouter(prefix="/api/presence", tags=["presence"])
 
 PresenceStatus = Literal["AVAILABLE", "DO_NOT_DISTURB", "IN_MEETING", "AWAY"]
-# 자동 해제: 계속 유지 / 30분 뒤 / 1시간 뒤 / 퇴근 시(오늘 퇴근 시각, 이미 지났으면 자정)
-Duration = Literal["NONE", "30M", "1H", "END_OF_DAY"]
+# 자동 해제: 해제 안 함 / 30분 뒤 / 1시간 뒤 / 퇴근 시(오늘 퇴근 시각, 이미 지났으면 자정)
+# / 지금 해제 시각 그대로 (메시지만 고칠 때 해제 시각이 바뀌지 않게)
+Duration = Literal["NONE", "30M", "1H", "END_OF_DAY", "KEEP"]
+
+# "퇴근 시"의 해제 시각: 오늘 퇴근 시각, 이미 지났으면 오늘 자정. %(workday_end)s 를 받는다
+END_OF_DAY_SQL = """
+    (SELECT CASE WHEN (d + %(workday_end)s::time) AT TIME ZONE 'Asia/Seoul' > now()
+                 THEN (d + %(workday_end)s::time) AT TIME ZONE 'Asia/Seoul'
+                 ELSE (d + interval '1 day') AT TIME ZONE 'Asia/Seoul' END
+     FROM (SELECT date_trunc('day', now() AT TIME ZONE 'Asia/Seoul') AS d) today)
+"""
 
 
 class PresenceUpdate(BaseModel):
@@ -33,16 +42,19 @@ class PresenceUpdate(BaseModel):
 
 @router.get("/me")
 def my_presence(user: CurrentUser) -> dict[str, Any]:
+    """지금 내 상태와, 지금 "퇴근 시"를 고르면 풀리는 시각 (화면이 고르기 전에 미리 보여 준다)"""
     with pool.connection() as conn:
+        workday_end = get_setting(conn, "presence.workday_end", "18:00")
         row = conn.execute(
             """
             SELECT status, message, expires_at, updated_at
             FROM presence_status
-            WHERE employee_id = %s AND (expires_at IS NULL OR expires_at > now())
+            WHERE employee_id = %(employee_id)s AND (expires_at IS NULL OR expires_at > now())
             """,
-            (user["employee_id"],),
+            {"employee_id": user["employee_id"]},
         ).fetchone()
-    return {"presence": row}
+        end_of_day = conn.execute(f"SELECT {END_OF_DAY_SQL} AS at", {"workday_end": workday_end}).fetchone()
+    return {"presence": row, "end_of_day_at": end_of_day["at"], "workday_end": workday_end}
 
 
 @router.get("/team")
@@ -72,19 +84,18 @@ def set_my_presence(body: PresenceUpdate, user: CurrentUser) -> dict[str, Any]:
     with pool.connection() as conn:
         workday_end = get_setting(conn, "presence.workday_end", "18:00")
         row = conn.execute(
-            """
-            WITH today AS (SELECT date_trunc('day', now() AT TIME ZONE 'Asia/Seoul') AS d),
-            expiry AS (
+            f"""
+            WITH expiry AS (
                 SELECT CASE %(duration)s
                     WHEN '30M' THEN now() + interval '30 minutes'
                     WHEN '1H' THEN now() + interval '1 hour'
-                    WHEN 'END_OF_DAY' THEN greatest(
-                        (d + %(workday_end)s::time) AT TIME ZONE 'Asia/Seoul',
-                        -- 퇴근 시각이 이미 지났으면 오늘 자정까지
-                        CASE WHEN (d + %(workday_end)s::time) AT TIME ZONE 'Asia/Seoul' <= now()
-                             THEN (d + interval '1 day') AT TIME ZONE 'Asia/Seoul' END)
+                    WHEN 'END_OF_DAY' THEN {END_OF_DAY_SQL}
+                    -- 그대로: 지금 걸려 있는 해제 시각. 없거나 이미 지났으면 퇴근 시
+                    WHEN 'KEEP' THEN coalesce(
+                        (SELECT p.expires_at FROM presence_status p
+                         WHERE p.employee_id = %(employee_id)s AND p.expires_at > now()),
+                        {END_OF_DAY_SQL})
                 END AS expires_at
-                FROM today
             )
             INSERT INTO presence_status (employee_id, status, message, expires_at, source, updated_at)
             SELECT %(employee_id)s, %(status)s, %(message)s, expires_at, 'MANUAL', now() FROM expiry

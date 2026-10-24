@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { LogoutIcon } from "./icons";
+import { announceLogout } from "./SessionWatch";
 
 type Props = { className?: string; endpoint?: string; redirectTo?: string };
 
@@ -15,6 +16,7 @@ export default function LogoutButton({ className, endpoint = "/api/auth/logout",
     setPending(true);
     try {
       await fetch(endpoint, { method: "POST" });
+      announceLogout(); // 열려 있는 다른 탭도 로그인 화면으로
     } finally {
       router.replace(redirectTo);
       router.refresh();

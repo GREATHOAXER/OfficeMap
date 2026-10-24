@@ -13,7 +13,7 @@ from app.config import settings
 from app.db import get_setting, pool
 from app.routers.auth import client_info, error_response
 from app.security import new_session_token, verify_password
-from app.session import end_sessions
+from app.session import end_other_identity, end_sessions
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -63,9 +63,7 @@ def admin_login(body: AdminLoginRequest, request: Request) -> JSONResponse:
             verify_password(body.password, None)  # 계정이 없어도 같은 시간이 걸리게
             record("NO_ACCOUNT")
             return error_response(401, "INVALID_CREDENTIALS")
-        if admin["employment_status"] != "ACTIVE":
-            record("NOT_ACTIVE")
-            return error_response(403, "NOT_ACTIVE")
+        # 비밀번호가 맞기 전에는 퇴사 여부·실패 횟수를 알려 주지 않는다 (누가 관리자인지 드러나지 않게)
         if admin["locked_at"] is not None:
             record("LOCKED")
             return error_response(423, "LOCKED", max_failed_count=max_failed)
@@ -83,7 +81,10 @@ def admin_login(body: AdminLoginRequest, request: Request) -> JSONResponse:
             record("WRONG_PASSWORD")
             if locked:
                 return error_response(423, "LOCKED", max_failed_count=max_failed)
-            return error_response(401, "INVALID_CREDENTIALS", failed_count=failed, max_failed_count=max_failed)
+            return error_response(401, "INVALID_CREDENTIALS")
+        if admin["employment_status"] != "ACTIVE":
+            record("NOT_ACTIVE")
+            return error_response(403, "NOT_ACTIVE")
         if not grants_of(conn, admin["id"]):
             record("NO_PERMISSION")
             return error_response(403, "NO_PERMISSION")
@@ -105,8 +106,12 @@ def admin_login(body: AdminLoginRequest, request: Request) -> JSONResponse:
         )
         record("SUCCESS")
         loaded = load_admin(conn, token, touch=False)
+        # 같은 브라우저에 다른 사람의 직원 화면 로그인이 남아 있으면 끝낸다 (공용 PC에서 신원이 섞이지 않게)
+        drop_user = end_other_identity(conn, request, settings.session_cookie_name, admin["id"])
 
     response = JSONResponse(jsonable_encoder({"admin": admin_out(loaded)}))
+    if drop_user:
+        response.delete_cookie(settings.session_cookie_name, path="/")
     response.set_cookie(
         settings.admin_cookie_name,
         token,
@@ -124,10 +129,42 @@ def admin_me(admin: CurrentAdmin) -> dict[str, Any]:
     return {"admin": admin_out(admin)}
 
 
+@router.get("/auth/session")
+def admin_session_status(request: Request) -> JSONResponse:
+    """관리자 자동 로그아웃까지 남은 시간. 확인만 하고 사용 시각은 늘리지 않는다"""
+    token = request.cookies.get(settings.admin_cookie_name)
+    with pool.connection() as conn:
+        admin = load_admin(conn, token, touch=False) if token else None
+    if admin is None:
+        return error_response(401, "NOT_ADMIN_LOGGED_IN")
+    return JSONResponse({"idle_left": max(0, admin["idle_left"]), "idle_minutes": admin["idle_minutes"]})
+
+
 @router.post("/auth/logout", status_code=204)
 def admin_logout(request: Request) -> Response:
     """관리자 페이지 로그아웃. 직원 화면 로그인도 같이 끝낸다 (로그아웃 = 이 브라우저에서 완전히 나가기)"""
     return end_sessions(request)
+
+
+def _scope(grants: list[dict[str, Any]], floors: list[dict[str, Any]]) -> dict[str, Any]:
+    """내 관리 범위: 층 전체를 맡은 층(full), 그 밖에 구역만 맡은 구역(zones), 둘을 합친 층(floors)"""
+    full: set[int] = set()
+    for g in grants:
+        for f in floors:
+            if (
+                g["role"] == "COMPANY_ADMIN"
+                or (g["role"] == "SITE_ADMIN" and g["site_id"] == f["site_id"])
+                or (g["role"] == "FLOOR_ADMIN" and g["floor_id"] == f["id"])
+            ):
+                full.add(f["id"])
+    zone_grants = [g for g in grants if g["role"] == "ZONE_ADMIN" and g["floor_id"] not in full]
+    kind = "ALL" if any(g["role"] == "COMPANY_ADMIN" for g in grants) else "FLOORS" if full else "ZONES"
+    return {
+        "kind": kind,
+        "full": sorted(full),
+        "zones": [g["zone_id"] for g in zone_grants],
+        "floors": sorted(full | {g["floor_id"] for g in zone_grants}),
+    }
 
 
 @router.get("/overview")
@@ -143,9 +180,14 @@ def overview(admin: CurrentAdmin) -> dict[str, Any]:
         floors = conn.execute(
             """
             SELECT f.id, f.site_id, f.name, f.description,
-                   (SELECT count(*) FROM seats s WHERE s.floor_id = f.id AND s.status <> 'REMOVED')::int AS seats,
+                   -- 개인석(고정석)과 자율석을 나눠 센다. 자율석은 배정하지 않는다
+                   (SELECT count(*) FROM seats s
+                    WHERE s.floor_id = f.id AND s.status <> 'REMOVED' AND s.seat_type = 'FIXED')::int AS seats,
+                   (SELECT count(*) FROM seats s
+                    WHERE s.floor_id = f.id AND s.status <> 'REMOVED' AND s.seat_type = 'FLEX')::int AS flex,
                    (SELECT count(DISTINCT a.seat_id) FROM seat_assignments a JOIN seats s ON s.id = a.seat_id
-                    WHERE s.floor_id = f.id AND a.starts_at <= now() AND (a.ends_at IS NULL OR a.ends_at > now())
+                    WHERE s.floor_id = f.id AND s.seat_type = 'FIXED' AND a.kind = 'FIXED'
+                      AND a.starts_at <= now() AND (a.ends_at IS NULL OR a.ends_at > now())
                    )::int AS occupied,
                    (SELECT count(*) FROM meeting_rooms m WHERE m.floor_id = f.id AND m.is_active)::int AS rooms,
                    EXISTS (SELECT 1 FROM floor_plans p WHERE p.floor_id = f.id AND p.status = 'PUBLISHED') AS published,
@@ -169,24 +211,39 @@ def overview(admin: CurrentAdmin) -> dict[str, Any]:
             ORDER BY z.floor_id, z.sort_order, z.code
             """
         ).fetchall()
+        grants = grants_of(conn)
+        mine = admin["grants"]
+        scope = _scope(mine, floors)
         summary = conn.execute(
             """
+            WITH scoped_seats AS (
+                SELECT s.* FROM seats s
+                WHERE s.status <> 'REMOVED' AND (s.floor_id = ANY(%(full)s) OR s.zone_id = ANY(%(zones)s))
+            ),
+            current AS (
+                SELECT DISTINCT ON (a.employee_id) a.employee_id, a.seat_id FROM seat_assignments a
+                WHERE a.starts_at <= now() AND (a.ends_at IS NULL OR a.ends_at > now())
+            ),
+            today AS (SELECT date_trunc('day', now() AT TIME ZONE 'Asia/Seoul') AS d)
             SELECT (SELECT count(*) FROM employees WHERE employment_status = 'ACTIVE')::int AS employees,
-                   (SELECT count(*) FROM seats WHERE status <> 'REMOVED')::int AS seats,
-                   (SELECT count(DISTINCT seat_id) FROM seat_assignments
-                    WHERE starts_at <= now() AND (ends_at IS NULL OR ends_at > now()))::int AS occupied,
-                   (SELECT count(*) FROM meeting_rooms WHERE is_active)::int AS rooms,
-                   (SELECT count(*) FROM reservations WHERE status = 'CONFIRMED'
-                      AND starts_at < (date_trunc('day', now() AT TIME ZONE 'Asia/Seoul') + interval '1 day')
-                                      AT TIME ZONE 'Asia/Seoul'
-                      AND ends_at > date_trunc('day', now() AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'Asia/Seoul'
-                   )::int AS reservations_today,
-                   (SELECT count(*) FROM change_requests WHERE status = 'PENDING')::int AS pending_requests
-            """
+                   -- 재직 중인데 지금 앉을 자리가 없는 사람 (신규 입사자 등)
+                   (SELECT count(*) FROM employees e WHERE e.employment_status = 'ACTIVE'
+                      AND NOT EXISTS (SELECT 1 FROM current c WHERE c.employee_id = e.id))::int AS unseated,
+                   (SELECT count(*) FROM scoped_seats WHERE seat_type = 'FIXED')::int AS seats,
+                   (SELECT count(*) FROM scoped_seats WHERE seat_type = 'FLEX')::int AS flex,
+                   (SELECT count(DISTINCT s.id) FROM scoped_seats s JOIN current c ON c.seat_id = s.id
+                    WHERE s.seat_type = 'FIXED')::int AS occupied,
+                   (SELECT count(*) FROM meeting_rooms WHERE is_active AND floor_id = ANY(%(floors)s))::int AS rooms,
+                   (SELECT count(*) FROM reservations r JOIN meeting_rooms m ON m.id = r.room_id, today
+                    WHERE r.status = 'CONFIRMED' AND m.floor_id = ANY(%(floors)s)
+                      AND r.starts_at < (today.d + interval '1 day') AT TIME ZONE 'Asia/Seoul'
+                      AND r.ends_at > today.d AT TIME ZONE 'Asia/Seoul')::int AS reservations_today,
+                   -- 층 관리 권한이 있으면 내가 승인할 요청, 구역 관리자는 내가 올려 승인을 기다리는 요청
+                   (SELECT count(*) FROM change_requests c WHERE c.status = 'PENDING'
+                      AND (c.floor_id = ANY(%(full)s) OR c.requested_by = %(me)s))::int AS pending_requests
+            """,
+            {"full": scope["full"], "zones": scope["zones"], "floors": scope["floors"], "me": admin["employee_id"]},
         ).fetchone()
-        grants = grants_of(conn)
-
-    mine = admin["grants"]
 
     def in_scope(floor: dict[str, Any]) -> str | None:
         """내가 이 층을 관리하나: "ALL"(층 전체) / "ZONE"(층 안 일부 구역) / None"""
@@ -211,7 +268,12 @@ def overview(admin: CurrentAdmin) -> dict[str, Any]:
         by_floor_zones.setdefault(z.pop("floor_id"), []).append(z)
 
     return {
-        "summary": {**summary, "admins": len({g["employee"]["emp_no"] for g in grants})},
+        "summary": {
+            **summary,
+            "admins": len({g["employee"]["emp_no"] for g in grants}),
+            # ALL: 전사 관리자라 전체 / FLOORS: 사업장·층 단위 / ZONES: 구역만 (요청은 내가 올린 것)
+            "scope": scope["kind"],
+        },
         "sites": [
             {
                 "id": s["id"],
@@ -225,6 +287,7 @@ def overview(admin: CurrentAdmin) -> dict[str, Any]:
                         "name": f["name"],
                         "description": f["description"],
                         "seats": f["seats"],
+                        "flex": f["flex"],
                         "occupied": f["occupied"],
                         "rooms": f["rooms"],
                         "zones": by_floor_zones.get(f["id"], []),

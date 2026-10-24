@@ -3,17 +3,17 @@
 import Link from "next/link";
 import { useState } from "react";
 import { GridIcon } from "@/components/icons";
-import type { EmployeeHit, MyPresence, MyReservation, MyTeam, PresenceStatus } from "@/lib/api";
+import type { EmployeeHit, MyPresenceInfo, MyReservation, MyTeam, PresenceStatus } from "@/lib/api";
 import { kstDate } from "@/lib/dates";
 import { useLivePresence, useRefreshAtExpiry, withLiveMine } from "@/lib/livePresence";
-import { PRESENCE_HINT, PRESENCE_LABEL, PRESENCE_ORDER } from "@/lib/presence";
+import { NO_STATUS_LABEL, PRESENCE_HINT, PRESENCE_LABEL, PRESENCE_ORDER } from "@/lib/presence";
 import { hhmm, rangeText } from "@/lib/rooms";
 import PresenceForm from "../PresenceForm";
 import styles from "./presence.module.css";
 
 type Props = {
   myEmpNo: string;
-  presence: MyPresence;
+  info: MyPresenceInfo;
   team: MyTeam;
   upcoming: MyReservation[];
   today: string;
@@ -26,9 +26,9 @@ const rank = (status: PresenceStatus | undefined) => (status ? PRESENCE_ORDER.in
  * 내 재실 상태 (초안). 디자인 시안의 "내 재실 상태"(상태 4가지·메시지·자동 해제)에
  * 지금 내 상태, 오늘 내 일정, 우리 팀 재실 현황을 붙였다. 팀 현황과 내 상태는 실시간으로 바뀐다
  */
-export default function PresenceView({ myEmpNo, presence, team, upcoming, today }: Props) {
+export default function PresenceView({ myEmpNo, info, team, upcoming, today }: Props) {
   const live = useLivePresence();
-  const mine = withLiveMine(presence, live.get(myEmpNo), team.fetched_at);
+  const mine = withLiveMine(info.presence, live.get(myEmpNo), team.fetched_at);
   useRefreshAtExpiry([mine?.expires_at]);
   const [filter, setFilter] = useState<PresenceStatus | null>(null);
 
@@ -48,7 +48,10 @@ export default function PresenceView({ myEmpNo, presence, team, upcoming, today 
     .filter((m) => !filter || m.presence?.status === filter)
     .sort((a, b) => rank(a.presence?.status) - rank(b.presence?.status) || a.name.localeCompare(b.name, "ko"));
 
-  const todays = upcoming.filter((r) => kstDate(r.starts_at) <= today && today <= kstDate(r.ends_at));
+  // 오늘 남은 일정: 취소된 회의는 빼고
+  const todays = upcoming.filter(
+    (r) => r.status === "CONFIRMED" && kstDate(r.starts_at) <= today && today <= kstDate(r.ends_at),
+  );
 
   return (
     <div className={styles.page}>
@@ -80,7 +83,7 @@ export default function PresenceView({ myEmpNo, presence, team, upcoming, today 
                   </>
                 ) : (
                   <span className={styles.nowText}>
-                    <strong>정하지 않음</strong>
+                    <strong>{NO_STATUS_LABEL}</strong>
                     <span>아래에서 상태를 고르면 동료들 도면에 바로 보여요.</span>
                   </span>
                 )}
@@ -95,8 +98,12 @@ export default function PresenceView({ myEmpNo, presence, team, upcoming, today 
                       : "직접 바꿀 때까지 유지"}
                 </dd>
                 <dt>내 자리</dt>
-                <dd className="mono">
-                  {me?.seat ? `${me.seat.site_name} ${me.seat.floor_name} · ${me.seat.code}` : "배정된 자리 없음"}
+                <dd>
+                  {me?.seat ? (
+                    <span className="mono">{`${me.seat.site_name} ${me.seat.floor_name} · ${me.seat.code}`}</span>
+                  ) : (
+                    "배정된 자리 없음"
+                  )}
                 </dd>
                 <dt>바꾼 시각</dt>
                 <dd className="mono">{mine ? hhmm.format(new Date(mine.updated_at)) : "–"}</dd>
@@ -106,7 +113,7 @@ export default function PresenceView({ myEmpNo, presence, team, upcoming, today 
             <section className={styles.card} aria-labelledby="change-title">
               <PresenceForm
                 key={mine?.updated_at ?? "none"} // 저장하거나 다른 곳에서 바뀌면 지금 상태로 다시 채운다
-                presence={mine}
+                info={{ ...info, presence: mine }}
                 heading="상태 바꾸기"
                 headingId="change-title"
               />
@@ -118,7 +125,7 @@ export default function PresenceView({ myEmpNo, presence, team, upcoming, today 
             <section className={styles.card} aria-labelledby="today-title">
               <div className={styles.cardHead}>
                 <h2 id="today-title" className={styles.cardTitle}>
-                  오늘 내 일정 <span>{todays.length}건</span>
+                  오늘 남은 일정 <span>{todays.length}건</span>
                 </h2>
                 <Link className={styles.textLink} href="/reservations">
                   내 예약 전체 ›
@@ -176,11 +183,13 @@ export default function PresenceView({ myEmpNo, presence, team, upcoming, today 
                         {m.is_me && <span className={styles.me}>나</span>}
                       </span>
                       <span className={styles.muted}>
-                        {m.presence ? PRESENCE_LABEL[m.presence.status] : "상태 없음"}
-                        {m.presence?.message && ` · ${m.presence.message}`}
+                        {m.presence ? PRESENCE_LABEL[m.presence.status] : NO_STATUS_LABEL}
+                        {m.presence?.message &&
+                          m.presence.message !== PRESENCE_LABEL[m.presence.status] &&
+                          ` · ${m.presence.message}`}
                       </span>
                     </span>
-                    <span className={`mono ${styles.seat}`}>
+                    <span className={`${m.seat ? "mono" : ""} ${styles.seat}`}>
                       {m.seat ? `${m.seat.floor_name} ${m.seat.code}` : "자리 없음"}
                     </span>
                   </li>

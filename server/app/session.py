@@ -25,8 +25,10 @@ def load_session(conn: Connection, token: str, *, touch: bool = True) -> dict[st
     idle_minutes = int(get_setting(conn, "session.idle_minutes", 30))
     user = conn.execute(
         f"""
-        SELECT s.id AS session_id, e.id AS employee_id, e.emp_no, e.name, e.rank_name,
-               d.name AS department, a.must_change_password, {IS_ADMIN_SQL}
+        SELECT s.id AS session_id, s.token_hash, e.id AS employee_id, e.emp_no, e.name, e.rank_name,
+               d.name AS department, a.must_change_password, {IS_ADMIN_SQL},
+               -- 자동 로그아웃까지 남은 초 (화면이 1분 전에 알려 준다)
+               extract(epoch FROM s.last_active_at + make_interval(mins => %s) - now())::int AS idle_left
         FROM user_sessions s
         JOIN employees e ON e.id = s.employee_id
         JOIN departments d ON d.id = e.department_id
@@ -39,7 +41,7 @@ def load_session(conn: Connection, token: str, *, touch: bool = True) -> dict[st
           AND e.employment_status = 'ACTIVE'  -- 퇴사·휴직 처리되면 남아 있던 세션도 바로 무효
           AND a.locked_at IS NULL
         """,
-        (hash_token(token), idle_minutes),
+        (idle_minutes, hash_token(token), idle_minutes),
     ).fetchone()
     if user is not None and touch:
         conn.execute("UPDATE user_sessions SET last_active_at = now() WHERE id = %s", (user["session_id"],))
@@ -70,14 +72,46 @@ def end_sessions(request: Request) -> Response:
     return response
 
 
-def require_user(request: Request) -> dict[str, Any]:
+def end_other_identity(conn: Connection, request: Request, cookie_name: str, employee_id: int) -> bool:
+    """로그인할 때, 같은 브라우저에 다른 사람의 로그인(직원↔관리자 반대쪽)이 남아 있으면 끝낸다.
+
+    공용 PC에서 A가 관리자 페이지에 로그인해 둔 채 B가 직원 화면에 로그인하면, B가 A의 관리자 페이지로
+    바로 들어갈 수 있다. 쿠키를 지워야 하면 True."""
+    token = request.cookies.get(cookie_name)
+    if not token:
+        return False
+    row = conn.execute(
+        """
+        UPDATE user_sessions SET revoked_at = now()
+        WHERE token_hash = %s AND employee_id <> %s AND revoked_at IS NULL
+        RETURNING id
+        """,
+        (hash_token(token), employee_id),
+    ).fetchone()
+    return row is not None
+
+
+def _require_user(request: Request, *, allow_temporary: bool) -> dict[str, Any]:
     token = request.cookies.get(settings.session_cookie_name)
     if token:
         with pool.connection() as conn:
             user = load_session(conn, token)
         if user is not None:
+            # 임시 비밀번호 상태로는 비밀번호 변경 말고는 아무 API도 못 쓴다 (화면도 변경 화면으로 보낸다)
+            if user["must_change_password"] and not allow_temporary:
+                raise HTTPException(status_code=403, detail={"code": "PASSWORD_CHANGE_REQUIRED"})
             return user
     raise HTTPException(status_code=401, detail={"code": "NOT_LOGGED_IN"})
 
 
+def require_user(request: Request) -> dict[str, Any]:
+    return _require_user(request, allow_temporary=False)
+
+
+def require_user_allow_temporary(request: Request) -> dict[str, Any]:
+    return _require_user(request, allow_temporary=True)
+
+
 CurrentUser = Annotated[dict[str, Any], Depends(require_user)]
+# 비밀번호 변경처럼 임시 비밀번호 상태에서도 써야 하는 API
+CurrentUserAllowTemporary = Annotated[dict[str, Any], Depends(require_user_allow_temporary)]
