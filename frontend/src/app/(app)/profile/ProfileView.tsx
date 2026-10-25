@@ -5,6 +5,7 @@ import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import Avatar from "@/components/Avatar";
 import { CameraIcon, CloseIcon } from "@/components/icons";
 import type { MyProfile } from "@/lib/api";
+import { sessionEndUrl } from "@/lib/loginRedirect";
 import styles from "./profile.module.css";
 
 const PHOTO_PX = 320; // 올리는 사진 크기 (정사각형)
@@ -52,47 +53,96 @@ export default function ProfileView({ initial }: { initial: MyProfile }) {
   const [busy, setBusy] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; tone?: "error" } | null>(null);
+  // 고른 사진은 바로 올리지 않고 미리 보여 준 뒤 "이 사진으로 바꾸기"를 누르면 올린다
+  const [pendingPhoto, setPendingPhoto] = useState<{ blob: Blob; url: string } | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  const dirty = !same(form, formOf(saved)) || skill.trim() !== "";
+  const dirty = !same(form, formOf(saved)) || skill.trim() !== "" || pendingPhoto !== null;
 
-  // 저장하지 않고 나가려 하면 묻는다
+  // 저장하지 않고 나가려 하면 묻는다: 새로 고침·창 닫기는 브라우저가, 메뉴 등 화면 안 링크는 여기서
   useEffect(() => {
     if (!dirty) return;
     const onBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
+    const onClick = (event: MouseEvent) => {
+      const link = (event.target as Element | null)?.closest?.("a[href]");
+      if (!link || link.getAttribute("target") === "_blank" || link.getAttribute("href")?.startsWith("mailto:")) return;
+      if (window.confirm("저장하지 않은 내용이 있어요. 저장하지 않고 나갈까요?")) return;
+      event.preventDefault();
+      event.stopPropagation(); // 화면 이동(Next.js 링크)까지 가지 않게
+    };
     window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+    document.addEventListener("click", onClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      document.removeEventListener("click", onClick, true);
+    };
   }, [dirty]);
 
+  // 미리 보기 사진 주소는 다 쓰면 놓아 준다
+  useEffect(
+    () => () => {
+      if (pendingPhoto) URL.revokeObjectURL(pendingPhoto.url);
+    },
+    [pendingPhoto],
+  );
+
   function expired() {
-    router.replace("/login?reason=expired&next=/profile");
+    void sessionEndUrl().then((url) => router.replace(url));
   }
 
-  /** 입력 중인 키워드를 더한다. 쉼표로 여러 개를 한 번에 넣어도 된다 */
-  function addSkills(text: string): string[] {
-    const next = [...form.skills];
+  /**
+   * 입력 중인 키워드를 더한다. 쉼표로 여러 개를 한 번에 넣어도 된다.
+   * 넣지 못한 것은 말없이 버리지 않는다: 너무 긴 것·개수를 넘는 것은 입력칸에 남기고(left), 이유(problem)를 알려 준다
+   */
+  function addSkills(text: string) {
+    const skills = [...form.skills];
+    const left: string[] = [];
+    let problem: string | null = null;
     for (const raw of text.split(",")) {
-      const s = raw.trim().replace(/^#+/, "").slice(0, MAX_SKILL_LEN);
-      if (!s || next.some((x) => x.toLowerCase() === s.toLowerCase()) || next.length >= MAX_SKILLS) continue;
-      next.push(s);
+      const s = raw.trim().replace(/^#+/, "");
+      if (!s) continue;
+      if (s.length > MAX_SKILL_LEN) {
+        left.push(s);
+        problem = `키워드는 하나에 ${MAX_SKILL_LEN}자까지예요 (“${s}”는 ${s.length}자). 줄이거나 나눠서 넣어 주세요`;
+      } else if (skills.some((x) => x.toLowerCase() === s.toLowerCase())) {
+        problem = `“${s}”는 이미 넣은 키워드예요`;
+      } else if (skills.length >= MAX_SKILLS) {
+        left.push(s);
+        problem = `키워드는 ${MAX_SKILLS}개까지 넣을 수 있어요`;
+      } else {
+        skills.push(s);
+      }
     }
-    return next;
+    return { skills, left: left.join(", "), problem };
+  }
+
+  /** 입력칸의 키워드를 칩으로 넣는다 */
+  function commitSkills() {
+    const { skills, left, problem } = addSkills(skill);
+    setForm({ ...form, skills });
+    setSkill(left);
+    setMessage(problem ? { text: problem, tone: "error" } : null);
   }
 
   function onSkillKey(event: KeyboardEvent<HTMLInputElement>) {
     if (event.nativeEvent.isComposing) return; // 한글 조합 중 Enter는 글자 확정
     if (event.key === "Enter" || event.key === ",") {
       event.preventDefault();
-      setForm({ ...form, skills: addSkills(skill) });
-      setSkill("");
+      commitSkills();
     } else if (event.key === "Backspace" && !skill && form.skills.length) {
       setForm({ ...form, skills: form.skills.slice(0, -1) });
     }
   }
 
   async function save() {
+    const { skills, left, problem } = addSkills(skill);
+    if (left) {
+      // 넣지 못한 키워드가 있으면 저장하기 전에 고치게 한다
+      setMessage({ text: problem ?? "", tone: "error" });
+      return;
+    }
     setBusy(true);
     setMessage(null);
-    const skills = addSkills(skill);
     try {
       const res = await fetch("/api/profile", {
         method: "PUT",
@@ -117,6 +167,7 @@ export default function ProfileView({ initial }: { initial: MyProfile }) {
     }
   }
 
+  /** 사진을 고르면 잘라서 미리 보여 준다 (아직 올리지 않음) */
   async function pickPhoto(file: File | undefined) {
     if (!file) return;
     if (fileRef.current) fileRef.current.value = "";
@@ -124,18 +175,26 @@ export default function ProfileView({ initial }: { initial: MyProfile }) {
       setMessage({ text: `${MAX_FILE_MB}MB 이하의 사진 파일(JPG·PNG 등)을 골라 주세요`, tone: "error" });
       return;
     }
+    setMessage(null);
+    setConfirmRemove(false);
+    const blob = await squarePhoto(file).catch(() => null);
+    if (!blob) {
+      setMessage({ text: "이 사진은 읽지 못했어요. JPG나 PNG로 다시 골라 주세요", tone: "error" });
+      return;
+    }
+    setPendingPhoto({ blob, url: URL.createObjectURL(blob) });
+  }
+
+  /** 미리 본 사진을 올린다 */
+  async function uploadPhoto() {
+    if (!pendingPhoto) return;
     setPhotoBusy(true);
     setMessage(null);
     try {
-      const blob = await squarePhoto(file).catch(() => null);
-      if (!blob) {
-        setMessage({ text: "이 사진은 읽지 못했어요. JPG나 PNG로 다시 골라 주세요", tone: "error" });
-        return;
-      }
       const res = await fetch("/api/profile/photo", {
         method: "PUT",
         headers: { "content-type": "image/jpeg" },
-        body: blob,
+        body: pendingPhoto.blob,
       });
       if (res.status === 401) return expired();
       if (!res.ok) {
@@ -144,6 +203,7 @@ export default function ProfileView({ initial }: { initial: MyProfile }) {
       }
       const { photo } = (await res.json()) as { photo: string };
       setSaved((p) => ({ ...p, photo }));
+      setPendingPhoto(null);
       setMessage({ text: "사진을 바꿨어요" });
       router.refresh();
     } catch {
@@ -154,6 +214,7 @@ export default function ProfileView({ initial }: { initial: MyProfile }) {
   }
 
   async function removePhoto() {
+    setConfirmRemove(false);
     setPhotoBusy(true);
     setMessage(null);
     const res = await fetch("/api/profile/photo", { method: "DELETE" }).catch(() => null);
@@ -168,7 +229,8 @@ export default function ProfileView({ initial }: { initial: MyProfile }) {
     router.refresh();
   }
 
-  const preview = { ...saved, ...form, skills: addSkills(skill) };
+  const preview = { ...saved, ...form, skills: addSkills(skill).skills };
+  const shownPhoto = pendingPhoto?.url ?? saved.photo;
 
   return (
     <div className={styles.page}>
@@ -187,33 +249,74 @@ export default function ProfileView({ initial }: { initial: MyProfile }) {
               </h2>
               <div className={styles.photoRow}>
                 <span className={styles.bigAvatar} aria-hidden="true">
-                  <Avatar name={saved.name} photo={saved.photo} size={96} />
+                  <Avatar name={saved.name} photo={shownPhoto} size={96} />
                 </span>
-                <div className={styles.photoActions}>
-                  <label className={`${styles.btn} ${photoBusy ? styles.disabled : ""}`}>
-                    <CameraIcon size={16} />
-                    {photoBusy ? "올리는 중…" : saved.photo ? "사진 바꾸기" : "사진 올리기"}
-                    <input
-                      ref={fileRef}
-                      type="file"
-                      accept="image/*"
-                      className="visually-hidden"
+                {pendingPhoto ? (
+                  <div className={styles.photoActions}>
+                    <p className={styles.hint} role="status">
+                      이렇게 잘려 보여요. 이 사진으로 바꿀까요?
+                    </p>
+                    <button
+                      type="button"
+                      className={`${styles.btn} ${styles.pri}`}
                       disabled={photoBusy}
-                      onChange={(e) => void pickPhoto(e.target.files?.[0])}
-                    />
-                  </label>
-                  {saved.photo && (
+                      onClick={() => void uploadPhoto()}
+                    >
+                      {photoBusy ? "올리는 중…" : "이 사진으로 바꾸기"}
+                    </button>
                     <button
                       type="button"
                       className={styles.linkButton}
                       disabled={photoBusy}
-                      onClick={() => void removePhoto()}
+                      onClick={() => setPendingPhoto(null)}
                     >
-                      사진 지우기
+                      취소
                     </button>
-                  )}
-                  <p className={styles.hint}>가운데를 정사각형으로 잘라 올려요. 얼굴이 가운데 오는 사진이 좋아요.</p>
-                </div>
+                  </div>
+                ) : (
+                  <div className={styles.photoActions}>
+                    <label className={`${styles.btn} ${photoBusy ? styles.disabled : ""}`}>
+                      <CameraIcon size={16} />
+                      {photoBusy ? "지우는 중…" : saved.photo ? "사진 바꾸기" : "사진 올리기"}
+                      <input
+                        ref={fileRef}
+                        type="file"
+                        accept="image/*"
+                        className="visually-hidden"
+                        disabled={photoBusy}
+                        onChange={(e) => void pickPhoto(e.target.files?.[0])}
+                      />
+                    </label>
+                    {saved.photo &&
+                      (confirmRemove ? (
+                        <span className={styles.confirmRow} role="group" aria-label="사진 지우기 확인">
+                          사진을 지울까요?
+                          <button
+                            type="button"
+                            className={styles.linkButton}
+                            data-tone="danger"
+                            disabled={photoBusy}
+                            onClick={() => void removePhoto()}
+                          >
+                            지우기
+                          </button>
+                          <button type="button" className={styles.linkButton} onClick={() => setConfirmRemove(false)}>
+                            취소
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className={styles.linkButton}
+                          disabled={photoBusy}
+                          onClick={() => setConfirmRemove(true)}
+                        >
+                          사진 지우기
+                        </button>
+                      ))}
+                    <p className={styles.hint}>가운데를 정사각형으로 잘라 올려요. 얼굴이 가운데 오는 사진이 좋아요.</p>
+                  </div>
+                )}
               </div>
             </section>
 
@@ -278,9 +381,7 @@ export default function ProfileView({ initial }: { initial: MyProfile }) {
                     onChange={(e) => setSkill(e.target.value)}
                     onKeyDown={onSkillKey}
                     onBlur={() => {
-                      if (!skill.trim()) return;
-                      setForm({ ...form, skills: addSkills(skill) });
-                      setSkill("");
+                      if (skill.trim()) commitSkills();
                     }}
                   />
                 </div>
@@ -340,7 +441,7 @@ export default function ProfileView({ initial }: { initial: MyProfile }) {
               </h2>
               <div className={styles.preview}>
                 <span className={styles.previewAvatar} aria-hidden="true">
-                  <Avatar name={saved.name} photo={saved.photo} size={44} />
+                  <Avatar name={saved.name} photo={shownPhoto} size={44} />
                 </span>
                 <div>
                   <strong>
