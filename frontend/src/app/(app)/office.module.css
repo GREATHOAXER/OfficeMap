@@ -99,11 +99,6 @@
   background: var(--info-bg);
 }
 
-.searchOption[aria-disabled="true"] {
-  cursor: default;
-  color: var(--muted);
-}
-
 .searchMark {
   display: flex;
   flex: none;
@@ -509,7 +504,12 @@
   top: 16px;
 }
 
-/* 층 버튼: 넘치면 옆으로 민다 (얇은 스크롤 막대가 보여서 더 있다는 걸 안다) */
+/* 층 버튼: 넘치면 옆으로 민다. 넘친 쪽 끝에 ‹ › 단추를 띄워 아직 안 보이는 층이 있다는 걸 알린다 */
+.floorsWrap {
+  position: relative;
+  min-width: 0;
+}
+
 .floors {
   display: flex;
   gap: 6px;
@@ -518,13 +518,44 @@
   scrollbar-width: thin;
 }
 
+.floorsMore {
+  position: absolute;
+  top: 0;
+  bottom: 6px;
+  z-index: 1;
+  display: none;
+  align-items: center;
+  width: 36px;
+  padding: 0;
+  border: 0;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.floorsMore[data-side="left"] {
+  left: 0;
+  justify-content: flex-start;
+  background: linear-gradient(to right, var(--bg) 55%, transparent);
+}
+
+.floorsMore[data-side="right"] {
+  right: 0;
+  justify-content: flex-end;
+  background: linear-gradient(to left, var(--bg) 55%, transparent);
+}
+
+.floorsWrap[data-more-left="true"] .floorsMore[data-side="left"],
+.floorsWrap[data-more-right="true"] .floorsMore[data-side="right"] {
+  display: flex;
+}
+
 .floor {
   flex: none;
   display: flex;
   flex-direction: column;
   gap: 1px;
-  min-width: 76px;
-  padding: 6px 10px;
+  min-width: 72px;
+  padding: 6px 9px;
   border: 1px solid var(--divider);
   border-radius: 6px;
   background: var(--surface);
@@ -545,6 +576,9 @@
 }
 
 .floor span {
+  max-width: 104px; /* 팀이 많은 층의 긴 설명은 줄여서, 층 버튼 줄이 한 화면에 더 들어오게 (전체는 title) */
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 10px;
   color: var(--muted);
   white-space: nowrap;
@@ -758,16 +792,16 @@
   cursor: grabbing;
 }
 
-/* 자리 정보 카드: 마우스를 0.7초 올려 두면 뜨고, 좁은 화면에서는 누르면 고정해서 띄운다 */
+/* 자리 정보 카드: 마우스를 0.7초 올려 두면 뜨고, 좁은 화면에서는 누르면 고정해서 띄운다.
+   화면(body)에 띄우고 위치(left·top, px)는 FloorPlan.tsx SeatCard가 자리에 맞춰 정한다 */
 .popover {
-  --tx: -50%;
-  --ty: calc(-100% - 10px);
-  position: absolute;
-  z-index: 20;
+  position: fixed;
+  z-index: 60;
   display: flex;
   flex-direction: column;
   gap: 6px;
   width: 232px;
+  max-width: calc(100vw - 16px);
   padding: 10px 12px;
   border: 1px solid var(--ink);
   border-radius: 8px;
@@ -776,21 +810,9 @@
   font-size: 13px;
   line-height: 1.4;
   white-space: normal;
+  overflow-wrap: anywhere; /* 띄어쓰기 없는 긴 상태 메시지도 카드 안에서 줄을 바꾼다 */
   user-select: text;
   pointer-events: none;
-  transform: translate(var(--tx), var(--ty));
-}
-
-.popover[data-align="start"] {
-  --tx: 0;
-}
-
-.popover[data-align="end"] {
-  --tx: -100%;
-}
-
-.popover[data-place="below"] {
-  --ty: 10px;
 }
 
 .popover[data-pinned="true"] {
@@ -872,6 +894,18 @@
   z-index: 1;
   background: var(--surface);
   padding: 0 4px;
+}
+
+/* 직원 화면·좌석 배치의 회의실·공간 이름표: 도면을 줄여도 칸 밖으로 넘치지 않게 칸 크기에 맞춰 줄인다.
+   칸이 크기 기준(container)이라 아래 cqw·cqh는 칸의 폭·높이. --k는 이름표 크기(%) (PlanShapes.fitLabelStyle) */
+.fitLabel {
+  container-type: size;
+  overflow: hidden;
+}
+
+.fitLabel > span {
+  font-size: min(calc(var(--k, 1) * 1em), 12cqw, 30cqh);
+  overflow-wrap: anywhere;
 }
 
 .space[data-kind="core"],
@@ -1098,8 +1132,13 @@
   border-radius: 0.4em;
   background: var(--link);
   color: #fff;
-  font-size: 0.75em;
+  font-size: max(9px, 0.75em); /* 책상이 작은 층에서도 읽히는 크기 */
   line-height: 1.5;
+}
+
+/* 이름을 숨길 만큼 줄이면 "나" 표시도 숨긴다 (내 자리는 굵은 테두리로 보인다) */
+.plan[data-compact="true"] .seatMeTag {
+  display: none;
 }
 
 .seatSelected {
@@ -1267,6 +1306,7 @@
   box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.18);
   font-size: 14px;
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .freshness {
@@ -1394,6 +1434,13 @@
   margin: 0;
   font-size: 18px;
   padding-right: 32px;
+  overflow-wrap: anywhere; /* 띄어쓰기 없는 긴 이름도 닫기 단추를 덮지 않게 줄을 바꾼다 */
+}
+
+/* 사진 옆 글자 칸: 줄어들 수 있어야 긴 글이 칸 안에서 줄을 바꾼다 */
+.person > div {
+  flex: 1;
+  min-width: 0;
 }
 
 .person .personName {
@@ -1418,6 +1465,7 @@
   background: var(--bg);
   font-size: 12px;
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .statusBox strong {
@@ -1463,15 +1511,25 @@
   gap: 8px;
 }
 
-.roomList li {
+.roomList a {
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding: 10px;
+  border: 1px solid transparent;
   border-radius: 6px;
   background: var(--bg);
   font-size: 12px;
   color: var(--muted);
+  text-decoration: none;
+}
+
+.roomList a:hover {
+  border-color: var(--ink);
+}
+
+.roomList a:hover strong {
+  text-decoration: underline;
 }
 
 .roomList strong {
@@ -1723,6 +1781,7 @@
   margin: 4px 0 0;
   font-size: 12.5px;
   line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .duties {

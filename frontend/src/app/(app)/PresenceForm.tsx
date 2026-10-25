@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useId, useState } from "react";
 import type { MyPresenceInfo, PresenceDuration, PresenceStatus } from "@/lib/api";
 import { kstDate } from "@/lib/dates";
-import { expiredLoginUrl } from "@/lib/loginRedirect";
+import { sessionEndUrl } from "@/lib/loginRedirect";
 import { PRESENCE_HINT, PRESENCE_LABEL, PRESENCE_ORDER, PRESENCE_PLACEHOLDER } from "@/lib/presence";
 import { hhmm } from "@/lib/rooms";
 import styles from "./office.module.css";
@@ -39,7 +39,14 @@ export default function PresenceForm({ info, heading, headingId, onSaved }: Prop
   const [draft, setDraft] = useState<Draft>(() => ({
     status: presence?.status ?? null, // 정하지 않았으면 아무것도 고르지 않은 채로
     message: savedMessage,
-    duration: !presence ? "END_OF_DAY" : presence.expires_at ? "KEEP" : "NONE",
+    // 새로 정할 때는 퇴근 시(밤이면 자정)에 풀리게. 그때까지 1시간도 안 남았으면(밤늦게) 1시간 뒤로
+    duration: !presence
+      ? Date.parse(info.end_of_day_at) - Date.now() < 60 * 60_000
+        ? "1H"
+        : "END_OF_DAY"
+      : presence.expires_at
+        ? "KEEP"
+        : "NONE",
   }));
   const [pending, setPending] = useState<"save" | "clear" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -91,7 +98,7 @@ export default function PresenceForm({ info, heading, headingId, onSaved }: Prop
         body: method === "PUT" ? JSON.stringify(draft) : undefined,
       });
       if (res.status === 401) {
-        router.replace(expiredLoginUrl());
+        router.replace(await sessionEndUrl());
         return;
       }
       if (!res.ok) throw new Error(String(res.status));

@@ -1,13 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { type CSSProperties, type FocusEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type FocusEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import Avatar from "@/components/Avatar";
 import { CloseIcon } from "@/components/icons";
 import type { FloorMap, Occupant, Rect, Room, Seat, ShapeStyle, Zone } from "@/lib/api";
 import { agoText } from "@/lib/dates";
-import { NO_STATUS_LABEL, PRESENCE_LABEL, type StatusFilter } from "@/lib/presence";
+import { NO_STATUS_LABEL, PRESENCE_LABEL, presenceMessage, type StatusFilter } from "@/lib/presence";
 import { hhmm, roomStatusText } from "@/lib/rooms";
 import { useMediaQuery } from "@/lib/useMediaQuery";
 import { seatRatio } from "@/lib/planGeometry";
@@ -15,7 +23,7 @@ import { baseSeatFont, compactAt, minPlanWidth, type SeatBox, seatBox, seatFont 
 import { useNow } from "@/lib/useNow";
 import { zonePieces, zoneRects } from "@/lib/zoneShape";
 import styles from "./office.module.css";
-import PlanShapes, { labelStyle, lineStyle, ScaleBar } from "./PlanShapes";
+import PlanShapes, { fitLabelStyle, lineStyle, ScaleBar } from "./PlanShapes";
 
 const HOVER_DELAY_MS = 700; // 자리에 마우스를 이만큼(0.7초) 올려 두면 정보 카드가 뜬다
 const DRAG_THRESHOLD_PX = 5; // 이보다 적게 움직이면 끌기가 아니라 누르기
@@ -69,6 +77,8 @@ export default function FloorPlan(props: Props) {
   const boxOf = (seat: Seat): SeatBox => seatBox(seat.w ?? seatSize.w, seat.h ?? seatSize.h, aspect);
   const baseFont = baseSeatFont(map.seats.map(boxOf));
   const baseFontRef = useRef(baseFont);
+  // 키보드: 도면은 Tab 한 번(자리 하나)만 머물고, 그 안에서는 방향키로 자리를 옮긴다 (자리가 많은 층에서 Tab을 수십 번 누르지 않게)
+  const [focusSeatId, setFocusSeatId] = useState<number | null>(null);
 
   useEffect(() => {
     onZoomRef.current = onZoomChange;
@@ -310,6 +320,33 @@ export default function FloorPlan(props: Props) {
   // 고정한 카드가 먼저. 마우스를 올려 띄운 카드는 그 자리가 고정 카드가 아닐 때만
   const cardSeatId = pinnedSeatId ?? hoverSeatId;
   const cardSeat = map.seats.find((s) => s.id === cardSeatId && s.occupant);
+  // Tab이 머무는 자리: 마지막으로 머문 자리 → 고른 자리 → 내 자리 → 왼쪽 위 자리
+  const has = (id: number | null | undefined) => id != null && map.seats.some((s) => s.id === id);
+  const tabSeatId = has(focusSeatId)
+    ? focusSeatId
+    : has(selectedSeatId)
+      ? selectedSeatId
+      : (map.seats.find((s) => s.occupant?.emp_no === myEmpNo)?.id ??
+        [...map.seats].sort((a, b) => a.y - b.y || a.x - b.x)[0]?.id);
+
+  /** 방향키: 그 방향에 있는 가장 가까운 자리로 (옆으로 벗어난 만큼 멀게 친다) */
+  function onPlanKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const dir = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1] }[event.key];
+    const fromId = Number((event.target as HTMLElement).dataset.seatId);
+    const from = map.seats.find((s) => s.id === fromId);
+    if (!dir || !from || !plan) return;
+    let best: { id: number; score: number } | null = null;
+    for (const seat of map.seats) {
+      const dx = (seat.x - from.x) * plan.width_m;
+      const dy = (seat.y - from.y) * plan.height_m;
+      const along = dx * dir[0] + dy * dir[1];
+      if (along <= 0.05) continue;
+      const score = along + 2 * Math.abs(dx * dir[1] + dy * dir[0]);
+      if (!best || score < best.score) best = { id: seat.id, score };
+    }
+    event.preventDefault();
+    if (best) document.querySelector<HTMLElement>(`[data-seat-id="${best.id}"]`)?.focus();
+  }
 
   return (
     <div ref={scrollRef} className={styles.planScroll}>
@@ -324,7 +361,12 @@ export default function FloorPlan(props: Props) {
           } as CSSProperties
         }
         role="group"
-        aria-label={`${map.floor.site.name} ${map.floor.name} 좌석 배치도`}
+        aria-label={`${map.floor.site.name} ${map.floor.name} 좌석 배치도. 방향키로 자리를 옮겨 다녀요`}
+        onKeyDown={onPlanKeyDown}
+        onFocus={(event) => {
+          const id = Number((event.target as HTMLElement).dataset.seatId);
+          if (id) setFocusSeatId(id);
+        }}
       >
         <PlanShapes geometry={geometry} width_m={plan.width_m} height_m={plan.height_m} />
         {map.rooms.map(
@@ -368,6 +410,7 @@ export default function FloorPlan(props: Props) {
             }
             mine={seat.occupant?.emp_no === myEmpNo}
             selected={seat.id === selectedSeatId}
+            tabStop={seat.id === tabSeatId}
             onSelect={onSelectSeat}
             onHoverStart={startHover}
             onHoverEnd={endHover}
@@ -378,7 +421,6 @@ export default function FloorPlan(props: Props) {
           <SeatCard
             key={cardSeat.id}
             seat={cardSeat}
-            size={seatSize}
             zone={cardSeat.zone_id ? zones.get(cardSeat.zone_id) : undefined}
             floorName={map.floor.name}
             pinned={cardSeat.id === pinnedSeatId}
@@ -396,13 +438,13 @@ function RoomBox({ room, shape, floorId }: { room: Room; shape: Rect & ShapeStyl
   return (
     <Link
       href={`/rooms?floor=${floorId}`}
-      className={styles.room}
+      className={`${styles.room} ${styles.fitLabel}`}
       style={{ ...rectStyle(shape), ...lineStyle(shape) }}
       data-busy={!!room.busy_until}
       aria-label={`${room.name}, ${status}. 예약 현황 보기`}
       title="예약 현황 보기"
     >
-      <span style={labelStyle(shape)}>
+      <span style={fitLabelStyle(shape)}>
         {room.name}
         <br />
         <span className={styles.roomStatus}>{status}</span>
@@ -423,13 +465,16 @@ type SeatProps = {
   dimmed: boolean;
   mine: boolean;
   selected: boolean;
+  /** Tab으로 들어오는 자리 (나머지 자리는 방향키로) */
+  tabStop: boolean;
   onSelect: (seatId: number) => void;
   onHoverStart: (seatId: number) => void;
   onHoverEnd: () => void;
 };
 
 function SeatButton(props: SeatProps) {
-  const { seat, size: base, box, baseFont, zone, dimmed, mine, selected, onSelect, onHoverStart, onHoverEnd } = props;
+  const { seat, size: base, box, baseFont, zone, dimmed, mine, selected, tabStop, onSelect, onHoverStart, onHoverEnd } =
+    props;
   const { occupant } = seat;
   const size = { w: seat.w ?? base.w, h: seat.h ?? base.h };
   const presence = occupant?.presence?.status;
@@ -480,6 +525,7 @@ function SeatButton(props: SeatProps) {
       title={seat.code}
       aria-label={label}
       aria-pressed={selected}
+      tabIndex={tabStop ? 0 : -1}
       data-seat-id={seat.id}
       data-vertical={seat.rotation === 90 || seat.rotation === 270 || undefined}
       onClick={() => onSelect(seat.id)}
@@ -505,21 +551,71 @@ function SeatButton(props: SeatProps) {
 
 type CardProps = {
   seat: Seat;
-  size: SeatSize;
   zone: Zone | undefined;
   floorName: string;
   pinned: boolean;
   onClose: () => void;
 };
 
+const CARD_GAP = 10; // 자리와 카드 사이
+const CARD_MARGIN = 8; // 화면 가장자리와 카드 사이
+const CARD_SKILLS = 4; // 카드에 보여 줄 업무 키워드 수 (나머지는 +N)
+
 /**
- * 자리 위(위쪽 자리면 아래)에 뜨는 사람 정보 카드. 글자 크기는 배율과 상관없이 같다.
- * 휴대폰에서 눌러 고정한 카드는 도면 밖, 화면 아래에서 올라오는 시트로 띄운다 (도면 가장자리에서 잘리지 않게)
+ * 자리 위(모자라면 아래)에 뜨는 사람 정보 카드. 글자 크기는 배율과 상관없이 같다.
+ * 화면(body)에 띄우고 자리 위치에 맞춰 놓아서, 도면 영역 가장자리나 화면 끝에서 잘리지 않는다 (넘치면 안쪽으로 민다).
+ * 휴대폰에서 눌러 고정한 카드는 화면 아래에서 올라오는 시트로 띄운다
  */
-function SeatCard({ seat, size: base, zone, floorName, pinned, onClose }: CardProps) {
-  const size = { w: seat.w ?? base.w, h: seat.h ?? base.h };
+function SeatCard({ seat, zone, floorName, pinned, onClose }: CardProps) {
   const phone = useMediaQuery("(max-width: 720px)");
+  const sheet = pinned && phone;
+  const cardRef = useRef<HTMLDivElement>(null);
   const occupant = seat.occupant!;
+
+  // 자리 옆에 놓는다. 도면을 스크롤·확대하거나 창 크기가 바뀌면 다시 맞추고, 자리가 도면 영역 밖으로 나가면 숨긴다
+  useLayoutEffect(() => {
+    const card = cardRef.current;
+    const seatEl = document.querySelector<HTMLElement>(`[data-seat-id="${seat.id}"]`);
+    if (sheet || !card || !seatEl) return;
+    const area = seatEl.closest<HTMLElement>(`.${styles.planScroll}`);
+    let frame = 0;
+    const place = () => {
+      frame = 0;
+      const s = seatEl.getBoundingClientRect();
+      const view = area?.getBoundingClientRect();
+      const visible = !view || (s.bottom > view.top && s.top < view.bottom && s.right > view.left && s.left < view.right);
+      card.style.visibility = visible ? "visible" : "hidden";
+      if (!visible) return;
+      const { width, height } = card.getBoundingClientRect();
+      const screenW = document.documentElement.clientWidth;
+      const screenH = window.innerHeight;
+      const above = s.top - CARD_GAP - height;
+      const below = s.bottom + CARD_GAP;
+      // 위가 모자라면 아래, 둘 다 모자라면 넓은 쪽 (넘치는 만큼 안쪽으로 민다)
+      const top =
+        above >= CARD_MARGIN || (below + height > screenH - CARD_MARGIN && s.top > screenH - s.bottom) ? above : below;
+      const fit = (v: number, max: number) => Math.max(CARD_MARGIN, Math.min(v, max - CARD_MARGIN));
+      card.style.top = `${Math.round(fit(top, screenH - height))}px`;
+      card.style.left = `${Math.round(fit(s.left + s.width / 2 - width / 2, screenW - width))}px`;
+    };
+    const later = () => {
+      if (!frame) frame = requestAnimationFrame(place);
+    };
+    place();
+    window.addEventListener("scroll", later, true);
+    window.addEventListener("resize", later);
+    const observer = new ResizeObserver(later);
+    observer.observe(seatEl);
+    observer.observe(card);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", later, true);
+      window.removeEventListener("resize", later);
+      observer.disconnect();
+    };
+  }, [seat.id, sheet]);
+
+  const more = occupant.skills.length - CARD_SKILLS;
   const body = (
     <>
       <div className={styles.popoverHead}>
@@ -546,9 +642,10 @@ function SeatCard({ seat, size: base, zone, floorName, pinned, onClose }: CardPr
       <PresenceLine occupant={occupant} />
       {occupant.skills.length > 0 && (
         <span className={styles.popoverSkills}>
-          {occupant.skills.slice(0, 4).map((s) => (
+          {occupant.skills.slice(0, CARD_SKILLS).map((s) => (
             <span key={s}>#{s}</span>
           ))}
+          {more > 0 && <span aria-label={`키워드 ${more}개 더`}>+{more}</span>}
         </span>
       )}
       <span className={`mono ${styles.popoverMuted}`}>
@@ -559,30 +656,24 @@ function SeatCard({ seat, size: base, zone, floorName, pinned, onClose }: CardPr
     </>
   );
 
-  if (pinned && phone) {
-    return createPortal(
+  return createPortal(
+    sheet ? (
       <div className={styles.sheet} role="dialog" aria-label={`${occupant.name} 정보`}>
         {body}
-      </div>,
-      document.body,
-    );
-  }
-
-  const below = seat.y < 0.3;
-  const align = seat.x < 0.2 ? "start" : seat.x > 0.8 ? "end" : "center";
-  const left = align === "start" ? seat.x - size.w / 2 : align === "end" ? seat.x + size.w / 2 : seat.x;
-  return (
-    <div
-      className={styles.popover}
-      data-place={below ? "below" : "above"}
-      data-align={align}
-      data-pinned={pinned}
-      style={{ left: pct(left), top: pct(below ? seat.y + size.h / 2 : seat.y - size.h / 2) }}
-      role={pinned ? "dialog" : "tooltip"}
-      aria-label={`${occupant.name} 정보`}
-    >
-      {body}
-    </div>
+      </div>
+    ) : (
+      <div
+        ref={cardRef}
+        className={styles.popover}
+        data-pinned={pinned}
+        style={{ visibility: "hidden" }}
+        role={pinned ? "dialog" : "tooltip"}
+        aria-label={`${occupant.name} 정보`}
+      >
+        {body}
+      </div>
+    ),
+    document.body,
   );
 }
 
@@ -598,12 +689,13 @@ export function PresenceLine({ occupant }: { occupant: Occupant }) {
     );
   }
   const ago = presence.updated_at ? agoText(presence.updated_at, now) : "";
+  const message = presenceMessage(presence);
   return (
     <>
       <span className={styles.popoverStatus}>
         <span className="mk" data-status={presence.status} aria-hidden="true" />
         <strong>{PRESENCE_LABEL[presence.status]}</strong>
-        {presence.message && <span>· {presence.message}</span>}
+        {message && <span>· {message}</span>}
       </span>
       {(ago || presence.expires_at) && (
         <span className={styles.popoverMuted}>

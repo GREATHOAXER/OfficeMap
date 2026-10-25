@@ -157,6 +157,19 @@
   cursor: pointer;
 }
 
+.linkButton[data-tone="danger"] {
+  color: var(--danger);
+}
+
+/* 사진 지우기 확인: "사진을 지울까요? 지우기 취소" 한 줄 */
+.confirmRow {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
 .hint {
   margin: 0;
   font-size: 12px;

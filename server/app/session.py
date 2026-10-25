@@ -51,6 +51,34 @@ def load_session(conn: Connection, token: str, *, touch: bool = True) -> dict[st
     return user
 
 
+def session_end_reason(conn: Connection, token: str) -> str | None:
+    """직원 화면 로그인이 왜 끊겼는지. 로그인 화면이 이유에 맞는 안내를 띄운다 (모르는 쿠키면 None).
+
+    expired: 오래 쓰지 않음 / max: 로그인 유지 시간이 지남 / reset: 관리자가 비밀번호 초기화 /
+    changed: 다른 곳에서 비밀번호 변경 / locked: 비밀번호를 여러 번 틀려 잠김 / inactive: 휴직·퇴사 /
+    logout: 로그아웃"""
+    row = conn.execute(
+        """
+        SELECT s.revoked_at IS NOT NULL AS revoked, s.revoked_reason, s.expires_at <= now() AS over,
+               e.employment_status <> 'ACTIVE' AS inactive, a.locked_at IS NOT NULL AS locked
+        FROM user_sessions s
+        JOIN employees e ON e.id = s.employee_id
+        JOIN user_accounts a ON a.employee_id = s.employee_id
+        WHERE s.token_hash = %s AND s.kind = 'USER'
+        """,
+        (hash_token(token),),
+    ).fetchone()
+    if row is None:
+        return None
+    if row["inactive"]:
+        return "inactive"
+    if row["locked"]:
+        return "locked"
+    if row["revoked"]:
+        return {"PASSWORD_RESET": "reset", "PASSWORD_CHANGED": "changed"}.get(row["revoked_reason"], "logout")
+    return "max" if row["over"] else "expired"
+
+
 def end_sessions(request: Request) -> Response:
     """이 브라우저의 직원·관리자 로그인을 모두 끝낸다 (어느 쪽에서 로그아웃해도 같다).
 
@@ -66,7 +94,10 @@ def end_sessions(request: Request) -> Response:
     if hashes:
         with pool.connection() as conn:
             conn.execute(
-                "UPDATE user_sessions SET revoked_at = now() WHERE token_hash = ANY(%s) AND revoked_at IS NULL",
+                """
+                UPDATE user_sessions SET revoked_at = now(), revoked_reason = 'LOGOUT'
+                WHERE token_hash = ANY(%s) AND revoked_at IS NULL
+                """,
                 (hashes,),
             )
     response = Response(status_code=204)
@@ -85,7 +116,7 @@ def end_other_identity(conn: Connection, request: Request, cookie_name: str, emp
         return False
     row = conn.execute(
         """
-        UPDATE user_sessions SET revoked_at = now()
+        UPDATE user_sessions SET revoked_at = now(), revoked_reason = 'OTHER_LOGIN'
         WHERE token_hash = %s AND employee_id <> %s AND revoked_at IS NULL
         RETURNING id
         """,

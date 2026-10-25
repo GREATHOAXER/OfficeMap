@@ -7,7 +7,10 @@ import { PRESENCE_LABEL } from "@/lib/presence";
 import { useEmployeeSearch } from "@/lib/useEmployeeSearch";
 import styles from "./office.module.css";
 
-/** 머리글의 직원 검색창. 이름·사번이나 팀·부서 이름을 치면 아래에 결과 목록이 뜨고, 고르면 그 사람 자리로 간다 */
+const QUERY_MAX = 50; // 서버(/api/employees/search)가 받는 검색어 길이
+
+/** 머리글의 직원 검색창. 이름·사번이나 팀·부서 이름을 치면 아래에 결과 목록이 뜨고, 고르면 그 사람 자리로 간다.
+ *  자리가 아직 없는 사람은 오른쪽 패널에 연락처를 보여 준다 */
 export default function EmployeeSearch({ onPick }: { onPick: (hit: EmployeeHit) => void }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -28,7 +31,7 @@ export default function EmployeeSearch({ onPick }: { onPick: (hit: EmployeeHit) 
   }, [showList]);
 
   function pick(hit: EmployeeHit | undefined) {
-    if (!hit?.seat) return; // 자리가 없는 사람은 도면에서 보여 줄 곳이 없다
+    if (!hit) return;
     onPick(hit);
     setOpen(false);
     setQuery("");
@@ -69,6 +72,7 @@ export default function EmployeeSearch({ onPick }: { onPick: (hit: EmployeeHit) 
           aria-autocomplete="list"
           aria-activedescendant={showList && activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined}
           placeholder="이름·팀·사번·하는 일로 직원 찾기"
+          maxLength={QUERY_MAX}
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);
@@ -92,7 +96,6 @@ export default function EmployeeSearch({ onPick }: { onPick: (hit: EmployeeHit) 
                   id={`${listId}-${i}`}
                   role="option"
                   aria-selected={i === activeIndex}
-                  aria-disabled={!hit.seat}
                   className={`${styles.searchOption} ${i === activeIndex ? styles.searchOptionActive : ""}`}
                   onMouseEnter={() => setActive(i)}
                   onClick={() => pick(hit)}
@@ -109,7 +112,9 @@ export default function EmployeeSearch({ onPick }: { onPick: (hit: EmployeeHit) 
                     <span className={styles.searchMeta}>
                       <span className={styles.swatch} data-color={hit.seat?.color_key ?? "t0"} aria-hidden="true" />
                       {hit.department} ·{" "}
-                      {hit.seat ? `${hit.seat.site_name} ${hit.seat.floor_name} ${hit.seat.code}` : "배정된 자리 없음"}
+                      {hit.seat
+                        ? `${hit.seat.site_name} ${hit.seat.floor_name} ${hit.seat.code}`
+                        : "배정된 자리 없음 · 누르면 연락처"}
                     </span>
                     {hit.matched && <span className={styles.searchMatched}>{hit.matched}</span>}
                   </span>

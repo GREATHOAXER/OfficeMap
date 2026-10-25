@@ -18,14 +18,20 @@ function rulesOf(password: string, confirm: string, empNo: string) {
   ];
 }
 
-const ERRORS: Record<string, string> = {
-  EMPTY: "현재 비밀번호와 새 비밀번호를 모두 입력하세요.",
-  RULES: "새 비밀번호가 아래 조건을 모두 만족해야 합니다.",
-  WRONG_CURRENT: "현재 비밀번호가 맞지 않습니다.",
-  SAME_AS_OLD: "지금 쓰는 비밀번호와 다른 비밀번호를 정하세요.",
-  WEAK_PASSWORD: "새 비밀번호가 조건에 맞지 않습니다.",
-  NETWORK: "서버에 연결하지 못했습니다. 잠시 후 다시 시도하세요.",
-};
+/** 오류 문구. 임시 비밀번호로 들어온 사람에게는 "현재 비밀번호" 대신 "임시 비밀번호"라고 쓴다 */
+function errorText(code: string, forced: boolean, maxFailed: number) {
+  const current = forced ? "임시 비밀번호" : "현재 비밀번호";
+  const texts: Record<string, string> = {
+    EMPTY: `${current}와 새 비밀번호를 모두 입력하세요.`,
+    RULES: "새 비밀번호가 아래 조건을 모두 만족해야 합니다.",
+    // 로그인과 같은 실패 횟수를 센다 (서버가 같은 횟수에서 잠근다)
+    WRONG_CURRENT: `${current}가 맞지 않습니다. 로그인과 합쳐 ${maxFailed}회 연속 틀리면 계정이 잠깁니다.`,
+    SAME_AS_OLD: "지금 쓰는 비밀번호와 다른 비밀번호를 정하세요.",
+    WEAK_PASSWORD: "새 비밀번호가 조건에 맞지 않습니다.",
+    NETWORK: "서버에 연결하지 못했습니다. 잠시 후 다시 시도하세요.",
+  };
+  return texts[code] ?? texts.NETWORK;
+}
 
 export default function PasswordForm({ empNo, forced }: { empNo: string; forced: boolean }) {
   const router = useRouter();
@@ -33,6 +39,7 @@ export default function PasswordForm({ empNo, forced }: { empNo: string; forced:
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [maxFailed, setMaxFailed] = useState(5);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const rules = rulesOf(password, confirm, empNo);
@@ -64,26 +71,35 @@ export default function PasswordForm({ empNo, forced }: { empNo: string; forced:
         router.replace("/login"); // 로그인이 끊겼다 (현재 비밀번호가 틀리면 400 WRONG_CURRENT)
         return;
       }
+      if (res.status === 423) {
+        router.replace("/login?reason=locked"); // 여러 번 틀려 잠겼다: 이 로그인도 끝났다
+        return;
+      }
       if (res.ok) {
         setDone(true);
         setTimeout(() => {
           router.replace("/");
           router.refresh();
-        }, 1200);
+        }, 2000);
         return;
       }
       const body = await res.json().catch(() => ({}));
-      setError(typeof body.code === "string" && body.code in ERRORS ? body.code : "NETWORK");
+      if (typeof body.max_failed_count === "number") setMaxFailed(body.max_failed_count);
+      setError(typeof body.code === "string" ? body.code : "NETWORK");
     } catch {
       setError("NETWORK");
     }
     setSubmitting(false);
   }
 
+  // 고치려고 다시 입력하기 시작하면 오류 문구를 내린다
+  const clearError = () => error && setError(null);
+
   if (done) {
     return (
       <p role="status" className={own.done}>
-        비밀번호를 바꿨습니다. 다른 기기에 로그인되어 있었다면 그쪽은 로그아웃됩니다. 잠시 후 첫 화면으로 이동합니다…
+        비밀번호를 바꿨습니다. 다음 로그인부터 새 비밀번호를 쓰세요. 다른 기기에 로그인되어 있었다면 그쪽은
+        로그아웃됩니다. 잠시 후 첫 화면으로 이동합니다…
       </p>
     );
   }
@@ -101,6 +117,7 @@ export default function PasswordForm({ empNo, forced }: { empNo: string; forced:
           maxLength={128}
           aria-invalid={error === "WRONG_CURRENT" || undefined}
           aria-describedby={error ? "password-error" : undefined}
+          onChange={clearError}
         />
       </label>
       <label className={styles.field}>
@@ -111,7 +128,10 @@ export default function PasswordForm({ empNo, forced }: { empNo: string; forced:
           autoComplete="new-password"
           maxLength={128}
           value={password}
-          onChange={(event) => setPassword(event.target.value)}
+          onChange={(event) => {
+            setPassword(event.target.value);
+            clearError();
+          }}
           aria-describedby="password-rules"
         />
       </label>
@@ -123,7 +143,10 @@ export default function PasswordForm({ empNo, forced }: { empNo: string; forced:
           autoComplete="new-password"
           maxLength={128}
           value={confirm}
-          onChange={(event) => setConfirm(event.target.value)}
+          onChange={(event) => {
+            setConfirm(event.target.value);
+            clearError();
+          }}
           aria-invalid={(confirm.length > 0 && confirm !== password) || undefined}
         />
       </label>
@@ -140,7 +163,7 @@ export default function PasswordForm({ empNo, forced }: { empNo: string; forced:
       {error && (
         <div id="password-error" role="alert" className={styles.alert}>
           <AlertIcon />
-          <span>{ERRORS[error]}</span>
+          <span>{errorText(error, forced, maxFailed)}</span>
         </div>
       )}
 

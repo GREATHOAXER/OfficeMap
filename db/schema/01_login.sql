@@ -60,6 +60,8 @@ CREATE TABLE user_sessions (
     last_active_at timestamptz NOT NULL DEFAULT now(),   -- 현재 시각과 30분 넘게 차이 나면 만료
     expires_at     timestamptz NOT NULL,                 -- 계속 사용 중이어도 넘을 수 없는 시각 (예: 12시간 뒤)
     revoked_at     timestamptz,                          -- 로그아웃, 강제 종료
+    -- 왜 끝났는지 (로그인 화면 안내 문구): 로그아웃 / 관리자가 비밀번호 초기화 / 다른 곳에서 비밀번호 변경 / 같은 브라우저에 다른 사람 로그인
+    revoked_reason varchar(20) CHECK (revoked_reason IN ('LOGOUT', 'PASSWORD_RESET', 'PASSWORD_CHANGED', 'OTHER_LOGIN')),
     ip_address     inet,
     user_agent     varchar(255)
 );

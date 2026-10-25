@@ -4,6 +4,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import styles from "@/app/login/login.module.css";
+import LogoutButton from "@/components/LogoutButton";
 import { fetchMe } from "@/lib/api";
 import PasswordForm from "./PasswordForm";
 import own from "./password.module.css";
@@ -36,7 +37,10 @@ export default async function PasswordPage() {
           </p>
         )}
         <PasswordForm empNo={user.emp_no} forced={forced} />
-        {!forced && (
+        {forced ? (
+          // 바꾸기 전에는 다른 화면에 못 가니, 다른 계정으로 들어가려면 여기서 로그아웃한다
+          <LogoutButton className={own.logout} redirectTo="/login?reason=logout" />
+        ) : (
           <Link href="/" className={own.back}>
             ← 바꾸지 않고 돌아가기
           </Link>
