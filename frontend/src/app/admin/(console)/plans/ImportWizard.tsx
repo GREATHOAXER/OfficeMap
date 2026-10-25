@@ -427,7 +427,8 @@ export default function ImportWizard({ mode, data, onClose, onExpired, onCreated
     setError(null);
     try {
       const { size, found, blob } = await prepare(page, `${newId("imp")}-`);
-      const background = await upload(data.floor.id, blob, size, `${file!.name} ${page.label}`.slice(0, 200));
+      const name = page.label === file!.name ? file!.name : `${file!.name} ${page.label}`;
+      const background = await upload(data.floor.id, blob, size, name.slice(0, 200));
       onApply?.({ elements: addFound ? (found?.elements ?? []) : [], ...size, background });
     } catch (e) {
       if ((e as Error).message !== "expired") setError((e as Error).message || "밑그림을 깔지 못했어요");
@@ -463,7 +464,7 @@ export default function ImportWizard({ mode, data, onClose, onExpired, onCreated
       {file && (
         <button
           type="button"
-          className={`${ui.btn} ${ui.ghost}`}
+          className={ui.btn}
           style={{ marginRight: "auto" }}
           disabled={busy}
           onClick={() => inputRef.current?.click()}

@@ -7,7 +7,7 @@ import type { Rect, SeatingData, SeatingSeat, SeatingZone } from "@/lib/api";
 import { shortDate } from "@/lib/dates";
 import { seatRatio } from "@/lib/planGeometry";
 import type { Layout, Person } from "@/lib/seating";
-import { baseSeatFont, compactAt, minPlanWidth, seatBox, seatFont } from "@/lib/seatLabel";
+import { baseSeatFont, compactAt, isVertical, minPlanWidth, seatBox, seatFont } from "@/lib/seatLabel";
 import { zonePieces } from "@/lib/zoneShape";
 import styles from "./seating.module.css";
 
@@ -249,6 +249,7 @@ export default function SeatingCanvas(props: Props) {
               data-picked={seat.id === pickedSeatId || undefined}
               data-drop={dropState}
               data-seat-id={seat.id}
+              data-vertical={isVertical(boxOf(seat)) || undefined}
               style={{
                 left: pct(seat.x - (seat.w ?? seatSize.w) / 2),
                 top: pct(seat.y - (seat.h ?? seatSize.h) / 2),

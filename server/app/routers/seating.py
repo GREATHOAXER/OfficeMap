@@ -402,7 +402,8 @@ def _change_set(conn: Connection, request_id: int) -> dict[str, Any]:
     people = conn.execute(
         f"""
         SELECT e.emp_no, e.name, e.rank_name, e.department_id, d.name AS department, e.employment_status,
-               cs.id AS seat_id, cs.code AS seat_code, cf.id AS floor_id, cf.name AS floor_name
+               cs.id AS seat_id, cs.code AS seat_code, cf.id AS floor_id, cf.name AS floor_name,
+               csi.name AS site_name
         FROM employees e
         JOIN departments d ON d.id = e.department_id
         LEFT JOIN LATERAL (
@@ -410,6 +411,7 @@ def _change_set(conn: Connection, request_id: int) -> dict[str, Any]:
             WHERE a.employee_id = e.id AND a.kind = 'FIXED' AND {_now()} LIMIT 1
         ) cs ON true
         LEFT JOIN floors cf ON cf.id = cs.floor_id
+        LEFT JOIN sites csi ON csi.id = cf.site_id
         WHERE e.emp_no = ANY(%s)
         """,
         (list(emp_nos),),
@@ -445,7 +447,13 @@ def _change_set(conn: Connection, request_id: int) -> dict[str, Any]:
                 "department_id": p["department_id"],
                 "active": p["employment_status"] == "ACTIVE",
                 "seat": (
-                    {"id": p["seat_id"], "code": p["seat_code"], "floor_id": p["floor_id"], "floor": p["floor_name"]}
+                    {
+                        "id": p["seat_id"],
+                        "code": p["seat_code"],
+                        "floor_id": p["floor_id"],
+                        "floor": p["floor_name"],
+                        "site": p["site_name"],
+                    }
                     if p["seat_id"]
                     else None
                 ),
@@ -561,6 +569,7 @@ def seating_people(admin: CurrentAdmin, floor_id: int, q: str = Query(min_length
             f"""
             SELECT e.emp_no, e.name, e.rank_name, e.department_id, d.name AS department,
                    cs.id AS seat_id, cs.code AS seat_code, cf.id AS floor_id, cf.name AS floor_name,
+                   csi.name AS site_name,
                    EXISTS (SELECT 1 FROM seat_assignments a WHERE a.employee_id = e.id AND a.kind = 'FIXED'
                            AND {_scheduled()}) AS locked
             FROM employees e
@@ -570,6 +579,7 @@ def seating_people(admin: CurrentAdmin, floor_id: int, q: str = Query(min_length
                 WHERE a.employee_id = e.id AND a.kind = 'FIXED' AND {_now()} LIMIT 1
             ) cs ON true
             LEFT JOIN floors cf ON cf.id = cs.floor_id
+            LEFT JOIN sites csi ON csi.id = cf.site_id
             WHERE e.employment_status = 'ACTIVE'
               AND (e.name LIKE '%%' || %(like)s || '%%' OR e.emp_no = %(q)s)
               AND (%(depts)s::bigint[] IS NULL OR e.department_id = ANY(%(depts)s))
@@ -587,7 +597,13 @@ def seating_people(admin: CurrentAdmin, floor_id: int, q: str = Query(min_length
                 "department": r["department"],
                 "department_id": r["department_id"],
                 "seat": (
-                    {"id": r["seat_id"], "code": r["seat_code"], "floor_id": r["floor_id"], "floor": r["floor_name"]}
+                    {
+                        "id": r["seat_id"],
+                        "code": r["seat_code"],
+                        "floor_id": r["floor_id"],
+                        "floor": r["floor_name"],
+                        "site": r["site_name"],
+                    }
                     if r["seat_id"]
                     else None
                 ),

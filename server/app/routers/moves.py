@@ -76,7 +76,7 @@ def team(admin: CurrentAdmin, department_id: int = Query()) -> dict[str, Any]:
         rows = conn.execute(
             """
             SELECT e.emp_no, e.name, e.rank_name, s.id AS seat_id, s.code AS seat_code, f.id AS floor_id,
-                   f.name AS floor_name, z.code AS zone_code,
+                   f.name AS floor_name, si.name AS site_name, z.code AS zone_code,
                    EXISTS (SELECT 1 FROM seat_assignments x
                            WHERE x.employee_id = e.id AND x.kind = 'FIXED'
                              AND (x.starts_at > now() OR (x.ended_by_request_id IS NOT NULL AND x.ends_at > now()))
@@ -86,6 +86,7 @@ def team(admin: CurrentAdmin, department_id: int = Query()) -> dict[str, Any]:
                  AND a.starts_at <= now() AND (a.ends_at IS NULL OR a.ends_at > now())
             LEFT JOIN seats s ON s.id = a.seat_id
             LEFT JOIN floors f ON f.id = s.floor_id
+            LEFT JOIN sites si ON si.id = f.site_id
             LEFT JOIN zones z ON z.id = s.zone_id
             WHERE e.department_id = %s AND e.employment_status = 'ACTIVE'
             ORDER BY f.sort_order DESC NULLS LAST, s.code NULLS LAST, e.name
@@ -99,7 +100,13 @@ def team(admin: CurrentAdmin, department_id: int = Query()) -> dict[str, Any]:
                 "name": r["name"],
                 "rank": r["rank_name"],
                 "seat": (
-                    {"id": r["seat_id"], "code": r["seat_code"], "floor_id": r["floor_id"], "floor": r["floor_name"]}
+                    {
+                        "id": r["seat_id"],
+                        "code": r["seat_code"],
+                        "floor_id": r["floor_id"],
+                        "floor": r["floor_name"],
+                        "site": r["site_name"],
+                    }
                     if r["seat_id"]
                     else None
                 ),

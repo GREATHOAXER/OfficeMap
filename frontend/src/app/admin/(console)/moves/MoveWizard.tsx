@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import FloorSvg from "@/components/FloorSvg";
 import type { Admin, MoveOptions, SeatingData, SeatingSeat, TeamMember } from "@/lib/api";
+import { placeOf } from "../place";
 import { addDays, kstDate, shortDate } from "@/lib/dates";
 import { type DrawingSeat, drawingFromSeating } from "@/lib/floorDrawing";
 import ui from "../seating/seating.module.css";
@@ -371,7 +372,7 @@ export default function MoveWizard({ admin, options }: Props) {
                         <span>
                           {m.name} {m.rank}
                           <small>
-                            지금 {m.seat ? `${m.seat.floor} ${m.seat.code}` : "미배치"}
+                            지금 {m.seat ? placeOf(m.seat, dest?.floor.site.name) : "미배치"}
                             {m.locked && " · 날짜를 정한 변경이 있어 옮길 수 없어요"}
                           </small>
                         </span>

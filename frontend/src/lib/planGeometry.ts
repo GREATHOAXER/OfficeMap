@@ -422,6 +422,25 @@ export function problemsOf(geometry: PlanGeometry, width: number, height: number
   return out;
 }
 
+// 겹치면 안 되는 요소. 벽·선 벽·출입구는 원래 다른 것에 맞닿아 있어 빼고 본다
+const SOLID: PlanElement["type"][] = ["desk_group", "room", "space", "pillar"];
+
+/** 새로 넣은 요소(added)가 이미 있는 책상·회의실·공간·기둥과 겹치나 (5 cm 넘게) */
+export function overlapsExisting(added: PlanElement[], geometry: PlanGeometry): boolean {
+  const ids = new Set(added.map((e) => e.id));
+  const others = geometry.elements.filter((e) => !ids.has(e.id) && SOLID.includes(e.type)).map(boxOf);
+  return added
+    .filter((e) => SOLID.includes(e.type))
+    .map(boxOf)
+    .some((a) =>
+      others.some(
+        (b) =>
+          Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 0.05 &&
+          Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > 0.05,
+      ),
+    );
+}
+
 /** 요약: 책상(좌석)·회의실·출입구 수 */
 export function countsOf(geometry: PlanGeometry) {
   let desks = 0;
