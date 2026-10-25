@@ -20,6 +20,9 @@ API 서버(`server/`, uvicorn)가 `http://localhost:8000`에서 떠 있어야 �
 (git에는 넣지 않음). 도면 파일(PDF) 가져오기가 브라우저에서 이 파일들을 받습니다. pdf.js는 사내 PC의 조금 오래된
 브라우저에서도 돌도록 호환(legacy) 빌드를 씁니다.
 
+`npm audit`이 깨끗하도록 `package.json`의 `overrides`로 exceljs가 쓰는 `uuid`를 11.1.1로 올려 둡니다
+(exceljs 4.4.0은 uuid 8을 요구하지만 쓰는 함수 `v4`는 그대로 있습니다). 의존성을 바꾼 뒤에는 `npm audit`으로 확인하세요.
+
 ## 구조
 
 ```
