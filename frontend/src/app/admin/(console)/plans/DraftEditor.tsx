@@ -280,8 +280,12 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
     [planId, router, refresh],
   );
 
+  // 보기 전용으로 다시 읽던 요청이 넘겨받은 뒤에 도착하면 버린다 (넘겨받기 전 상태로 잠금을 되돌리지 않게)
+  const watchGen = useRef(0);
+
   async function takeOver() {
     setBusy(true);
+    watchGen.current += 1;
     const ok = await claim(true);
     const fresh = ok ? await reload() : null;
     setBusy(false);
@@ -297,13 +301,17 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
   useEffect(() => {
     if (readOnly) {
       const timer = setInterval(async () => {
+        const gen = watchGen.current;
         const fresh = await reload();
-        if (!fresh?.draft || fresh.draft.id !== planId) return;
+        if (gen !== watchGen.current || !fresh?.draft || fresh.draft.id !== planId) return;
         adopt(fresh);
         const editing = fresh.draft.editing;
         setLock(editing && !editing.mine ? { by: editing.name } : { by: null });
       }, WATCH_MS);
-      return () => clearInterval(timer);
+      return () => {
+        clearInterval(timer);
+        watchGen.current += 1;
+      };
     }
     const first = setTimeout(() => void claim(false), 0);
     const timer = setInterval(() => void claim(false), HEARTBEAT_MS);

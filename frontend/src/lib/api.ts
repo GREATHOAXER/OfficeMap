@@ -455,6 +455,7 @@ export type AdminFloor = {
   seats: number; // 개인석(고정석)
   flex: number; // 자율석 (배정하지 않음)
   occupied: number; // 배정된 개인석
+  out_of_service: number; // 사용 중지(고장·수리) 자리. seats·flex에는 들어 있지 않다
   rooms: number;
   zones: { code: string; name: string; color_key: string; department: string | null; department_active: boolean }[];
   floor_admins: string[];
@@ -486,6 +487,7 @@ export type AdminOverview = {
     seats: number;
     flex: number;
     occupied: number;
+    out_of_service: number;
     rooms: number;
     reservations_today: number;
     pending_requests: number;

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { type ReactNode, useState } from "react";
 import Dialog from "@/components/Dialog";
 import ui from "./seating/seating.module.css";
+import { validationText } from "./validation";
 import styles from "./admin.module.css";
 
 // 관리자 첫 화면의 사업장·층 추가·고치기 (사업장은 전사 관리자, 층은 그 사업장의 사업장 관리자 이상)
@@ -30,7 +31,7 @@ function errorText(code: string | undefined, detail: Record<string, unknown> | u
     case "NOT_IN_SCOPE":
       return "내 관리 범위가 아니에요";
     default:
-      return "저장하지 못했어요. 입력을 확인하고 다시 해 보세요";
+      return validationText(detail) ?? "저장하지 못했어요. 입력을 확인하고 다시 해 보세요";
   }
 }
 
@@ -188,7 +189,12 @@ export function SiteButton({ site }: { site?: SiteInfo }) {
               onChange={(e) => setAddress(e.target.value)}
             />
           </label>
-          {!site && <p className={ui.hint}>추가한 뒤 사업장 칸의 &ldquo;+ 층 추가&rdquo;로 층을 만들어요.</p>}
+          {!site && (
+            <p className={ui.hint}>
+              추가한 뒤 사업장 칸의 &ldquo;+ 층 추가&rdquo;로 층을 만들어요. 예전에 닫은 사업장과 이름이 같으면 그
+              사업장을 다시 열어요.
+            </p>
+          )}
           {closing && (
             <p className={ui.hint}>
               닫으면 직원 화면의 사업장 목록에서 빠지고 이 사업장 관리자 권한도 회수돼요. 층이 남아 있으면 닫을 수

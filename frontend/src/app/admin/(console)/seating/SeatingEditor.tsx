@@ -98,6 +98,8 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
   const [draft, setDraft] = useState<SeatDraft>(() => draftFromChangeSet(initial.draft, initial.seats));
   const [history, setHistory] = useState<SeatDraft[]>([]);
   const [draftId, setDraftId] = useState<number | null>(initial.draft?.id ?? null);
+  // 저장 직후(같은 클릭 안에서) 읽을 최신 초안 번호. 상태(draftId)는 다음 렌더에야 바뀐다
+  const draftIdRef = useRef(draftId);
   const [effective, setEffective] = useState<Effective>(() => effectiveOf(initial.draft));
   const [note, setNote] = useState(initial.draft?.note ?? "");
   const [save, setSave] = useState<SaveState>({ state: initial.draft ? "saved" : "clean" });
@@ -279,7 +281,8 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
           return false;
         }
         const out = await res.json();
-        setDraftId(out.draft?.id ?? null);
+        draftIdRef.current = out.draft?.id ?? null;
+        setDraftId(draftIdRef.current);
         setSave({ state: out.draft ? "saved" : "clean" });
         return true;
       } catch {
@@ -338,7 +341,8 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
   const resetFrom = useCallback((next: SeatingData) => {
     setDraft(draftFromChangeSet(next.draft, next.seats));
     setHistory([]);
-    setDraftId(next.draft?.id ?? null);
+    draftIdRef.current = next.draft?.id ?? null;
+    setDraftId(draftIdRef.current);
     setEffective(effectiveOf(next.draft));
     setNote(next.draft?.note ?? "");
     dirtyRef.current = false;
@@ -642,12 +646,15 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
     }
     setBusy(true);
     try {
-      if (!(await flush()) || !draftId) {
+      // 첫 변경 직후에 누르면 자동 저장이 아직이라 flush가 초안을 처음 만든다: 그 번호는 ref로 읽는다
+      const saved = await flush();
+      const id = draftIdRef.current;
+      if (!saved || !id) {
         showToast("저장하지 못해서 반영하지 않았어요. 다시 시도하세요", "error");
         return;
       }
       const verb = needsApproval ? "submit" : "apply";
-      const res = await post(`/api/admin/change-sets/${draftId}/${verb}`);
+      const res = await post(`/api/admin/change-sets/${id}/${verb}`);
       if (res.ok && verb === "submit") {
         showToast(`승인을 요청했어요 · 층 관리자가 승인하면 반영돼요`);
         await reload(true);

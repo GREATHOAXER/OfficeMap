@@ -180,13 +180,16 @@ def overview(admin: CurrentAdmin) -> dict[str, Any]:
         floors = conn.execute(
             """
             SELECT f.id, f.site_id, f.name, f.description,
-                   -- 개인석(고정석)과 자율석을 나눠 센다. 자율석은 배정하지 않는다
+                   -- 개인석(고정석)과 자율석을 나눠 센다. 자율석은 배정하지 않는다.
+                   -- 사용 중지(고장·수리) 자리는 앉을 수 없으니 좌석·빈 자리에서 빼고 따로 센다
                    (SELECT count(*) FROM seats s
-                    WHERE s.floor_id = f.id AND s.status <> 'REMOVED' AND s.seat_type = 'FIXED')::int AS seats,
+                    WHERE s.floor_id = f.id AND s.status = 'ACTIVE' AND s.seat_type = 'FIXED')::int AS seats,
                    (SELECT count(*) FROM seats s
-                    WHERE s.floor_id = f.id AND s.status <> 'REMOVED' AND s.seat_type = 'FLEX')::int AS flex,
+                    WHERE s.floor_id = f.id AND s.status = 'ACTIVE' AND s.seat_type = 'FLEX')::int AS flex,
+                   (SELECT count(*) FROM seats s
+                    WHERE s.floor_id = f.id AND s.status = 'OUT_OF_SERVICE')::int AS out_of_service,
                    (SELECT count(DISTINCT a.seat_id) FROM seat_assignments a JOIN seats s ON s.id = a.seat_id
-                    WHERE s.floor_id = f.id AND s.seat_type = 'FIXED' AND a.kind = 'FIXED'
+                    WHERE s.floor_id = f.id AND s.status = 'ACTIVE' AND s.seat_type = 'FIXED' AND a.kind = 'FIXED'
                       AND a.starts_at <= now() AND (a.ends_at IS NULL OR a.ends_at > now())
                    )::int AS occupied,
                    (SELECT count(*) FROM meeting_rooms m WHERE m.floor_id = f.id AND m.is_active)::int AS rooms,
@@ -232,10 +235,11 @@ def overview(admin: CurrentAdmin) -> dict[str, Any]:
                    -- 재직 중인데 지금 앉을 자리가 없는 사람 (신규 입사자 등)
                    (SELECT count(*) FROM employees e WHERE e.employment_status = 'ACTIVE'
                       AND NOT EXISTS (SELECT 1 FROM current c WHERE c.employee_id = e.id))::int AS unseated,
-                   (SELECT count(*) FROM scoped_seats WHERE seat_type = 'FIXED')::int AS seats,
-                   (SELECT count(*) FROM scoped_seats WHERE seat_type = 'FLEX')::int AS flex,
+                   (SELECT count(*) FROM scoped_seats WHERE status = 'ACTIVE' AND seat_type = 'FIXED')::int AS seats,
+                   (SELECT count(*) FROM scoped_seats WHERE status = 'ACTIVE' AND seat_type = 'FLEX')::int AS flex,
+                   (SELECT count(*) FROM scoped_seats WHERE status = 'OUT_OF_SERVICE')::int AS out_of_service,
                    (SELECT count(DISTINCT s.id) FROM scoped_seats s JOIN current c ON c.seat_id = s.id
-                    WHERE s.seat_type = 'FIXED')::int AS occupied,
+                    WHERE s.status = 'ACTIVE' AND s.seat_type = 'FIXED')::int AS occupied,
                    (SELECT count(*) FROM meeting_rooms WHERE is_active AND floor_id = ANY(%(floors)s))::int AS rooms,
                    (SELECT count(*) FROM reservations r JOIN meeting_rooms m ON m.id = r.room_id, today
                     WHERE r.status = 'CONFIRMED' AND m.floor_id = ANY(%(floors)s)
@@ -294,6 +298,7 @@ def overview(admin: CurrentAdmin) -> dict[str, Any]:
                         "seats": f["seats"],
                         "flex": f["flex"],
                         "occupied": f["occupied"],
+                        "out_of_service": f["out_of_service"],
                         "rooms": f["rooms"],
                         "zones": by_floor_zones.get(f["id"], []),
                         "floor_admins": holders("FLOOR_ADMIN", "floor_id", f["id"]),

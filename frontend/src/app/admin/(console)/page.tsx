@@ -43,7 +43,10 @@ export default async function AdminHomePage() {
     {
       label: "개인석 배정",
       value: `${summary.occupied}/${summary.seats}`,
-      note: `빈 개인석 ${summary.seats - summary.occupied}석`,
+      // 사용 중지(고장·수리) 자리는 빈 자리가 아니다 (좌석 수에서도 빠져 있다)
+      note: `빈 개인석 ${summary.seats - summary.occupied}석${
+        summary.out_of_service ? ` · 사용 중지 ${summary.out_of_service}석` : ""
+      }`,
     },
     ...(summary.flex > 0 ? [{ label: "자율석", value: `${summary.flex}석`, note: "그날 누구나 (배정 안 함)" }] : []),
     { label: scoped ? "회의실 (맡은 층)" : "회의실", value: `${summary.rooms}개` },
@@ -84,8 +87,11 @@ export default async function AdminHomePage() {
           <span className={styles.muted}>현황은 전체를 보고, 편집은 맡은 범위 안에서만 해요</span>
         </p>
 
+        {/* 사업장·층 추가와 조직도는 전사 관리자만 할 수 있다 */}
         <p className={styles.readyNote}>
-          사업장·층 추가와 조직도 관리가 열렸어요. 점선 버튼(권한 부여 등)은 다음 단계에서 열려요.
+          {isCompany
+            ? "사업장·층 추가와 조직도 관리가 열렸어요. 점선 버튼(권한 부여 등)은 다음 단계에서 열려요."
+            : "점선 버튼(권한 부여 등)은 다음 단계에서 열려요."}
         </p>
 
         <ul className={styles.stats} aria-label={scoped ? "내 관리 범위 현황" : "전체 현황"}>
@@ -240,6 +246,13 @@ function SiteSection({ site, admin, isCompany }: { site: AdminSite; admin: Admin
             </tr>
           </thead>
           <tbody>
+            {site.floors.length === 0 && (
+              <tr>
+                <td colSpan={7} className={styles.muted}>
+                  아직 층이 없어요{siteWide ? " · 위의 “+ 층 추가”로 만들어요" : ""}
+                </td>
+              </tr>
+            )}
             {site.floors.map((floor) => (
               <FloorRow
                 key={floor.id}
@@ -292,12 +305,15 @@ function FloorRow({
             </span>
           ))
         ) : (
-          <span className={styles.muted}>{floor.description ?? "—"} · 팀 구역 없음</span>
+          <span className={styles.muted}>
+            {floor.description ? `${floor.description} · ` : ""}팀 구역 없음
+          </span>
         )}
       </td>
       <td data-label="개인석 배정">
         {floor.seats ? <span className="mono">{`${floor.occupied}/${floor.seats}`}</span> : "—"}
         {floor.flex > 0 && <span className={styles.subLine}>자율석 {floor.flex}</span>}
+        {floor.out_of_service > 0 && <span className={styles.subLine}>사용 중지 {floor.out_of_service}</span>}
       </td>
       <td data-label="층 관리자">
         {admins || <span className={styles.muted}>미지정</span>}
@@ -323,7 +339,7 @@ function FloorRow({
                   도면 관리
                 </Link>
               )}
-              {floor.seats + floor.flex > 0 ? (
+              {floor.seats + floor.flex + floor.out_of_service > 0 ? (
                 <Link href={`/admin/seating?floor=${floor.id}`} className={`${styles.btn} ${styles.pri}`}>
                   {floor.in_scope === "ALL" ? "배치 편집" : "내 구역 배치"}
                 </Link>

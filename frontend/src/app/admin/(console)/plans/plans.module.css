@@ -616,16 +616,19 @@ div.body[data-cols="3"] {
   gap: 8px;
 }
 
+/* 칸이 좁아도(오른쪽 패널 280px) 입력칸 기본 폭 때문에 밖으로 밀려 나가지 않게 min-width: 0 */
 .numbers label {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  min-width: 0;
   font-size: 12px;
   color: var(--muted);
 }
 
 .numbers input {
   width: 100%;
+  min-width: 0;
   height: 32px;
   padding: 0 6px;
   border: 1px solid var(--border);
