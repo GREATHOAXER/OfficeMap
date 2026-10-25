@@ -122,6 +122,10 @@
   transform: rotate(180deg);
 }
 
+.siteIcon {
+  display: none;
+}
+
 .siteName {
   flex: 1;
   min-width: 0;
@@ -468,9 +472,31 @@
     width: 44px;
   }
 
+  /* 사업장은 건물 아이콘 단추만 (누르면 목록이 메뉴 오른쪽에 뜬다) */
+  .shell[data-collapsed="true"] .site {
+    align-self: center;
+    padding: 0 0 8px;
+  }
+
+  .shell[data-collapsed="true"] .siteButton {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .shell[data-collapsed="true"] .siteIcon {
+    display: flex;
+  }
+
+  .shell[data-collapsed="true"] .siteButton > svg,
+  .shell[data-collapsed="true"] .siteLabel,
+  .shell[data-collapsed="true"] .siteName {
+    display: none;
+  }
+
   .shell[data-collapsed="true"] .mode span,
   .shell[data-collapsed="true"] .logo,
-  .shell[data-collapsed="true"] .site,
   .shell[data-collapsed="true"] .groupTitle,
   .shell[data-collapsed="true"] .label,
   .shell[data-collapsed="true"] .badge,

@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import type { FloorMap, Rect, ShapeStyle } from "@/lib/api";
-import { DEFAULT_LINE } from "@/lib/planGeometry";
+import { DEFAULT_LINE, SPACE_KINDS } from "@/lib/planGeometry";
 import styles from "./office.module.css";
 
 // 직원 화면 도면(FloorPlan)과 관리자 배치 화면(SeatingCanvas)이 같이 그리는 도면 바탕:
@@ -47,6 +47,14 @@ export function labelStyle(s: ShapeStyle): CSSProperties {
   };
 }
 
+/** 직원 화면·좌석 배치의 이름표: 크기(%)는 --k로 넘기고, 칸보다 크면 CSS(.fitLabel)가 칸에 맞게 줄인다 */
+export function fitLabelStyle(s: ShapeStyle): CSSProperties {
+  return {
+    ...({ "--k": ((s.label_size ?? 100) / 100).toFixed(2) } as CSSProperties),
+    ...(s.label_bold ? { fontWeight: 700 } : {}),
+  };
+}
+
 type Props = { geometry: Geometry; width_m: number; height_m: number };
 
 export default function PlanShapes({ geometry, width_m, height_m }: Props) {
@@ -75,11 +83,14 @@ export default function PlanShapes({ geometry, width_m, height_m }: Props) {
       {geometry.spaces?.map((space, i) => (
         <div
           key={`space-${i}`}
-          className={styles.space}
+          className={`${styles.space} ${styles.fitLabel}`}
           data-kind={space.kind}
           style={{ ...rectStyle(space), ...lineStyle(space) }}
         >
-          <span style={labelStyle(space)}>{space.label}</span>
+          {/* 이름표를 비워 두면 종류 이름 (도면 편집기와 같다) */}
+          <span style={fitLabelStyle(space)}>
+            {space.label || SPACE_KINDS.find((k) => k.kind === space.kind)?.label}
+          </span>
         </div>
       ))}
       {geometry.entrances?.map((e, i) => (

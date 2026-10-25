@@ -21,7 +21,9 @@ def _like(token: str) -> str:
 
 
 class TimeWindow:
-    """회의 시간 (서울 기준 그날 0시부터 분). 주면 그 시간에 겹치는 다른 회의·휴가를 같이 찾는다."""
+    """회의 시간 (서울 기준 그날 0시부터 분). 주면 그 시간에 겹치는 다른 회의·휴가를 같이 찾는다.
+
+    exclude: 고치고 있는 예약 ID. 그 예약 자신은 "겹치는 다른 회의"로 세지 않는다."""
 
     def __init__(
         self,
@@ -29,6 +31,7 @@ class TimeWindow:
         start_min: int | None = Query(default=None, ge=0, le=1440),
         end_date: dt.date | None = None,  # 여러 날에 걸친 회의면 끝나는 날
         end_min: int | None = Query(default=None, ge=0, le=1440),
+        exclude: int | None = None,
     ) -> None:
         end_day = end_date or date
         self.check = (
@@ -44,13 +47,21 @@ class TimeWindow:
             "start_min": start_min or 0,
             "end_date": end_day,
             "end_min": end_min or 0,
+            "exclude": exclude,
         }
 
 
 Window = Annotated[TimeWindow, Depends()]
 
 # 시간 없이 찾을 때 (다른 일정 확인 안 함)
-NO_WINDOW: dict[str, Any] = {"check": False, "date": None, "start_min": 0, "end_date": None, "end_min": 0}
+NO_WINDOW: dict[str, Any] = {
+    "check": False,
+    "date": None,
+    "start_min": 0,
+    "end_date": None,
+    "end_min": 0,
+    "exclude": None,
+}
 
 
 def find_employees(conn: Connection, where: str, order: str, params: dict[str, Any]) -> list[dict[str, Any]]:
@@ -58,6 +69,7 @@ def find_employees(conn: Connection, where: str, order: str, params: dict[str, A
 
     params에는 me(로그인한 사람), limit, TimeWindow.params 값이 있어야 한다.
     """
+    params = {"exclude": None, **params}  # exclude를 넘기지 않는 쪽도 그대로 쓸 수 있게
     rows = conn.execute(
         f"""
         WITH RECURSIVE dept_path AS (  -- 부서마다 위 부서 이름까지 이은 경로 (예: "IT본부 IT운영팀")
@@ -70,7 +82,7 @@ def find_employees(conn: Connection, where: str, order: str, params: dict[str, A
                 (%(end_date)s::date + make_interval(mins => %(end_min)s)) AT TIME ZONE 'Asia/Seoul') AS span
         )
         SELECT e.emp_no, e.name, e.rank_name, d.name AS department, pd.name AS division,
-               e.extension, e.id = %(me)s AS is_me,
+               e.extension, e.email, e.id = %(me)s AS is_me,
                s.id AS seat_id, s.code AS seat_code, f.id AS floor_id, f.name AS floor_name,
                si.name AS site_name, z.color_key,
                CASE WHEN p.expires_at IS NULL OR p.expires_at > now() THEN p.status END AS presence_status,
@@ -97,6 +109,7 @@ def find_employees(conn: Connection, where: str, order: str, params: dict[str, A
             FROM reservations r
             WHERE %(check)s
               AND r.status = 'CONFIRMED'
+              AND r.id IS DISTINCT FROM %(exclude)s::bigint  -- 고치고 있는 그 예약은 빼고
               AND tstzrange(r.starts_at, r.ends_at) && (SELECT span FROM win)
               -- 실제로 들어가는 회의만 (예약만 해 준 회의는 그 사람 일정이 아니다)
               AND EXISTS (SELECT 1 FROM reservation_attendees ra
@@ -247,6 +260,7 @@ def _hit(row: dict[str, Any]) -> dict[str, Any]:
         "department": row["department"],
         "division": row["division"],  # 위 부서 (본부)
         "extension": row["extension"],
+        "email": row["email"],
         "is_me": row["is_me"],
         "seat": (
             {

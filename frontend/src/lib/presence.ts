@@ -24,6 +24,12 @@ export const PRESENCE_PLACEHOLDER: Record<PresenceStatus, string> = {
   AWAY: "예: 외근, 14시 복귀",
 };
 
+/** 상태 옆에 붙일 메시지. 메시지가 상태 이름과 같으면("회의 중 · 회의 중") 붙이지 않는다 */
+export function presenceMessage(presence: { status: PresenceStatus; message: string | null } | null | undefined) {
+  const message = presence?.message?.trim();
+  return message && message !== PRESENCE_LABEL[presence!.status] ? message : null;
+}
+
 /** 상태를 정하지 않은 사람 (도면 범례·거르기·숫자에 같이 쓴다) */
 export const NO_STATUS_LABEL = "상태 없음";
 
