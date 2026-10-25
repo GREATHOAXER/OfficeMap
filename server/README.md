@@ -211,7 +211,7 @@ scripts/
 | 요청 | 하는 일 |
 |---|---|
 | `GET /api/admin/seating/floors` | 내가 배치를 편집할 수 있는 층 (`mode`: `FLOOR` 층 전체 / `ZONE` 내 구역만) |
-| `GET /api/admin/floors/{층 ID}/seating` | 배치 화면: 도면, 구역(편집 가능·구역 관리자), 좌석(지금 앉은 사람, 날짜를 정해 둔 `upcoming`, `editable`), 미배치 인원, 내 작업 묶음(`draft`), 요청·승인 현황, 권한 |
+| `GET /api/admin/floors/{층 ID}/seating` | 배치 화면: 도면, 구역(편집 가능·구역 관리자), 좌석(지금 앉은 사람, 날짜를 정해 둔 `upcoming`, `editable`), 미배치 인원, 내 작업 묶음(`draft`), 요청·승인 현황, 권한, 구역에 붙일 부서 후보(`departments`, 층 관리자 이상: 아래 부서가 없는 팀 + 이미 구역을 가진 부서) |
 | `GET /api/admin/seating/people?floor_id=&q=` | 사람 찾기 (다른 층·다른 팀). 구역 관리자는 우리 팀원만 |
 | `PUT /api/admin/floors/{층 ID}/change-set` | 내 작업 묶음 자동 저장 `{assignments: [{seat_id, emp_no\|null, expected_emp_no}], types: [{seat_id, mode}], effective_date, note}`. 항목을 통째로 바꾸고, 비면 묶음을 지움 |
 | `DELETE /api/admin/floors/{층 ID}/change-set` | 작성 중인 묶음 버리기 |
@@ -257,7 +257,7 @@ scripts/
 |---|---|
 | `GET /api/admin/plans/floors` | 도면을 편집할 수 있는 층 (`published`, `drafting`) |
 | `GET /api/admin/floors/{층 ID}/plan` | 편집 화면: `draft`(모양·`revision`·편집 중인 사람), `published`, `archived`, 복제할 수 있는 층(`sources`), `live`(책상 칸·회의실마다 지금 앉은 사람·남은 예약), `background`(밑그림 `{url, x_m, y_m, w_m, h_m, opacity, visible, name, bytes}` 또는 null) |
-| `POST /api/admin/floors/{층 ID}/plan/draft` | 초안 만들기 `{source: published\|blank\|archived\|floor\|import, plan_id?, floor_id?, width_m?, height_m?, geometry?}` (`blank`에 사무실 크기 10~300 m, 없으면 지금 게시본 크기. `import`는 도면 파일에서 찾은 `geometry`와 크기가 꼭 있어야 함(422 `IMPORT_SIZE`), 요소 ID 앞에 `i{버전}-`을 붙임). 이미 있으면 409 `HAS_DRAFT` |
+| `POST /api/admin/floors/{층 ID}/plan/draft` | 초안 만들기 `{source: published\|blank\|archived\|floor\|import, plan_id?, floor_id?, width_m?, height_m?, geometry?}` (`blank`에 사무실 크기 10~300 m, 없으면 지금 게시본 크기. `import`는 도면 파일에서 찾은 `geometry`와 크기가 꼭 있어야 함(422 `IMPORT_SIZE`), 요소 ID 앞에 `i{버전}-`을 붙임. `geometry.desk`가 없으면 보통 책상 1.6 × 0.8 m). 이미 있으면 409 `HAS_DRAFT` |
 | `PUT /api/admin/plans/{ID}` | 자동 저장 `{revision, geometry, width_m?, height_m?}` (도면 크기 10~300 m) → `{revision, updated_at}`. 409 `REVISION`(먼저 저장한 곳이 있음, 서버 `revision` 포함), 423 `EDITING`(다른 사람이 편집 중), 409 `SCHEDULED`(게시 예약 중), 422 `BAD_GEOMETRY` |
 | `POST /api/admin/plans/{ID}/heartbeat` | 편집 중 표시 (30초마다). `{take_over: true}`면 넘겨받기 |
 | `DELETE /api/admin/plans/{ID}` | 초안 버리기 |
