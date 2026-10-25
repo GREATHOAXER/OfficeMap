@@ -238,6 +238,10 @@ def _editor_data(conn: Connection, admin: dict[str, Any], floor: dict[str, Any])
 # 초안 ------------------------------------------------------------------------
 
 
+BLANK_MARGIN_M = 1.5  # 빈 도면: 바깥 벽 둘레 여유
+BLANK_DESK_M = (1.6, 0.8)  # 빈 도면의 기본 책상 (폭 × 깊이 m)
+
+
 class DraftIn(BaseModel):
     source: Literal["published", "blank", "archived", "floor", "import"] = "published"
     plan_id: int | None = None  # archived: 이 층의 보관본(또는 게시본)
@@ -324,11 +328,18 @@ def create_draft(floor_id: int, body: DraftIn, admin: CurrentAdmin, request: Req
                 raise HTTPException(status_code=422, detail={"code": "NO_PUBLISHED"})
             geometry = _v1_from_plan(conn, published, floor_id, link=True)
         elif body.source == "blank":
-            width, height = body.width_m or width, body.height_m or height
+            # 넣은 크기는 사무실(바깥 벽) 크기다. 도면은 벽 둘레로 1.5 m씩 여유를 두어 그만큼 크게 잡는다.
+            # 넣지 않았으면 지금 도면 크기 안에 벽을 넣는다.
+            # 책상 기본 크기는 보통 사무용 책상 (도면 파일 가져오기와 같다)
+            if body.width_m and body.height_m:
+                width = min(geo.MAX_SIZE, body.width_m + 2 * BLANK_MARGIN_M)
+                height = min(geo.MAX_SIZE, body.height_m + 2 * BLANK_MARGIN_M)
+            m = BLANK_MARGIN_M
             geometry = {
                 "schema": geo.SCHEMA,
                 "grid_m": geo.GRID_M,
-                "elements": [{"id": "wall-1", "type": "wall", "x": 1.5, "y": 1.5, "w": width - 3, "h": height - 3}],
+                "desk": {"w": BLANK_DESK_M[0], "h": BLANK_DESK_M[1]},
+                "elements": [{"id": "wall-1", "type": "wall", "x": m, "y": m, "w": width - 2 * m, "h": height - 2 * m}],
             }
         elif body.source == "archived":
             source = next(

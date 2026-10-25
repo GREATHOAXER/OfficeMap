@@ -628,6 +628,13 @@
   border-top-color: var(--tc);
 }
 
+/* 옆으로 돌린 책상(세로로 긴 자리)은 직원 화면처럼 이름을 세로로 쓴다 (글자 크기는 lib/seatLabel.ts가 세로로 잰다) */
+.seat[data-vertical] {
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  padding: 2px 0;
+}
+
 .seat[draggable="true"] {
   cursor: grab;
 }
