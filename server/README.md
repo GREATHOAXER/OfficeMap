@@ -52,7 +52,8 @@ scripts/
 | 요청 | 하는 일 |
 |---|---|
 | `GET /api/office/sites` | 사업장과 층 목록, 층마다 입주 팀 이름. `my_floor_id`는 로그인한 사람의 자리가 있는 층, `team_floor_id`는 우리 팀 구역이 있는 층 (자리가 아직 없으면 이 층을 연다) |
-| `GET /api/office/floors/{층 ID}` | 게시된 도면(벽·기둥·공용 공간), 팀 구역, 회의실 지금 사용 여부, 좌석과 앉은 사람·재실 상태 |
+| `GET /api/office/floors/{층 ID}` | 게시된 도면(벽·기둥·공용 공간), 팀 구역, 회의실 지금 사용 여부, 좌석과 앉은 사람·재실 상태. `next_change_at`: 날짜를 정한 배치 변경·자율석 사용 끝 등 이 층 자리가 다음에 저절로 바뀌는 시각 (화면이 그때 다시 읽음) |
+| `GET /api/office/my-seat` | 내 고정석과 날짜를 정해 둔 다음 변경 (`change.seat`가 `null`이면 그날 배정이 끝남). "내 자리가 바뀌었어요" 안내에 씀 |
 
 - 좌표(`x`, `y`, `shape`)는 모두 도면 너비·높이 대비 비율(0~1)입니다. 좌석 `x`, `y`는 중심점입니다.
 - 재실 상태는 `expires_at`이 지났으면 `null`로 내려갑니다.
@@ -142,6 +143,44 @@ scripts/
   좌석은 개인석(`seats`, 배정 `occupied`)과 자율석(`flex`)을 나눠 셉니다. `unseated`: 재직 중인데 자리가 없는 사람.
   `pending_requests`는 층 관리 권한이면 내가 승인할 요청, 구역만 맡았으면 내가 올려 승인을 기다리는 요청.
 
+## 좌석 배치 편집 API (`/api/admin`, 관리자 로그인 필요)
+
+배치 화면(⑤)에서 끌어다 놓은 변경은 바로 반영하지 않고 **작업 묶음**(`change_requests` 한 행 + 항목)에 모았다가
+한 번에 반영합니다. 설계: [docs/design/floor-plan-and-seating.md](../docs/design/floor-plan-and-seating.md) 4장.
+
+| 요청 | 하는 일 |
+|---|---|
+| `GET /api/admin/seating/floors` | 내가 배치를 편집할 수 있는 층 (`mode`: `FLOOR` 층 전체 / `ZONE` 내 구역만) |
+| `GET /api/admin/floors/{층 ID}/seating` | 배치 화면: 도면, 구역(편집 가능·구역 관리자), 좌석(지금 앉은 사람, 날짜를 정해 둔 `upcoming`, `editable`), 미배치 인원, 내 작업 묶음(`draft`), 요청·승인 현황, 권한 |
+| `GET /api/admin/seating/people?floor_id=&q=` | 사람 찾기 (다른 층·다른 팀). 구역 관리자는 우리 팀원만 |
+| `PUT /api/admin/floors/{층 ID}/change-set` | 내 작업 묶음 자동 저장 `{assignments: [{seat_id, emp_no\|null, expected_emp_no}], types: [{seat_id, mode}], effective_date, note}`. 항목을 통째로 바꾸고, 비면 묶음을 지움 |
+| `DELETE /api/admin/floors/{층 ID}/change-set` | 작성 중인 묶음 버리기 |
+| `GET /api/admin/change-sets/{ID}` | 묶음 하나 (승인할 요청 미리 보기) |
+| `POST /api/admin/change-sets/{ID}/apply` | 내 묶음 반영 (층 관리자 이상, "즉시 반영" 구역 관리자) |
+| `POST /api/admin/change-sets/{ID}/submit` · `withdraw` | 승인 요청 / 요청 거두고 다시 작성 중으로 ("층 관리자 승인 후" 구역 관리자) |
+| `POST /api/admin/change-sets/{ID}/approve` · `reject` | 승인하고 반영 / 반려 `{comment}` (그 층 관리자 이상) |
+| `POST /api/admin/change-sets/{ID}/reopen` | 반려된 내 요청을 새 작성 중 묶음으로 복사 |
+| `POST /api/admin/change-sets/{ID}/cancel` | 날짜를 정해 반영한 묶음을 그날 전에 취소 (새 배정은 지우고, 끝내기로 한 배정은 되살림) |
+| `GET /api/admin/stream` | 배치 화면용 SSE (`event: floor`, `resync`). 다른 관리자가 이 층에 반영하면 다시 읽음 |
+
+- 항목은 좌석마다 "반영하면 앉을 사람"과 "바꾸기 전에 앉아 있던 사람(`expected_emp_no`)"입니다. 자리 교환은 2건,
+  다른 자리로 옮기기는 새 자리 + 옛 자리 비우기. 사람이 다른 고정석에 있으면 반영할 때 그 자리를 끝냅니다.
+- **반영은 한 트랜잭션**이고 층마다 한 번에 하나씩 합니다(`pg_advisory_xact_lock`). 하나라도 충돌하면 아무것도 바꾸지
+  않고 409 `CONFLICTS` + `conflicts: [{seat_id, code, reason}]`를 돌려줍니다. `reason`: `CHANGED`(그사이 다른 관리자가
+  바꿈), `SCHEDULED`·`SCHEDULED_PERSON`(날짜를 정한 변경이 걸려 있음), `INACTIVE`, `PERSON_OUT_OF_SCOPE`(우리 팀원이
+  아님·부서 이동), `NOT_FIXED`(자율석·사용 중지 좌석), `OCCUPIED`(자율석·사용 중지로 바꾸는데 앉은 사람이 남음),
+  `OUT_OF_SCOPE`, `SEAT_GONE`.
+- **날짜 지정**(`effective_date`, 내일부터 1년 안): 그날 0시(서울)부터 시작하는 배정을 미리 넣고, 지금 배정은 그 시각에
+  끝나게 해 둡니다(`ended_by_request_id`). 직원 화면은 지금 시각에 걸친 배정만 보이므로 그날 저절로 바뀝니다.
+  예정이 걸린 좌석·사람은 그날까지 잠깁니다. 좌석 유형 변경은 날짜를 정할 수 없습니다(422 `SCHEDULE_WITH_TYPES`).
+  승인이 늦어 날짜가 지났으면 승인하는 순간 반영합니다.
+- 구역 관리자는 내 구역 좌석과 우리 팀(내 구역의 부서) 사람만 넣을 수 있습니다 (403 `SEAT_LOCKED`, `PERSON_OUT_OF_SCOPE`).
+  관리자 한 명이 한 층에 진행 중인 묶음(작성 중·승인 대기)은 하나입니다. 승인 대기 중에는 고칠 수 없습니다(409 `PENDING`).
+- 반영하면 `audit_logs`(`CHANGE_SET_APPLY`, `_SUBMIT`, `_REJECT`, `_CANCEL`)와 자리가 바뀐 사람의 `notifications`
+  (`SEAT_CHANGED`, 메신저 연동 후 발송)를 남깁니다. 배정은 지우지 않고 끝내고 새로 만들어 이력이 남습니다.
+- **부서 이동·퇴사**: `employees`의 트리거가 고정석 배정을 끝냅니다 (좌석은 원래 팀 구역에 그대로, 그 사람은 새 팀의
+  미배치 인원). 조직도 동기화든 직접 SQL이든 똑같이 동작하고 `audit_logs`에 `SEAT_RELEASE`로 남습니다.
+
 ## 내 재실 상태 API (로그인 필요)
 
 `presence_status` 테이블에 직원당 1행을 덮어씁니다. 이력은 남기지 않습니다.
@@ -163,13 +202,17 @@ scripts/
 ### 실시간 알림 (`/api/presence/stream`)
 
 ```
-DB 트리거 ──NOTIFY presence_changed──▶ API 서버(LISTEN 연결 1개) ──SSE──▶ 열려 있는 화면들
+DB 트리거 ──NOTIFY presence_changed / floor_changed──▶ API 서버(LISTEN 연결 1개) ──SSE──▶ 열려 있는 화면들
 ```
 
 - `presence_status`에 저장·삭제가 일어나면 트리거(`db/schema/05_presence.sql`)가 알림을 보냅니다.
-  API를 거치지 않고 SQL로 직접 바꿔도 화면에 바로 반영됩니다.
+  좌석·배정·구역·도면 게시·배치 요청이 바뀌면 `floor_changed`를 보냅니다 (`db/schema/04_seating.sql`).
+  API를 거치지 않고 SQL로 직접 바꿔도 화면에 바로 반영됩니다. NOTIFY는 커밋된 뒤에만 전달됩니다.
 - 보내는 이벤트
   - `event: presence` / `data: {"emp_no", "presence": {status, message, expires_at, updated_at} | null, "at"}`
+  - `event: floor` / `data: {"kind": "seats" | "zones" | "plan" | "requests", "floor_id", "seat_id"?, "emp_no"?, "version"?, "at"}`.
+    `emp_no`는 고정석 배정이 바뀐 사람(직원 화면이 "내 자리가 바뀌었어요"를 띄울지 정함).
+    관리자 배치 화면은 `/api/admin/stream`으로 같은 `floor` 이벤트를 받습니다
   - `event: resync`: 서버의 DB 연결이 끊겼다 다시 붙음. 놓친 변경이 있을 수 있어 화면이 전체를 다시 읽습니다.
   - 20초마다 `: ping` (중간 프록시가 조용한 연결을 끊지 않게)
 - 연결이 열려 있는 것만으로는 자동 로그아웃 시간이 늘어나지 않습니다. 60초마다 세션을 확인해서

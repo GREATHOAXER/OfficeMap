@@ -1,7 +1,8 @@
 import { headers } from "next/headers";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import PendingButton from "@/components/PendingButton";
-import { applyModeText, canEditPlan, canManage, LEVELS, PLAN_LABEL, ROLE_TASKS } from "@/lib/admin";
+import { applyModeText, canEditPlan, canManage, canManageSite, LEVELS, PLAN_LABEL, ROLE_TASKS } from "@/lib/admin";
 import { type Admin, type AdminFloor, type AdminSite, ApiError, fetchAdmin, fetchAdminOverview } from "@/lib/api";
 import { kstDate } from "@/lib/dates";
 import styles from "./admin.module.css";
@@ -80,7 +81,7 @@ export default async function AdminHomePage() {
         </p>
 
         <p className={styles.readyNote}>
-          이번 버전은 현황 보기까지예요. 점선 버튼(도면 관리 · 배치 편집 · 권한 부여 등)은 다음 단계에서 열려요.
+          좌석 배치 편집이 열렸어요. 점선 버튼(도면 관리 · 층 추가 · 권한 부여 등)은 다음 단계에서 열려요.
         </p>
 
         <ul className={styles.stats} aria-label={scoped ? "내 관리 범위 현황" : "전체 현황"}>
@@ -178,7 +179,7 @@ export default async function AdminHomePage() {
 function SiteSection({ site, admin }: { site: AdminSite; admin: Admin }) {
   const seats = site.floors.reduce((n, f) => n + f.seats, 0);
   const occupied = site.floors.reduce((n, f) => n + f.occupied, 0);
-  const editPlan = canEditPlan(admin, site.id);
+  const siteWide = canManageSite(admin, site.id);
 
   return (
     <section className={styles.site} aria-labelledby={`site-${site.id}`}>
@@ -200,7 +201,7 @@ function SiteSection({ site, admin }: { site: AdminSite; admin: Admin }) {
             담당 <strong>{site.admins.join(", ") || "—"}</strong>
           </span>
         </div>
-        {editPlan && <Pending label="+ 층 추가" />}
+        {siteWide && <Pending label="+ 층 추가" />}
       </div>
       <div className={styles.tableScroll}>
         <table className={styles.table}>
@@ -230,7 +231,12 @@ function SiteSection({ site, admin }: { site: AdminSite; admin: Admin }) {
           </thead>
           <tbody>
             {site.floors.map((floor) => (
-              <FloorRow key={floor.id} floor={floor} editPlan={editPlan} />
+              <FloorRow
+                key={floor.id}
+                floor={floor}
+                siteWide={siteWide}
+                editPlan={canEditPlan(admin, { id: floor.id, siteId: site.id })}
+              />
             ))}
           </tbody>
         </table>
@@ -239,10 +245,11 @@ function SiteSection({ site, admin }: { site: AdminSite; admin: Admin }) {
   );
 }
 
-/** editPlan: 사업장 전체를 맡았다 (모든 층이 내 범위라 층마다 "내 관리" 표시는 하지 않는다) */
-function FloorRow({ floor, editPlan }: { floor: AdminFloor; editPlan: boolean }) {
+/** siteWide: 사업장 전체를 맡았다 (모든 층이 내 범위라 층마다 "내 관리" 표시는 하지 않는다)
+ *  editPlan: 이 층 도면을 고칠 수 있다 (층 관리자 이상) */
+function FloorRow({ floor, siteWide, editPlan }: { floor: AdminFloor; siteWide: boolean; editPlan: boolean }) {
   const admins = floor.floor_admins.join(", ");
-  const mark = !editPlan && floor.in_scope;
+  const mark = !siteWide && floor.in_scope;
   return (
     <tr data-scope={mark || undefined}>
       <th scope="row" data-label="층">
@@ -284,7 +291,13 @@ function FloorRow({ floor, editPlan }: { floor: AdminFloor; editPlan: boolean })
           {floor.in_scope ? (
             <>
               {editPlan && <Pending label="도면 관리" />}
-              <Pending label={floor.in_scope === "ALL" ? "배치 편집" : "내 구역 배치"} primary />
+              {floor.seats + floor.flex > 0 ? (
+                <Link href={`/admin/seating?floor=${floor.id}`} className={`${styles.btn} ${styles.pri}`}>
+                  {floor.in_scope === "ALL" ? "배치 편집" : "내 구역 배치"}
+                </Link>
+              ) : (
+                <span className={styles.muted}>좌석 없음</span>
+              )}
             </>
           ) : (
             <span className={styles.muted}>조회만</span>

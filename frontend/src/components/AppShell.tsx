@@ -15,6 +15,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
+import { hasPlanRole } from "@/lib/admin";
 import type { Admin, SiteSummary, User } from "@/lib/api";
 import { SIDEBAR_COOKIE } from "@/lib/sidebar";
 import {
@@ -53,16 +54,16 @@ const MAIN_MENU: MenuItem[] = [
 // 관리 메뉴(사업장·권한, 좌석 배치 편집, 도면 편집)는 관리자 페이지 안에 있고, 관리자 비밀번호로 따로 로그인한다
 const ADMIN_MENU: MenuItem[] = [{ label: "관리자 페이지", icon: <ShieldIcon />, href: "/admin" }];
 
-/** 관리자 페이지의 왼쪽 메뉴. 도면 편집은 사업장 관리자 이상만 할 수 있어서 그 아래 단계에는 보이지 않는다 */
+/** 관리자 페이지의 왼쪽 메뉴. 도면 편집은 층 관리자 이상만 할 수 있어서 구역 관리자에게는 보이지 않는다 */
 function consoleMenu(admin: Admin): MenuGroup[] {
-  const plans = admin.role === "COMPANY_ADMIN" || admin.role === "SITE_ADMIN";
   return [
     {
       title: "관리",
       items: [
         { label: "사업장·권한", icon: <ShieldIcon />, href: "/admin" },
-        { label: "좌석 배치 편집", icon: <MoveIcon /> },
-        ...(plans ? [{ label: "도면 편집", icon: <PenIcon /> }] : []),
+        { label: "좌석 배치 편집", icon: <MoveIcon />, href: "/admin/seating" },
+        // 도면 편집은 층 관리자 이상 (구역 관리자는 보기만)
+        ...(hasPlanRole(admin) ? [{ label: "도면 편집", icon: <PenIcon /> }] : []),
       ],
     },
     { title: "직원 화면", items: [{ label: "자리·재실 현황", icon: <GridIcon />, href: "/" }] },

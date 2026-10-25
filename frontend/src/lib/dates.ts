@@ -72,3 +72,9 @@ export function agoText(iso: string, now: number): string {
   if (minutes < 24 * 60) return `${Math.floor(minutes / 60)}시간 전`;
   return kstDate(iso).slice(5);
 }
+
+/** 시각(ISO) → 서울 기준 "11/2(월)" */
+export function shortDate(iso: string): string {
+  const day = kstDate(iso);
+  return `${Number(day.slice(5, 7))}/${Number(day.slice(8))}(${weekdayName(day)})`;
+}

@@ -1,6 +1,6 @@
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import type { FloorMap, MyPresence, PresenceEvent } from "./api";
+import { useEffect, useRef, useState } from "react";
+import type { FloorEvent, FloorMap, MyPresence, PresenceEvent } from "./api";
 import { expiredLoginUrl } from "./loginRedirect";
 
 /** 사번 → 그 사람의 가장 최근 상태 변경 알림 */
@@ -15,10 +15,15 @@ const MAX_TIMEOUT_MS = 2 ** 31 - 1; // setTimeout이 받는 최대 지연 (약 2
  * - 받은 변경은 사번별로 모아 돌려준다. 서버에서 읽은 값보다 나중 것만 화면에 덮어쓴다 (withLivePresence)
  * - 끊겼다 다시 붙거나 서버가 resync를 보내면, 그 사이 놓친 변경이 있을 수 있어 화면 데이터를 다시 읽는다
  * - 로그아웃·자동 로그아웃으로 연결이 거절되면 로그인 화면으로 보낸다
+ * - 같은 연결로 도면·좌석 배치 변경(floor 이벤트)도 온다. onFloor로 받는다
  */
-export function useLivePresence(): LiveChanges {
+export function useLivePresence(onFloor?: (change: FloorEvent) => void): LiveChanges {
   const router = useRouter();
   const [changes, setChanges] = useState<LiveChanges>(() => new Map());
+  const onFloorRef = useRef(onFloor);
+  useEffect(() => {
+    onFloorRef.current = onFloor;
+  });
 
   useEffect(() => {
     let source: EventSource | null = null;
@@ -37,6 +42,9 @@ export function useLivePresence(): LiveChanges {
       source.addEventListener("presence", (event) => {
         const change = JSON.parse((event as MessageEvent<string>).data) as PresenceEvent;
         setChanges((prev) => new Map(prev).set(change.emp_no, change));
+      });
+      source.addEventListener("floor", (event) => {
+        onFloorRef.current?.(JSON.parse((event as MessageEvent<string>).data) as FloorEvent);
       });
       source.addEventListener("resync", () => router.refresh());
       source.addEventListener("error", () => {

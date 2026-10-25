@@ -3,8 +3,6 @@
 내 상태 읽기·바꾸기·지우기와, 동료들의 상태가 바뀔 때마다 화면에 바로 보내는 실시간 알림(SSE).
 """
 
-import asyncio
-from collections.abc import AsyncIterator
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -14,7 +12,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
 from app.db import get_setting, pool
-from app.realtime import CLOSE, RESYNC, hub
+from app.realtime import SSE_HEADERS, hub
 from app.routers.employees import NO_WINDOW, find_employees
 from app.session import CurrentUser, load_session
 
@@ -122,10 +120,6 @@ def clear_my_presence(user: CurrentUser) -> Response:
     return Response(status_code=204)
 
 
-PING_SECONDS = 20  # 아무 변경이 없어도 이 간격으로 신호를 보내 중간 프록시가 연결을 끊지 않게 한다
-SESSION_CHECK_SECONDS = 60  # 로그아웃·자동 로그아웃되면 이 시간 안에 연결을 닫는다
-
-
 def _session_alive(token: str | None) -> bool:
     if not token:
         return False
@@ -135,9 +129,11 @@ def _session_alive(token: str | None) -> bool:
 
 @router.get("/stream")
 async def presence_stream(request: Request) -> StreamingResponse:
-    """동료들의 재실 상태가 바뀔 때마다 보내는 SSE. 화면은 EventSource로 받는다.
+    """동료들의 재실 상태와 도면·좌석 배치가 바뀔 때마다 보내는 SSE. 화면은 EventSource로 받는다.
 
     event: presence  data: {"emp_no", "presence": {status, message, expires_at, updated_at} | null, "at"}
+    event: floor     data: {"kind": "seats" | "zones" | "plan" | "requests", "floor_id",
+                            "seat_id"?, "emp_no"?, "version"?, "at"}
     event: resync    놓친 변경이 있을 수 있다. 화면 데이터를 전부 다시 읽는다
 
     연결이 열려 있는 것만으로는 자동 로그아웃 시간을 늘리지 않는다.
@@ -146,35 +142,7 @@ async def presence_stream(request: Request) -> StreamingResponse:
     if not await run_in_threadpool(_session_alive, token):
         raise HTTPException(status_code=401, detail={"code": "NOT_LOGGED_IN"})
     return StreamingResponse(
-        _events(token),
+        hub.events(frozenset({"presence", "floor"}), lambda: _session_alive(token)),
         media_type="text/event-stream",
-        # 압축·버퍼링하는 프록시(Next.js, nginx)가 알림을 모아 두지 않게 한다
-        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+        headers=SSE_HEADERS,
     )
-
-
-async def _events(token: str | None) -> AsyncIterator[str]:
-    sub = hub.subscribe()
-    loop = asyncio.get_running_loop()
-    check_at = loop.time() + SESSION_CHECK_SECONDS
-    try:
-        yield "retry: 3000\n\n"  # 끊기면 3초 뒤 다시 연결
-        while not hub.closing and not sub.lost:
-            try:
-                payload: str | None = await asyncio.wait_for(sub.queue.get(), timeout=PING_SECONDS)
-            except TimeoutError:
-                payload = None
-            if payload == CLOSE:
-                break
-            if payload is None:
-                yield ": ping\n\n"
-            elif payload == RESYNC:
-                yield "event: resync\ndata: {}\n\n"
-            else:
-                yield f"event: presence\ndata: {payload}\n\n"
-            if loop.time() >= check_at:
-                if not await run_in_threadpool(_session_alive, token):
-                    break
-                check_at = loop.time() + SESSION_CHECK_SECONDS
-    finally:
-        hub.unsubscribe(sub)

@@ -146,6 +146,21 @@ def floor_map(floor_id: int, user: CurrentUser) -> dict[str, Any]:
             (floor_id,),
         ).fetchall()
 
+        # 날짜를 정해 둔 배치 변경·자율석 사용 끝 등, 이 층 자리가 다음에 저절로 바뀌는 시각.
+        # 화면은 그때 다시 읽는다 (그 시각에는 따로 알림이 오지 않는다)
+        next_change = conn.execute(
+            """
+            SELECT min(t) AS at FROM (
+                SELECT a.starts_at AS t FROM seat_assignments a JOIN seats s ON s.id = a.seat_id
+                WHERE s.floor_id = %(floor)s AND a.starts_at > now()
+                UNION ALL
+                SELECT a.ends_at FROM seat_assignments a JOIN seats s ON s.id = a.seat_id
+                WHERE s.floor_id = %(floor)s AND a.ends_at > now()
+            ) t
+            """,
+            {"floor": floor_id},
+        ).fetchone()
+
     return {
         "floor": {
             "id": floor["id"],
@@ -154,11 +169,42 @@ def floor_map(floor_id: int, user: CurrentUser) -> dict[str, Any]:
         },
         # 이 데이터를 읽은 시각. 화면은 이보다 나중에 온 실시간 알림만 덮어쓴다
         "fetched_at": floor["fetched_at"],
+        "next_change_at": next_change["at"],
         "plan": plan,
         "zones": zones,
         "rooms": [_room_out(r) for r in rooms],
         "seats": [_seat_out(s) for s in seats],
     }
+
+
+@router.get("/my-seat")
+def my_seat(user: CurrentUser) -> dict[str, Any]:
+    """내 고정석: 지금 자리와, 날짜를 정해 둔 다음 변경 (새 자리 또는 배정 해제)."""
+    with pool.connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT a.starts_at, a.ends_at, a.starts_at <= now() AS started,
+                   s.id AS seat_id, s.code, f.id AS floor_id, f.name AS floor_name
+            FROM seat_assignments a
+            JOIN seats s ON s.id = a.seat_id
+            JOIN floors f ON f.id = s.floor_id
+            WHERE a.employee_id = %s AND a.kind = 'FIXED' AND (a.ends_at IS NULL OR a.ends_at > now())
+            ORDER BY a.starts_at
+            """,
+            (user["employee_id"],),
+        ).fetchall()
+
+    def seat(row: dict[str, Any]) -> dict[str, Any]:
+        return {"id": row["seat_id"], "code": row["code"], "floor_id": row["floor_id"], "floor": row["floor_name"]}
+
+    current = next((r for r in rows if r["started"]), None)
+    upcoming = next((r for r in rows if not r["started"]), None)
+    change = None
+    if upcoming is not None:
+        change = {"at": upcoming["starts_at"], "seat": seat(upcoming)}
+    elif current is not None and current["ends_at"] is not None:
+        change = {"at": current["ends_at"], "seat": None}  # 그날 배정이 끝나고 새 자리는 없다
+    return {"seat": seat(current) if current else None, "change": change}
 
 
 def _room_out(row: dict[str, Any]) -> dict[str, Any]:

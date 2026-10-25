@@ -130,6 +130,8 @@ export type Seat = {
 export type FloorMap = {
   floor: { id: number; name: string; site: { id: number; name: string } };
   fetched_at: string; // 이 데이터를 읽은 시각 (실시간 알림과 어느 쪽이 최신인지 비교)
+  /** 날짜를 정해 둔 배치 변경·자율석 사용 끝 등, 이 층 자리가 다음에 저절로 바뀌는 시각 (그때 다시 읽는다) */
+  next_change_at: string | null;
   plan: {
     version: number;
     width_m: number;
@@ -151,6 +153,23 @@ export type MyPresence = {
 
 /** 실시간 알림(/api/presence/stream)의 presence 이벤트. presence가 null이면 상태를 지웠다 */
 export type PresenceEvent = { emp_no: string; presence: MyPresence; at: string };
+
+/** 실시간 알림의 floor 이벤트: 좌석·배정(seats), 팀 구역(zones), 도면 게시(plan), 배치 요청(requests).
+ *  emp_no: 고정석 배정이 바뀐 사람 (내 자리가 바뀌었는지 알아본다) */
+export type FloorEvent = {
+  kind: "seats" | "zones" | "plan" | "requests"; // requests: 배치 묶음 승인 요청·반려 (배치 화면만 쓴다)
+  floor_id: number;
+  seat_id?: number;
+  emp_no?: string | null;
+  version?: number;
+  at: string;
+};
+
+/** 내 고정석과 날짜를 정해 둔 다음 변경 (seat가 null이면 그날 배정이 끝난다) */
+export type MySeat = {
+  seat: SeatRef | null;
+  change: { at: string; seat: SeatRef | null } | null;
+};
 
 /** 재실 상태 자동 해제: 해제 안 함 / 30분 / 1시간 / 퇴근 시 / 지금 해제 시각 그대로 */
 export type PresenceDuration = "NONE" | "30M" | "1H" | "END_OF_DAY" | "KEEP";
@@ -435,4 +454,110 @@ export const fetchAdmin = cache(async (cookieHeader: string | null): Promise<Adm
 
 export function fetchAdminOverview(cookieHeader: string | null) {
   return apiGet<AdminOverview>("/api/admin/overview", cookieHeader);
+}
+
+// 좌석 배치 편집 (⑤) -------------------------------------------------------------
+
+/** 좌석 유형: 고정석 / 팀 내 자율석 / 사용 중지 (고장·수리) */
+export type SeatMode = "FIXED" | "FLEX" | "OUT_OF_SERVICE";
+
+/** 자리 위치 (층 이름 + 좌석 번호) */
+export type SeatRef = { id: number; code: string; floor_id: number; floor: string };
+
+export type SeatingPerson = {
+  emp_no: string;
+  name: string;
+  rank: string | null;
+  department: string;
+  department_id: number;
+};
+
+export type SeatingSeat = Omit<Seat, "occupant"> & {
+  occupant: (SeatingPerson & { kind: "FIXED" | "DAILY"; active: boolean }) | null;
+  /** 날짜를 정해 둔 다음 변경 (occupant가 null이면 그날 비워진다). 있으면 그날까지 잠긴다 */
+  upcoming: { at: string; occupant: Omit<SeatingPerson, "department_id"> | null } | null;
+  /** 내 범위(구역)의 좌석인가 */
+  editable: boolean;
+};
+
+export type SeatingZone = Zone & { department_id: number | null; editable: boolean; managers: string[] };
+
+/** 미배치 인원: 우리 팀(이 층에 구역이 있는 팀)인데 지금 고정석이 없는 사람 */
+export type UnassignedPerson = SeatingPerson & {
+  new_hire: boolean;
+  released_at: string | null; // 마지막 고정석이 끝난 시각
+  upcoming: { at: string; seat: string } | null; // 날짜를 정해 둔 새 자리
+};
+
+export type ChangeSetStatus = "DRAFT" | "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+
+/** 작업 묶음: 좌석마다 "반영하면 이렇게 된다" */
+export type ChangeSet = {
+  id: number;
+  floor_id: number;
+  type: "SEAT_ASSIGNMENT" | "ZONE_CHANGE";
+  status: ChangeSetStatus;
+  note: string | null;
+  effective_at: string | null;
+  submitted_at: string | null;
+  reviewed_at: string | null;
+  reviewer: string | null;
+  review_comment: string | null;
+  updated_at: string;
+  requester: string;
+  assignments: { seat_id: number; emp_no: string | null; expected_emp_no: string | null }[];
+  types: { seat_id: number; mode: SeatMode }[];
+  zone_moves: { seat_id: number; zone_id: number }[];
+  people: Record<string, SeatingPerson & { active: boolean; seat: SeatRef | null }>;
+};
+
+export type ChangeRequestRow = {
+  id: number;
+  type: ChangeSet["type"];
+  status: ChangeSetStatus;
+  scheduled: boolean; // 날짜를 정해 반영했고 아직 그날이 안 됐다
+  note: string | null;
+  effective_at: string | null;
+  submitted_at: string | null;
+  reviewed_at: string | null;
+  reviewer: string | null;
+  review_comment: string | null;
+  requester: string;
+  mine: boolean;
+  item_count: number;
+  summary: string[];
+  can_review: boolean;
+  can_cancel: boolean;
+};
+
+export type SeatingFloorChoice = { id: number; name: string; site: string; mode: "FLOOR" | "ZONE" };
+
+export type SeatingData = {
+  floor: FloorMap["floor"];
+  fetched_at: string;
+  floors: SeatingFloorChoice[];
+  permissions: {
+    mode: "FLOOR" | "ZONE"; // 층 전체 / 내 구역만
+    apply: "IMMEDIATE" | "NEEDS_APPROVAL"; // 바로 반영 / 층 관리자 승인 후
+    zones: number[] | null;
+    can_review: boolean;
+    floor_admins: string[];
+  };
+  plan: FloorMap["plan"];
+  rooms: { id: number; name: string; shape: Rect | null }[];
+  zones: SeatingZone[];
+  seats: SeatingSeat[];
+  unassigned: UnassignedPerson[];
+  draft: ChangeSet | null; // 내 작업 묶음 (작성 중 또는 승인 대기)
+  requests: ChangeRequestRow[];
+};
+
+export type SeatingSearchHit = SeatingPerson & { seat: SeatRef | null; locked: boolean };
+
+export function fetchSeatingFloors(cookieHeader: string | null) {
+  return apiGet<{ floors: SeatingFloorChoice[] }>("/api/admin/seating/floors", cookieHeader);
+}
+
+export function fetchSeating(cookieHeader: string | null, floorId: number) {
+  return apiGet<SeatingData>(`/api/admin/floors/${floorId}/seating`, cookieHeader);
 }

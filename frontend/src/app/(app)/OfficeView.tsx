@@ -12,6 +12,7 @@ import EmployeeSearch from "./EmployeeSearch";
 import FloorPlan, { clampZoom, ZOOM_MAX, ZOOM_MIN, ZOOM_STEPS } from "./FloorPlan";
 import MyStatus from "./MyStatus";
 import SeatPanel from "./SeatPanel";
+import { useFloorUpdates } from "./useFloorUpdates";
 import styles from "./office.module.css";
 
 type Props = {
@@ -31,8 +32,10 @@ const stepZoom = (zoom: number, dir: 1 | -1) =>
     : ([...ZOOM_STEPS].reverse().find((z) => z < zoom - 0.001) ?? ZOOM_MIN);
 
 export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, myPresence, map: fetchedMap }: Props) {
-  // 다른 사람이 상태를 바꾸면 새로고침 없이 바로 반영한다
-  const live = useLivePresence();
+  // 관리자가 자리 배치를 바꾸거나 도면을 게시하면 다시 읽고 알려 준다
+  const updates = useFloorUpdates(fetchedMap, myEmpNo);
+  // 다른 사람이 상태를 바꾸면 새로고침 없이 바로 반영한다 (같은 연결로 배치 변경도 온다)
+  const live = useLivePresence(updates.onFloor);
   const map = useMemo(() => withLivePresence(fetchedMap, live), [fetchedMap, live]);
   const mine = withLiveMine(myPresence.presence, live.get(myEmpNo), fetchedMap.fetched_at);
   useRefreshAtExpiry([mine?.expires_at, ...map.seats.map((s) => s.occupant?.presence?.expires_at)]);
@@ -170,6 +173,15 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
         </button>
         <MyStatus info={{ ...myPresence, presence: mine }} />
       </header>
+
+      {updates.planCountdown !== null && (
+        <p className={styles.planBanner} role="status">
+          {map.floor.name} 도면이 새로 게시됐어요 · {updates.planCountdown}초 뒤 새 도면으로 보여 드려요
+          <button type="button" onClick={updates.showPlanNow}>
+            지금 보기
+          </button>
+        </p>
+      )}
 
       {seatless && (
         <p className={styles.seatless} role="status">
@@ -318,6 +330,23 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
             )}
           </div>
         </main>
+
+        <div className={styles.liveNotices} aria-live="polite">
+          {updates.seatNotice && <p className={styles.liveNotice}>{updates.seatNotice.text}</p>}
+          {updates.mineNotice && (
+            <p className={styles.liveNotice} data-mine="true">
+              {updates.mineNotice.text}
+              {updates.mineNotice.href && (
+                <Link href={updates.mineNotice.href} scroll={false} onClick={updates.dismissMine}>
+                  보기
+                </Link>
+              )}
+              <button type="button" aria-label="안내 닫기" onClick={updates.dismissMine}>
+                ×
+              </button>
+            </p>
+          )}
+        </div>
 
         <div ref={sideRef} className={styles.side}>
           {aiOpen ? (
