@@ -14,6 +14,7 @@ import {
   copyElements,
   groupSize,
   makeDeskGroup,
+  MAX_SIZE,
   moveElement,
   newId,
   problemsOf,
@@ -26,6 +27,8 @@ import {
 import { useNow } from "@/lib/useNow";
 import { straighten, type TidyResult } from "@/lib/wallSnap";
 import ui from "../seating/seating.module.css";
+import BackgroundDialog from "./BackgroundDialog";
+import ImportWizard, { type Background } from "./ImportWizard";
 import PlanCanvas, { type DrawTool, type LinePoints, type Tool, ZoomControls } from "./PlanCanvas";
 import PlanPanel from "./PlanPanel";
 import PublishDialog, { type PublishResult, type ScheduleResult } from "./PublishDialog";
@@ -115,6 +118,10 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
   const [showDims, setShowDims] = useState(false);
   const [resizing, setResizing] = useState(false);
   const [tidying, setTidying] = useState(false);
+  // 밑그림 (층마다 하나, 초안과 따로 저장된다)
+  const [background, setBackground] = useState(data.background);
+  const [importing, setImporting] = useState(false);
+  const [bgEditing, setBgEditing] = useState(false);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [save, setSave] = useState<SaveState>({ state: "clean", at: draft.updated_at });
   const [lock, setLock] = useState<Lock>(() =>
@@ -369,6 +376,43 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
     setTool("select");
   }
   const addElement = (el: PlanElement) => addElements([el]);
+
+  /** 도면 파일 깔기: 밑그림이 도면보다 크면 도면을 넓히고, 찾은 요소를 더한다 (되돌리기 한 번) */
+  function applyImport(r: { elements: PlanElement[]; widthM: number; heightM: number; background: Background }) {
+    const cur = docRef.current;
+    const fit = (v: number, now: number) => Math.max(now, Math.min(MAX_SIZE, Math.ceil(v * 2) / 2));
+    const room = 2000 - cur.geometry.elements.length;
+    const els = r.elements.length <= room ? r.elements : [];
+    const size = { width: fit(r.widthM, cur.width), height: fit(r.heightM, cur.height) };
+    if (els.length || size.width !== cur.width || size.height !== cur.height)
+      commit({ geometry: { ...cur.geometry, elements: [...cur.geometry.elements, ...els] }, ...size });
+    setBackground(r.background);
+    setImporting(false);
+    if (els.length) setSelectedIds([]);
+    showToast(
+      r.elements.length > room
+        ? "밑그림을 깔았어요. 찾은 요소가 너무 많아(도면 요소 2000개까지) 더하지 않았어요"
+        : els.length
+          ? `밑그림을 깔고 요소 ${els.length}개를 더했어요 (되돌리기 Ctrl+Z)`
+          : "밑그림을 깔았어요",
+    );
+  }
+
+  /** 밑그림 보이기·숨기기 (다음에 열 때도 그대로) */
+  async function toggleBackground(visible: boolean) {
+    if (!background) return;
+    setBackground({ ...background, visible });
+    try {
+      const res = await fetch(`/api/admin/floors/${data.floor.id}/plan/background`, {
+        method: "PATCH",
+        headers: json,
+        body: JSON.stringify({ visible }),
+      });
+      if (res.status === 401) router.replace(EXPIRED);
+    } catch {
+      // 화면에서는 이미 바뀌었다. 다음에 열 때 예전 값이면 다시 고르면 된다
+    }
+  }
 
   const undo = useCallback(() => {
     if (blockedRef.current) return;
@@ -1016,6 +1060,31 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
             >
               선 정리…
             </button>
+            {background ? (
+              <span className={styles.bgControls}>
+                <label className={ui.check}>
+                  <input
+                    type="checkbox"
+                    checked={background.visible}
+                    onChange={(e) => void toggleBackground(e.target.checked)}
+                  />
+                  밑그림
+                </label>
+                <button type="button" className={ui.btn} onClick={() => setBgEditing(true)} title="밑그림 자리·진하기">
+                  밑그림…
+                </button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                className={ui.btn}
+                disabled={readOnly}
+                onClick={() => setImporting(true)}
+                title="도면 그림·PDF·엑셀을 밑그림으로 깔고 벽·방·책상을 찾아 더해요"
+              >
+                도면 파일 깔기…
+              </button>
+            )}
             <ZoomControls zoom={zoom} onZoom={setZoom} />
           </div>
           <p className={ui.modeBar} data-tone={tool !== "select" && !readOnly ? "zone" : undefined}>
@@ -1041,6 +1110,18 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
               onPlaceDesk={onPlaceDesk}
               onChange={(els) => replaceElements(els)}
               onCursor={setCursor}
+              underlay={
+                background?.visible
+                  ? {
+                      url: background.url,
+                      x: background.x_m,
+                      y: background.y_m,
+                      w: background.w_m,
+                      h: background.h_m,
+                      opacity: background.opacity,
+                    }
+                  : null
+              }
               toolbar={(sel) => (
                 <SelectionToolbar
                   selected={sel}
@@ -1089,6 +1170,31 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
           selectedLines={selected.filter((e) => e.type === "wall_line").map((e) => e.id)}
           onClose={() => setTidying(false)}
           onApply={applyTidy}
+        />
+      )}
+
+      {importing && (
+        <ImportWizard
+          mode="draft"
+          data={{ ...data, size: { width_m: width, height_m: height } }}
+          onClose={() => setImporting(false)}
+          onExpired={() => router.replace(EXPIRED)}
+          onApply={applyImport}
+        />
+      )}
+
+      {bgEditing && background && (
+        <BackgroundDialog
+          floorId={data.floor.id}
+          background={background}
+          readOnly={readOnly}
+          onClose={() => setBgEditing(false)}
+          onChange={setBackground}
+          onReplace={() => {
+            setBgEditing(false);
+            setImporting(true);
+          }}
+          onExpired={() => router.replace(EXPIRED)}
         />
       )}
 

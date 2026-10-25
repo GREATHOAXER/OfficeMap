@@ -110,6 +110,8 @@ type Props = {
   onCursor: (point: Point | null) => void;
   /** 고른 요소 위에 띄우는 도구 막대 (돌리기·복제·지우기 등) */
   toolbar?: (selected: PlanElement[]) => ReactNode;
+  /** 요소 밑에 까는 도면 파일 그림 (따라 그리기용) */
+  underlay?: { url: string; x: number; y: number; w: number; h: number; opacity: number } | null;
 };
 
 const fmt = (v: number) => String(Math.round(v * 100) / 100);
@@ -133,7 +135,7 @@ function angleSnap(from: Point, to: Point, snap: boolean): Point {
  */
 export default function PlanCanvas(props: Props) {
   const { geometry, width, height, zoom, onZoom, tool, snap, readOnly, selectedIds, live, problemIds } = props;
-  const { showDims, onSelect, onDraw, onDrawLine, onPlaceDesk, onChange, onCursor, toolbar } = props;
+  const { showDims, onSelect, onDraw, onDrawLine, onPlaceDesk, onChange, onCursor, toolbar, underlay } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
   const ref = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -491,6 +493,16 @@ export default function PlanCanvas(props: Props) {
             if (!drag) setSnapHint(null);
           }}
         >
+          {underlay && (
+            // eslint-disable-next-line @next/next/no-img-element -- 관리자만 보는 밑그림 (이미지 최적화가 필요 없다)
+            <img
+              className={styles.underlay}
+              src={underlay.url}
+              alt=""
+              draggable={false}
+              style={{ ...rectStyle(underlay), opacity: underlay.opacity }}
+            />
+          )}
           {[...shown]
             .sort((a, b) => ORDER[a.type] - ORDER[b.type])
             .map((el) => {

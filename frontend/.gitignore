@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# pdf.js 파일 (scripts/copy-pdfjs.mjs가 node_modules에서 복사)
+/public/pdfjs/

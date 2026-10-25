@@ -7,6 +7,7 @@ import { agoText, kstDate } from "@/lib/dates";
 import { MAX_SIZE, MIN_SIZE } from "@/lib/planGeometry";
 import { useNow } from "@/lib/useNow";
 import ui from "../seating/seating.module.css";
+import ImportWizard from "./ImportWizard";
 import { EXPIRED, Header, json, type ScreenProps } from "./shared";
 import styles from "./plans.module.css";
 
@@ -16,6 +17,7 @@ export default function StartScreen({ admin, data, setData, reload, showToast, g
   const [busy, setBusy] = useState(false);
   const [source, setSource] = useState(String(data.sources[0]?.id ?? ""));
   const [archived, setArchived] = useState(String(data.archived[0]?.id ?? ""));
+  const [importing, setImporting] = useState(false);
   const router = useRouter();
   const now = useNow();
   const pub = data.published;
@@ -71,6 +73,11 @@ export default function StartScreen({ admin, data, setData, reload, showToast, g
         보이지 않고, 게시하면 좌석·회의실이 초안에 맞춰져요.
       </p>
       {notice && <p className={ui.notice}>{notice}</p>}
+      {data.background && (
+        <p className={ui.notice}>
+          이 층에는 밑그림({data.background.name ?? "도면 파일"})이 있어서, 어떻게 시작해도 편집 화면에 깔려요.
+        </p>
+      )}
       <div className={styles.start}>
         <div className={styles.startGrid}>
           <section className={styles.startCard} data-main={pub ? true : undefined}>
@@ -87,6 +94,22 @@ export default function StartScreen({ admin, data, setData, reload, showToast, g
               onClick={() => void create({ source: "published" })}
             >
               게시본으로 초안 만들기
+            </button>
+          </section>
+          <section className={styles.startCard} data-main={pub ? undefined : true}>
+            <h3>도면 파일로 시작</h3>
+            <p>
+              그림(PNG·JPG)·PDF·엑셀 도면에서 벽·기둥·방 이름·좌석 번호를 찾아 초안을 만들어요. PDF·엑셀에 층이 여러
+              개면 쪽(시트)마다 층을 골라 한 번에 만들 수 있고, 도면 그림은 밑그림으로 깔려 보면서 고칠 수 있어요.
+              {pub && " 게시하면 지금 좌석은 모두 없어지고, 앉은 사람은 게시할 때 새 자리를 고르거나 미배치가 돼요."}
+            </p>
+            <button
+              type="button"
+              className={`${ui.btn} ${pub ? "" : ui.pri}`}
+              disabled={busy}
+              onClick={() => setImporting(true)}
+            >
+              도면 파일 고르기…
             </button>
           </section>
           <section className={styles.startCard}>
@@ -191,6 +214,26 @@ export default function StartScreen({ admin, data, setData, reload, showToast, g
             </button>
           </section>
         </div>
+
+        {importing && (
+          <ImportWizard
+            mode="start"
+            data={data}
+            onClose={() => setImporting(false)}
+            onExpired={() => router.replace(EXPIRED)}
+            onCreated={(floors) => {
+              const names = floors.map((f) => f.name).join(", ");
+              const here = floors.some((f) => f.id === data.floor.id);
+              if (here) setImporting(false);
+              showToast(
+                here
+                  ? `${floors.length}개 층(${names}) 초안을 만들었어요. 밑그림을 보며 고치고 게시하세요`
+                  : `${floors.length}개 층(${names}) 초안을 만들었어요. 위 층 고르기에서 열어 보세요`,
+              );
+              void reload();
+            }}
+          />
+        )}
 
         {(pub || data.archived.length > 0) && (
           <section className={ui.card} aria-labelledby="plan-history">

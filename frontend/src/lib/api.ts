@@ -708,8 +708,21 @@ export type PlanSummary = {
 
 export type PlanEditorData = {
   floor: FloorMap["floor"];
-  floors: { id: number; name: string; site: string; published: boolean; drafting: boolean }[];
+  floors: { id: number; name: string; site: string; site_id: number; published: boolean; drafting: boolean }[];
   size: { width_m: number; height_m: number };
+  /** 밑그림: 도면 파일 그림 (편집 화면에서만 요소 밑에 깐다). 층마다 하나 */
+  background: {
+    url: string;
+    x_m: number;
+    y_m: number;
+    w_m: number;
+    h_m: number;
+    opacity: number;
+    visible: boolean;
+    name: string | null;
+    bytes: number;
+    updated_at: string;
+  } | null;
   published: PlanSummary | null;
   draft: {
     id: number;

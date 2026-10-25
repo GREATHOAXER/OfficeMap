@@ -249,14 +249,18 @@ scripts/
 | 요청 | 하는 일 |
 |---|---|
 | `GET /api/admin/plans/floors` | 도면을 편집할 수 있는 층 (`published`, `drafting`) |
-| `GET /api/admin/floors/{층 ID}/plan` | 편집 화면: `draft`(모양·`revision`·편집 중인 사람), `published`, `archived`, 복제할 수 있는 층(`sources`), `live`(책상 칸·회의실마다 지금 앉은 사람·남은 예약) |
-| `POST /api/admin/floors/{층 ID}/plan/draft` | 초안 만들기 `{source: published\|blank\|archived\|floor, plan_id?, floor_id?, width_m?, height_m?}` (`blank`에 사무실 크기 10~300 m, 없으면 지금 게시본 크기). 이미 있으면 409 `HAS_DRAFT` |
+| `GET /api/admin/floors/{층 ID}/plan` | 편집 화면: `draft`(모양·`revision`·편집 중인 사람), `published`, `archived`, 복제할 수 있는 층(`sources`), `live`(책상 칸·회의실마다 지금 앉은 사람·남은 예약), `background`(밑그림 `{url, x_m, y_m, w_m, h_m, opacity, visible, name, bytes}` 또는 null) |
+| `POST /api/admin/floors/{층 ID}/plan/draft` | 초안 만들기 `{source: published\|blank\|archived\|floor\|import, plan_id?, floor_id?, width_m?, height_m?, geometry?}` (`blank`에 사무실 크기 10~300 m, 없으면 지금 게시본 크기. `import`는 도면 파일에서 찾은 `geometry`와 크기가 꼭 있어야 함(422 `IMPORT_SIZE`), 요소 ID 앞에 `i{버전}-`을 붙임). 이미 있으면 409 `HAS_DRAFT` |
 | `PUT /api/admin/plans/{ID}` | 자동 저장 `{revision, geometry, width_m?, height_m?}` (도면 크기 10~300 m) → `{revision, updated_at}`. 409 `REVISION`(먼저 저장한 곳이 있음, 서버 `revision` 포함), 423 `EDITING`(다른 사람이 편집 중), 409 `SCHEDULED`(게시 예약 중), 422 `BAD_GEOMETRY` |
 | `POST /api/admin/plans/{ID}/heartbeat` | 편집 중 표시 (30초마다). `{take_over: true}`면 넘겨받기 |
 | `DELETE /api/admin/plans/{ID}` | 초안 버리기 |
 | `GET /api/admin/plans/{ID}/check` | 게시 전 점검: `summary`(좌석 수·새로·빠짐·옮김·번호 바뀜), `people`(자리가 없어지는 사람과 추천 자리), `rooms_removed`(남은 예약), `rooms_added`·`rooms_changed`, 고를 수 있는 자리·회의실, `problems` |
 | `POST /api/admin/plans/{ID}/publish` | 게시 `{revision, people: [{emp_no, to_key?}], rooms: [{room_id, action: MOVE\|CANCEL, to_key?}], note?, effective_date?}`. `effective_date`(내일~1년)를 주면 게시 예약 → `{scheduled: {version, effective_at}}` |
 | `POST /api/admin/plans/{ID}/unschedule` | 게시 예약 취소 (다시 고칠 수 있는 초안으로) |
+| `PUT /api/admin/floors/{층 ID}/plan/background?w_m&h_m&x_m&y_m&opacity&name` | 밑그림 올리기(있으면 바꿈). 본문이 그림 파일 그대로(`image/png`·`jpeg`·`webp`, 8MB까지, 앞부분으로 형식 확인). 413 `IMAGE_TOO_BIG`, 415 `IMAGE_TYPE`, 422 `BAD_PLACE` |
+| `PATCH /api/admin/floors/{층 ID}/plan/background` | 자리·크기·진하기·보이기 `{x_m?, y_m?, w_m?, h_m?, opacity?, visible?}`. 없으면 404 `NO_BACKGROUND` |
+| `DELETE /api/admin/floors/{층 ID}/plan/background` | 밑그림 지우기 |
+| `GET /api/admin/floors/{층 ID}/plan/background?v=` | 밑그림 그림 (`v`가 있으면 하루 캐시, ETag) |
 
 - 책상 칸 하나가 좌석 하나이고, 칸 `id`가 `seats.plan_element_key`입니다. 같은 칸이면 같은 좌석이라 옮기거나 번호를 바꿔도
   앉은 사람은 그대로입니다. 초안에 없는 좌석은 `REMOVED`(지우지 않음), 새 칸은 새 좌석(같은 묶음의 가장 많은 구역·유형).
@@ -267,6 +271,10 @@ scripts/
   `RESERVATION_CANCELLED` 알림, `audit_logs`(`PLAN_DRAFT_CREATE`, `PLAN_TAKE_OVER`, `PLAN_DRAFT_DISCARD`, `PLAN_PUBLISH`).
   직원 화면에는 `floor` 이벤트 `kind: plan`이 가서 배너를 띄우고 5초 뒤 새로 읽습니다.
 - 목업 게시본(v0, 비율 좌표)은 초안을 만들 때 v1으로 바꿉니다(구역마다 좌석을 책상 묶음으로 맞춤).
+- **밑그림**(`floor_plan_backgrounds`, `db/schema/11_plan_background.sql`): 도면 파일 그림을 층마다 하나 둡니다. 편집 화면에서만
+  요소 밑에 깔고 직원 화면에는 주지 않습니다. 초안이 아니라 층에 붙어 있어 초안을 버리거나 게시해도 남습니다(보관본마다 복사하지
+  않음). 감사 기록 `PLAN_BACKGROUND_SET`·`PLAN_BACKGROUND_DELETE`(대상 `floor`). 도면 파일은 화면(브라우저)이 읽어서 찾은 요소를
+  `source: import` 초안으로, 고른 부분 그림을 밑그림으로 보냅니다.
 - **게시 예약**(`SCHEDULED`): 예약할 때는 고른 자리·회의실이 초안에 있는지만 보고, 없어지는 회의실은 예약이 없어도 모두
   정해야 합니다(422 `ROOMS_UNRESOLVED`). 그날 0시(서울)에 서버 작업(`app/jobs.py`, 1분마다)이 같은 방식으로 게시하는데,
   그사이 고른 자리가 찼으면 그 사람은 미배치, 옮길 회의실에 같은 시간 예약이 있으면 그 예약만 취소합니다. 실패하면 초안으로
