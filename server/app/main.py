@@ -4,16 +4,19 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.db import pool
+from app.jobs import jobs
 from app.realtime import hub
-from app.routers import admin, auth, employees, office, presence, rooms
+from app.routers import admin, auth, employees, moves, office, plans, presence, rooms, seating
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     pool.open()
     hub.start()
+    jobs.start()
     with hub.close_streams_on_exit():
         yield
+    jobs.stop()
     hub.stop()
     pool.close()
 
@@ -25,6 +28,9 @@ app.include_router(presence.router)
 app.include_router(employees.router)
 app.include_router(rooms.router)
 app.include_router(admin.router)
+app.include_router(seating.router)
+app.include_router(plans.router)
+app.include_router(moves.router)
 
 
 @app.get("/api/health")

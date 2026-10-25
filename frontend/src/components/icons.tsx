@@ -84,6 +84,17 @@ export function MoveIcon(props: IconProps) {
   );
 }
 
+export function TruckIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3 6h11v10H3z" />
+      <path d="M14 10h4l3 3v3h-7" />
+      <circle cx="7" cy="18" r="1.6" />
+      <circle cx="17" cy="18" r="1.6" />
+    </Svg>
+  );
+}
+
 export function PenIcon(props: IconProps) {
   return (
     <Svg {...props}>

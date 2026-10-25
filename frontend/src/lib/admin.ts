@@ -8,14 +8,14 @@ export const LEVELS: { level: number; role: AdminRole; name: string; scope: stri
     role: "SITE_ADMIN",
     name: "사업장 관리자",
     scope: "사업장 한 곳",
-    tasks: "도면 편집, 회의실 등록, 층 관리자 지정",
+    tasks: "층 추가, 도면 편집, 회의실 등록, 층 관리자 지정",
   },
   {
     level: 3,
     role: "FLOOR_ADMIN",
     name: "층 관리자",
     scope: "한 개 층",
-    tasks: "팀 구역 지정·조정, 층 전체 배치, 구역 관리자 지정, 하위 요청 승인",
+    tasks: "도면 편집·게시, 팀 구역 지정·조정, 층 전체 배치, 구역 관리자 지정, 하위 요청 승인",
   },
   {
     level: 4,
@@ -30,13 +30,14 @@ export const LEVELS: { level: number; role: AdminRole; name: string; scope: stri
 export const ROLE_TASKS: Record<AdminRole, string> = {
   COMPANY_ADMIN: "전체 + 권한 부여",
   SITE_ADMIN: "도면 · 회의실 · 배치",
-  FLOOR_ADMIN: "팀 구역 · 층 배치 · 요청 승인",
+  FLOOR_ADMIN: "도면 · 팀 구역 · 층 배치 · 요청 승인",
   ZONE_ADMIN: "구역 안 배치",
 };
 
 export const PLAN_LABEL: Record<PlanState, string> = {
   PUBLISHED: "작성 완료",
   EDITING: "수정 중",
+  SCHEDULED: "게시 예약",
   DRAFT: "초안",
   NONE: "미작성",
 };
@@ -45,9 +46,16 @@ export const PLAN_LABEL: Record<PlanState, string> = {
 export const applyModeText = (g: AdminGrant) =>
   g.role !== "ZONE_ADMIN" ? "즉시" : g.apply_mode === "NEEDS_APPROVAL" ? "층 관리자 승인 후" : "즉시";
 
-/** 이 사업장의 도면을 고칠 수 있나: 전사 관리자, 그 사업장 관리자 */
-export const canEditPlan = (admin: Admin, siteId: number) =>
+/** 이 사업장에 층을 더하거나 뺄 수 있나: 전사 관리자, 그 사업장 관리자 */
+export const canManageSite = (admin: Admin, siteId: number) =>
   admin.grants.some((g) => g.role === "COMPANY_ADMIN" || (g.role === "SITE_ADMIN" && g.site_id === siteId));
+
+/** 이 층의 도면을 고치고 게시할 수 있나: 층 관리자 이상 (구역 관리자는 보기만) */
+export const canEditPlan = (admin: Admin, floor: { id: number; siteId: number }) =>
+  canManageSite(admin, floor.siteId) || admin.grants.some((g) => g.role === "FLOOR_ADMIN" && g.floor_id === floor.id);
+
+/** 도면 편집 메뉴를 보여 줄까: 어느 층이든 층 관리자 이상 */
+export const hasPlanRole = (admin: Admin) => admin.grants.some((g) => g.role !== "ZONE_ADMIN");
 
 /** 이 권한을 내가 고치거나 회수할 수 있나: 내 범위 안의 더 아래 단계 관리자 */
 export function canManage(admin: Admin, target: AdminGrant): boolean {

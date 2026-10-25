@@ -10,11 +10,12 @@ CREATE TABLE meeting_rooms (
     shape             jsonb,                              -- 도면 위 위치. 사용 중/비어 있음 표시용
     plan_element_key  varchar(50),                        -- 도면 편집기에서 이 회의실을 만든 공간의 ID
     sort_order        integer      NOT NULL DEFAULT 0,
-    is_active         boolean      NOT NULL DEFAULT true,
+    is_active         boolean      NOT NULL DEFAULT true, -- 도면에서 빠지면 false (예약 이력이 이 행을 가리킨다)
     created_at        timestamptz  NOT NULL DEFAULT now(),
-    updated_at        timestamptz  NOT NULL DEFAULT now(),
-    UNIQUE (floor_id, name)
+    updated_at        timestamptz  NOT NULL DEFAULT now()
 );
+-- 이름은 층 안에서 쓰는 회의실끼리만 겹치지 않으면 된다
+CREATE UNIQUE INDEX meeting_rooms_floor_name_idx ON meeting_rooms (floor_id, name) WHERE is_active;
 
 -- 반복 예약 규칙. 회차는 reservations에 한 행씩 만들어서 회차마다 겹침을 검사한다
 CREATE TABLE reservation_series (

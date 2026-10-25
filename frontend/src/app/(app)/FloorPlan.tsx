@@ -9,12 +9,10 @@ import { agoText } from "@/lib/dates";
 import { NO_STATUS_LABEL, PRESENCE_LABEL, type StatusFilter } from "@/lib/presence";
 import { hhmm, roomStatusText } from "@/lib/rooms";
 import { useMediaQuery } from "@/lib/useMediaQuery";
+import { seatRatio } from "@/lib/planGeometry";
 import { useNow } from "@/lib/useNow";
+import { zonePieces, zoneRects } from "@/lib/zoneShape";
 import styles from "./office.module.css";
-
-// 좌석 하나의 크기 (도면 너비·높이 대비). 좌석 좌표는 중심점이다
-const SEAT_W = 0.0533;
-const SEAT_H = 0.0556;
 
 const HOVER_DELAY_MS = 700; // 자리에 마우스를 이만큼(0.7초) 올려 두면 정보 카드가 뜬다
 const DRAG_THRESHOLD_PX = 5; // 이보다 적게 움직이면 끌기가 아니라 누르기
@@ -226,6 +224,8 @@ export default function FloorPlan(props: Props) {
   }
   const geometry = plan.geometry ?? {};
   const zones = new Map(map.zones.map((z) => [z.id, z]));
+  // 좌석 하나의 크기 (도면 너비·높이 대비). 책상 크기(m) ÷ 도면 크기라 큰 층일수록 작다. 좌석 좌표는 중심점이다
+  const seatSize = seatRatio(plan.width_m, plan.height_m);
   // 고정한 카드가 먼저. 마우스를 올려 띄운 카드는 그 자리가 고정 카드가 아닐 때만
   const cardSeatId = pinnedSeatId ?? hoverSeatId;
   const cardSeat = map.seats.find((s) => s.id === cardSeatId && s.occupant);
@@ -247,31 +247,49 @@ export default function FloorPlan(props: Props) {
             <span>{space.label}</span>
           </div>
         ))}
-        {geometry.pillars?.map((p, i) => (
-          <div key={`pillar-${i}`} className={styles.pillar} style={{ left: pct(p.x - 0.0075), top: pct(p.y - 0.0125) }} />
-        ))}
+        {geometry.pillars?.map((p, i) => {
+          const w = p.w ?? 0.015;
+          const h = p.h ?? 0.025;
+          return (
+            <div
+              key={`pillar-${i}`}
+              className={styles.pillar}
+              style={{ left: pct(p.x - w / 2), top: pct(p.y - h / 2), width: pct(w), height: pct(h) }}
+            />
+          );
+        })}
         {map.rooms.map(
           (room) => room.shape && <RoomBox key={room.id} room={room} shape={room.shape} floorId={map.floor.id} />,
         )}
-        {map.zones.map((zone) => (
+        {zonePieces(map.zones, (zone) => zoneRects(zone.shape)).map(({ zone, rect }, i) => (
           <div
-            key={zone.id}
+            key={`${zone.id}-${i}`}
             className={`${styles.zone} ${focusZoneId && focusZoneId !== zone.id ? styles.dim : ""} ${
               focusZoneId === zone.id ? styles.zoneFocus : ""
             }`}
             data-color={zone.color_key}
             data-shared={zone.department === null}
-            style={rectStyle(zone.shape)}
-          >
-            <span className={styles.zoneTag}>
+            style={rectStyle(rect)}
+          />
+        ))}
+        {/* 이름표는 모든 구역을 칠한 뒤에 그려서 다른 구역 조각에 가려지지 않게 */}
+        {zonePieces(map.zones, (zone) => zoneRects(zone.shape))
+          .filter((piece) => piece.tagged)
+          .map(({ zone, rect }) => (
+            <span
+              key={`tag-${zone.id}`}
+              className={`${styles.zoneTag} ${focusZoneId && focusZoneId !== zone.id ? styles.dim : ""}`}
+              data-color={zone.color_key}
+              style={{ left: pct(rect.x), top: pct(rect.y) }}
+            >
               {zone.name} · {zone.code}
             </span>
-          </div>
-        ))}
+          ))}
         {map.seats.map((seat) => (
           <SeatButton
             key={seat.id}
             seat={seat}
+            size={seatSize}
             zone={seat.zone_id ? zones.get(seat.zone_id) : undefined}
             dimmed={
               (focusZoneId !== null && seat.zone_id !== focusZoneId) ||
@@ -288,6 +306,7 @@ export default function FloorPlan(props: Props) {
           <SeatCard
             key={cardSeat.id}
             seat={cardSeat}
+            size={seatSize}
             zone={cardSeat.zone_id ? zones.get(cardSeat.zone_id) : undefined}
             floorName={map.floor.name}
             pinned={cardSeat.id === pinnedSeatId}
@@ -320,8 +339,11 @@ function RoomBox({ room, shape, floorId }: { room: Room; shape: Rect; floorId: n
   );
 }
 
+type SeatSize = { w: number; h: number };
+
 type SeatProps = {
   seat: Seat;
+  size: SeatSize;
   zone: Zone | undefined;
   dimmed: boolean;
   mine: boolean;
@@ -331,7 +353,7 @@ type SeatProps = {
   onHoverEnd: () => void;
 };
 
-function SeatButton({ seat, zone, dimmed, mine, selected, onSelect, onHoverStart, onHoverEnd }: SeatProps) {
+function SeatButton({ seat, size, zone, dimmed, mine, selected, onSelect, onHoverStart, onHoverEnd }: SeatProps) {
   const { occupant } = seat;
   const presence = occupant?.presence?.status;
   const outOfService = seat.status === "OUT_OF_SERVICE";
@@ -368,10 +390,10 @@ function SeatButton({ seat, zone, dimmed, mine, selected, onSelect, onHoverStart
       className={className}
       data-color={zone?.color_key ?? "t0"}
       style={{
-        left: pct(seat.x - SEAT_W / 2),
-        top: pct(seat.y - SEAT_H / 2),
-        width: pct(SEAT_W),
-        height: pct(SEAT_H),
+        left: pct(seat.x - size.w / 2),
+        top: pct(seat.y - size.h / 2),
+        width: pct(size.w),
+        height: pct(size.h),
       }}
       title={seat.code}
       aria-label={label}
@@ -400,6 +422,7 @@ function SeatButton({ seat, zone, dimmed, mine, selected, onSelect, onHoverStart
 
 type CardProps = {
   seat: Seat;
+  size: SeatSize;
   zone: Zone | undefined;
   floorName: string;
   pinned: boolean;
@@ -410,7 +433,7 @@ type CardProps = {
  * 자리 위(위쪽 자리면 아래)에 뜨는 사람 정보 카드. 글자 크기는 배율과 상관없이 같다.
  * 휴대폰에서 눌러 고정한 카드는 도면 밖, 화면 아래에서 올라오는 시트로 띄운다 (도면 가장자리에서 잘리지 않게)
  */
-function SeatCard({ seat, zone, floorName, pinned, onClose }: CardProps) {
+function SeatCard({ seat, size, zone, floorName, pinned, onClose }: CardProps) {
   const phone = useMediaQuery("(max-width: 720px)");
   const occupant = seat.occupant!;
   const body = (
@@ -449,14 +472,14 @@ function SeatCard({ seat, zone, floorName, pinned, onClose }: CardProps) {
 
   const below = seat.y < 0.3;
   const align = seat.x < 0.2 ? "start" : seat.x > 0.8 ? "end" : "center";
-  const left = align === "start" ? seat.x - SEAT_W / 2 : align === "end" ? seat.x + SEAT_W / 2 : seat.x;
+  const left = align === "start" ? seat.x - size.w / 2 : align === "end" ? seat.x + size.w / 2 : seat.x;
   return (
     <div
       className={styles.popover}
       data-place={below ? "below" : "above"}
       data-align={align}
       data-pinned={pinned}
-      style={{ left: pct(left), top: pct(below ? seat.y + SEAT_H / 2 : seat.y - SEAT_H / 2) }}
+      style={{ left: pct(left), top: pct(below ? seat.y + size.h / 2 : seat.y - size.h / 2) }}
       role={pinned ? "dialog" : "tooltip"}
       aria-label={`${occupant.name} 정보`}
     >

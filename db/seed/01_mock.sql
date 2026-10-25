@@ -74,6 +74,7 @@ FROM (VALUES
     ('20150004', '오서연', 'D120', '과장', NULL,   'seoyeon.oh@example.com',  '3001', '2015-01-05'),  -- 재무팀 B구역 관리자
     ('20190005', '조시우', 'D120', '대리', NULL,   'siwoo.cho@example.com',   '3002', '2019-07-01'),  -- 법인카드 정산 정담당
     ('20260006', '이서연', 'D120', '사원', NULL,   'seoyeon.lee@example.com', '3003', '2026-10-01'),  -- 신규 입사, 아직 고정석 없음
+    ('20180010', '한도현', 'D120', '대리', NULL,   'dohyun.han@example.com',  '3004', '2018-01-02'),  -- 파견 복귀, 아직 고정석 없음
     ('20200007', '김민준', 'D130', '대리', NULL,   'minjun.kim@example.com',  '3101', '2020-01-02')
 ) AS v(emp_no, name, dept_code, rank_name, position_name, email, extension, hired_on)
 JOIN departments d ON d.dept_code = v.dept_code;
@@ -354,7 +355,7 @@ WITH zone_seat AS (
 ), free_employee AS (
     SELECT e.id AS employee_id, e.department_id, row_number() OVER (PARTITION BY e.department_id ORDER BY e.emp_no) AS rn
     FROM employees e
-    WHERE e.emp_no NOT IN ('20120002', '20260006')  -- 강지아(자율석), 이서연(미배치)
+    WHERE e.emp_no NOT IN ('20120002', '20260006', '20180010')  -- 강지아(자율석), 이서연·한도현(미배치)
       AND NOT EXISTS (SELECT 1 FROM seat_assignments a WHERE a.employee_id = e.id AND a.kind = 'FIXED' AND a.ends_at IS NULL)
 )
 INSERT INTO seat_assignments (seat_id, employee_id, kind, starts_at, assigned_by)

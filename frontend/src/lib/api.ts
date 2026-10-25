@@ -79,13 +79,16 @@ export type SitesResponse = { sites: SiteSummary[]; my_floor_id: number | null; 
 
 export type PlanSpace = Rect & { kind: string; label: string };
 
+/** 팀 구역 모양: 좌석을 감싸는 사각형. 좌석 덩어리가 여럿이면 rects (자동 계산, zoneShape.ts) */
+export type ZoneShape = (Rect & { type?: "rect" }) | { type: "rects"; rects: Rect[] };
+
 export type Zone = {
   id: number;
   code: string;
   name: string;
   department: string | null; // 공용 구역이면 null
   color_key: string; // t0~t4
-  shape: Rect;
+  shape: ZoneShape | null; // 좌석이 없으면 null (그리지 않는다)
 };
 
 export type Room = {
@@ -130,11 +133,18 @@ export type Seat = {
 export type FloorMap = {
   floor: { id: number; name: string; site: { id: number; name: string } };
   fetched_at: string; // 이 데이터를 읽은 시각 (실시간 알림과 어느 쪽이 최신인지 비교)
+  /** 날짜를 정해 둔 배치 변경·자율석 사용 끝 등, 이 층 자리가 다음에 저절로 바뀌는 시각 (그때 다시 읽는다) */
+  next_change_at: string | null;
   plan: {
     version: number;
     width_m: number;
     height_m: number;
-    geometry: { walls?: Rect[]; pillars?: { x: number; y: number }[]; spaces?: PlanSpace[] } | null;
+    // 기둥은 중심점. w·h가 없으면 기본 크기 (목업 도면)
+    geometry: {
+      walls?: Rect[];
+      pillars?: { x: number; y: number; w?: number; h?: number }[];
+      spaces?: PlanSpace[];
+    } | null;
     published_at: string | null;
   } | null;
   zones: Zone[];
@@ -151,6 +161,23 @@ export type MyPresence = {
 
 /** 실시간 알림(/api/presence/stream)의 presence 이벤트. presence가 null이면 상태를 지웠다 */
 export type PresenceEvent = { emp_no: string; presence: MyPresence; at: string };
+
+/** 실시간 알림의 floor 이벤트: 좌석·배정(seats), 팀 구역(zones), 도면 게시(plan), 배치 요청(requests).
+ *  emp_no: 고정석 배정이 바뀐 사람 (내 자리가 바뀌었는지 알아본다) */
+export type FloorEvent = {
+  kind: "seats" | "zones" | "plan" | "requests"; // requests: 배치 묶음 승인 요청·반려 (배치 화면만 쓴다)
+  floor_id: number;
+  seat_id?: number;
+  emp_no?: string | null;
+  version?: number;
+  at: string;
+};
+
+/** 내 고정석과 날짜를 정해 둔 다음 변경 (seat가 null이면 그날 배정이 끝난다) */
+export type MySeat = {
+  seat: SeatRef | null;
+  change: { at: string; seat: SeatRef | null } | null;
+};
 
 /** 재실 상태 자동 해제: 해제 안 함 / 30분 / 1시간 / 퇴근 시 / 지금 해제 시각 그대로 */
 export type PresenceDuration = "NONE" | "30M" | "1H" | "END_OF_DAY" | "KEEP";
@@ -375,7 +402,7 @@ export type Admin = {
 };
 
 /** 도면 상태: 작성 완료 / 작성 완료 + 수정 중 / 초안만 / 없음 */
-export type PlanState = "PUBLISHED" | "EDITING" | "DRAFT" | "NONE";
+export type PlanState = "PUBLISHED" | "EDITING" | "SCHEDULED" | "DRAFT" | "NONE";
 
 export type AdminFloor = {
   id: number;
@@ -385,12 +412,13 @@ export type AdminFloor = {
   flex: number; // 자율석 (배정하지 않음)
   occupied: number; // 배정된 개인석
   rooms: number;
-  zones: { code: string; name: string; color_key: string; department: string | null }[];
+  zones: { code: string; name: string; color_key: string; department: string | null; department_active: boolean }[];
   floor_admins: string[];
   zone_admins: number;
   plan: PlanState;
   plan_updated_at: string | null;
   plan_updated_by: string | null;
+  plan_scheduled_at: string | null; // 게시 예약 시각
   in_scope: "ALL" | "ZONE" | null; // 내가 관리하는 층인가 (ZONE = 층 안 일부 구역만)
 };
 
@@ -435,4 +463,249 @@ export const fetchAdmin = cache(async (cookieHeader: string | null): Promise<Adm
 
 export function fetchAdminOverview(cookieHeader: string | null) {
   return apiGet<AdminOverview>("/api/admin/overview", cookieHeader);
+}
+
+// 좌석 배치 편집 (⑤) -------------------------------------------------------------
+
+/** 좌석 유형: 고정석 / 팀 내 자율석 / 사용 중지 (고장·수리) */
+export type SeatMode = "FIXED" | "FLEX" | "OUT_OF_SERVICE";
+
+/** 자리 위치 (층 이름 + 좌석 번호) */
+export type SeatRef = { id: number; code: string; floor_id: number; floor: string };
+
+export type SeatingPerson = {
+  emp_no: string;
+  name: string;
+  rank: string | null;
+  department: string;
+  department_id: number;
+};
+
+export type SeatingSeat = Omit<Seat, "occupant"> & {
+  occupant: (SeatingPerson & { kind: "FIXED" | "DAILY"; active: boolean }) | null;
+  /** 날짜를 정해 둔 다음 변경 (occupant가 null이면 그날 비워진다). 있으면 그날까지 잠긴다 */
+  upcoming: { at: string; occupant: Omit<SeatingPerson, "department_id"> | null } | null;
+  /** 내 범위(구역)의 좌석인가 */
+  editable: boolean;
+};
+
+export type SeatingZone = Zone & {
+  department_id: number | null;
+  department_active: boolean; // false: 조직도에서 없어진 부서의 구역
+  name_custom: boolean; // true: 부서 이름 대신 별칭
+  editable: boolean;
+  managers: string[];
+};
+
+export type DepartmentChoice = { id: number; name: string; parent: string | null };
+
+/** 미배치 인원: 우리 팀(이 층에 구역이 있는 팀)인데 지금 고정석이 없는 사람 */
+export type UnassignedPerson = SeatingPerson & {
+  new_hire: boolean;
+  released_at: string | null; // 마지막 고정석이 끝난 시각
+  upcoming: { at: string; seat: string } | null; // 날짜를 정해 둔 새 자리
+};
+
+export type ChangeSetStatus = "DRAFT" | "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+
+/** 작업 묶음: 좌석마다 "반영하면 이렇게 된다" */
+export type ChangeSet = {
+  id: number;
+  floor_id: number;
+  type: "SEAT_ASSIGNMENT" | "ZONE_CHANGE";
+  status: ChangeSetStatus;
+  note: string | null;
+  effective_at: string | null;
+  submitted_at: string | null;
+  reviewed_at: string | null;
+  reviewer: string | null;
+  review_comment: string | null;
+  updated_at: string;
+  requester: string;
+  assignments: { seat_id: number; emp_no: string | null; expected_emp_no: string | null }[];
+  types: { seat_id: number; mode: SeatMode }[];
+  zone_moves: { seat_id: number; zone_id: number | null }[]; // zone_id null: 구역 없음으로
+  people: Record<string, SeatingPerson & { active: boolean; seat: SeatRef | null }>;
+};
+
+export type ChangeRequestRow = {
+  id: number;
+  type: ChangeSet["type"];
+  status: ChangeSetStatus;
+  scheduled: boolean; // 날짜를 정해 반영했고 아직 그날이 안 됐다
+  note: string | null;
+  effective_at: string | null;
+  submitted_at: string | null;
+  reviewed_at: string | null;
+  reviewer: string | null;
+  review_comment: string | null;
+  requester: string;
+  mine: boolean;
+  item_count: number;
+  zone_moves: boolean; // 구역 경계 변경이 들어 있다
+  team_move: boolean; // 팀 이사로 여러 층에 함께 만든 묶음 (예정 취소도 함께)
+  summary: string[];
+  can_review: boolean;
+  can_cancel: boolean;
+};
+
+export type SeatingFloorChoice = { id: number; name: string; site: string; mode: "FLOOR" | "ZONE" };
+
+export type SeatingData = {
+  floor: FloorMap["floor"];
+  fetched_at: string;
+  floors: SeatingFloorChoice[];
+  permissions: {
+    mode: "FLOOR" | "ZONE"; // 층 전체 / 내 구역만
+    apply: "IMMEDIATE" | "NEEDS_APPROVAL"; // 바로 반영 / 층 관리자 승인 후
+    zones: number[] | null;
+    can_review: boolean;
+    floor_admins: string[];
+  };
+  plan: FloorMap["plan"];
+  plan_scheduled: { version: number; effective_at: string } | null; // 게시를 예약한 새 도면
+  rooms: { id: number; name: string; shape: Rect | null }[];
+  zones: SeatingZone[];
+  departments: DepartmentChoice[]; // 구역에 고를 수 있는 부서 (층 관리자 이상만)
+  seats: SeatingSeat[];
+  unassigned: UnassignedPerson[];
+  draft: ChangeSet | null; // 내 작업 묶음 (작성 중 또는 승인 대기)
+  requests: ChangeRequestRow[];
+};
+
+export type SeatingSearchHit = SeatingPerson & { seat: SeatRef | null; locked: boolean };
+
+export function fetchSeatingFloors(cookieHeader: string | null) {
+  return apiGet<{ floors: SeatingFloorChoice[] }>("/api/admin/seating/floors", cookieHeader);
+}
+
+export function fetchSeating(cookieHeader: string | null, floorId: number) {
+  return apiGet<SeatingData>(`/api/admin/floors/${floorId}/seating`, cookieHeader);
+}
+
+// 도면 편집 (⑥) ------------------------------------------------------------------
+
+/** 미터 단위 사각형 */
+export type PlanRect = { x: number; y: number; w: number; h: number };
+export type SpaceKind = "core" | "pantry" | "restroom" | "lounge" | "storage" | "service" | "restricted";
+
+export type DeskCell = { id: string; desk: boolean; code: string };
+export type DeskGroup = {
+  id: string;
+  type: "desk_group";
+  layout: "face" | "one"; // 마주보기 / 한 방향
+  rows: number;
+  cols: number;
+  x: number;
+  y: number;
+  cells: DeskCell[]; // 줄 순서로 rows × cols 개
+};
+
+export type PlanElement =
+  | ({ id: string; type: "wall" } & PlanRect)
+  | ({ id: string; type: "pillar" } & PlanRect)
+  | ({ id: string; type: "space"; kind: SpaceKind; label: string } & PlanRect)
+  | ({ id: string; type: "room"; name: string; capacity: number; equipment: string[] } & PlanRect)
+  | DeskGroup;
+
+export type PlanGeometry = { schema: 1; grid_m: number; elements: PlanElement[] };
+
+export type PlanSummary = {
+  id: number;
+  version: number;
+  published_at: string | null;
+  published_by: string | null;
+  note: string | null;
+};
+
+export type PlanEditorData = {
+  floor: FloorMap["floor"];
+  floors: { id: number; name: string; site: string; published: boolean; drafting: boolean }[];
+  size: { width_m: number; height_m: number };
+  published: PlanSummary | null;
+  draft: {
+    id: number;
+    status: "DRAFT" | "SCHEDULED"; // SCHEDULED: 게시 예약 (effective_at에 서버가 게시)
+    effective_at: string | null;
+    scheduled_by: string | null;
+    note: string | null;
+    // 게시 예약 때 정한 것: 사람 → 책상 칸, 없어지는 회의실 → 옮길 회의실 또는 취소
+    options: {
+      people: { emp_no: string; to_key: string }[];
+      rooms: { room_id: number; action: "MOVE" | "CANCEL"; to_key: string | null }[];
+    } | null;
+    version: number;
+    revision: number;
+    geometry: PlanGeometry;
+    updated_at: string;
+    updated_by: string | null;
+    base_version: number | null;
+    editing: { mine: boolean; name: string | null; at: string } | null; // 지금 편집 중인 사람
+  } | null;
+  archived: PlanSummary[];
+  sources: { id: number; name: string; site: string }[]; // 복제할 수 있는 다른 층
+  // 지금 게시본 기준으로 책상 칸·회의실 공간에 앉은 사람과 남은 예약 (초안에서 지우면 영향 받는 것)
+  live: {
+    seats: Record<
+      string,
+      { code: string; occupant: string | null; color_key: string | null; zone_code: string | null; upcoming: number }
+    >;
+    rooms: Record<string, { name: string; upcoming: number }>;
+  };
+};
+
+export type PublishCheck = {
+  revision: number;
+  summary: {
+    seats_before: number;
+    seats_after: number;
+    added: number;
+    removed: number;
+    moved: number;
+    renamed: { from: string; to: string }[];
+    daily_ended: number;
+  };
+  people: {
+    emp_no: string;
+    name: string;
+    rank: string | null;
+    department: string;
+    seat_code: string;
+    scheduled: boolean;
+    suggestion: { key: string; code: string } | null;
+  }[];
+  rooms_removed: { id: number; name: string; upcoming: number; next_at: string | null }[];
+  rooms_added: string[];
+  rooms_changed: { from: string; to: string; capacity: number }[];
+  room_targets: { key: string; name: string; capacity: number }[];
+  seat_targets: { key: string; code: string }[];
+  problems: { code: string; element: string; seat?: string; name?: string }[];
+};
+
+export function fetchPlanFloors(cookieHeader: string | null) {
+  return apiGet<{ floors: PlanEditorData["floors"] }>("/api/admin/plans/floors", cookieHeader);
+}
+
+export function fetchPlanEditor(cookieHeader: string | null, floorId: number) {
+  return apiGet<PlanEditorData>(`/api/admin/floors/${floorId}/plan`, cookieHeader);
+}
+
+// 팀 이사 도우미 -------------------------------------------------------------------
+
+export type MoveOptions = {
+  departments: (DepartmentChoice & { members: number })[]; // 옮길 수 있는 팀 (살아 있는 팀과 인원)
+  floors: { id: number; name: string; site: string }[]; // 목적지로 고를 수 있는 층 (층 관리자 이상)
+};
+
+export type TeamMember = {
+  emp_no: string;
+  name: string;
+  rank: string | null;
+  seat: SeatRef | null; // 지금 고정석
+  zone_code: string | null;
+  locked: boolean; // 날짜를 정해 둔 변경이 걸려 있어 그날까지 옮길 수 없다
+};
+
+export function fetchMoveOptions(cookieHeader: string | null) {
+  return apiGet<MoveOptions>("/api/admin/moves/options", cookieHeader);
 }
