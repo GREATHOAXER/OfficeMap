@@ -4,7 +4,7 @@ import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { CloseIcon, PersonIcon, PlusIcon, SearchIcon } from "@/components/icons";
 import type { EmployeeHit, TeamHit } from "@/lib/api";
 import { NO_STATUS_LABEL, PRESENCE_LABEL } from "@/lib/presence";
-import { type SearchWhen, useEmployeeSearch, useTeamSearch } from "@/lib/useEmployeeSearch";
+import { type SearchWhen, useDebouncedJson, useEmployeeSearch, useTeamSearch } from "@/lib/useEmployeeSearch";
 import type { Attendee } from "./slots";
 import styles from "./rooms.module.css";
 
@@ -18,7 +18,12 @@ type Props = {
   onMeAttendsChange: (attends: boolean) => void;
   /** 고른 회의 시간. 있으면 참석자마다 그 시간에 다른 회의·휴가가 있는지 같이 보여 준다 */
   when: SearchWhen | null;
+  /** 고치는 예약 (나의 일정 확인에서 자기 자신과는 겹치지 않게) */
+  exclude?: number | null;
 };
+
+/** 그 시간 나의 다른 회의·휴가 (/api/reservations/mine/clash) */
+type MyClash = { busy: { title: string } | null; absence: keyof typeof ABSENCE_LABEL | null };
 
 type Option = { kind: "team"; team: TeamHit } | { kind: "person"; hit: EmployeeHit };
 
@@ -37,7 +42,8 @@ function conflictOf(person: EmployeeHit): string | null {
  *   안 올 사람 몇 명만 ✕로 뺄 수 있다. 팀으로 넣은 사람은 팀별로 모아 보여 주고 "모두 빼기"도 된다
  * 같은 이름이 여럿이면 팀·위치로 구별하게 알려 주고, 칩에 직급까지 붙인다.
  */
-export default function AttendeePicker({ people, onPeopleChange, meAttends, onMeAttendsChange, when }: Props) {
+export default function AttendeePicker(props: Props) {
+  const { people, onPeopleChange, meAttends, onMeAttendsChange, when, exclude = null } = props;
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
@@ -54,6 +60,26 @@ export default function AttendeePicker({ people, onPeopleChange, meAttends, onMe
   // "총무"처럼 팀 이름을 쓰면 $ 없이도 맨 위에 "총무팀 모두 넣기"를 보여 준다 (두 글자부터)
   const nameTeams = useTeamSearch(query, open && !teamMode && query.trim().length >= 2);
   const showList = open && query.trim() !== "";
+  const queryRef = useRef(query); // 결과를 기다리는 동안 입력이 바뀌었나
+  const [waiting, setWaiting] = useState(false); // 결과가 오기 전에 Enter를 눌러서 기다리는 중
+
+  // "나" 칩도 다른 참석자처럼 그 시간에 내 다른 회의·휴가가 있으면 표시한다
+  const myClash = useDebouncedJson<MyClash>(
+    meAttends && when
+      ? `/api/reservations/mine/clash?${new URLSearchParams({
+          start_date: when.date,
+          start_min: String(when.start_min),
+          end_date: when.end_date,
+          end_min: String(when.end_min),
+          ...(exclude ? { exclude: String(exclude) } : {}),
+        })}`
+      : null,
+  );
+  const myConflict = myClash.data?.absence
+    ? `이 시간 ${ABSENCE_LABEL[myClash.data.absence]} 예정`
+    : myClash.data?.busy
+      ? `이 시간 다른 회의: ${myClash.data.busy.title}`
+      : null;
 
   const added = new Set(people.map((p) => p.emp_no));
   const options: Option[] = teamMode
@@ -81,6 +107,7 @@ export default function AttendeePicker({ people, onPeopleChange, meAttends, onMe
 
   function reset() {
     setQuery("");
+    queryRef.current = "";
     setActive(-1);
     inputRef.current?.focus();
   }
@@ -114,7 +141,8 @@ export default function AttendeePicker({ people, onPeopleChange, meAttends, onMe
     }
   }
 
-  function addPerson(hit: EmployeeHit) {
+  /** results: 동명이인을 가릴 검색 결과 (보통은 지금 보이는 결과) */
+  function addPerson(hit: EmployeeHit, results: EmployeeHit[] = search.results) {
     if (hit.is_me) {
       if (!meAttends) {
         onMeAttendsChange(true);
@@ -129,7 +157,7 @@ export default function AttendeePicker({ people, onPeopleChange, meAttends, onMe
       setNote(`이미 참석자에 있어요: ${hit.name}`);
       return;
     }
-    const sameName = search.results.some((r) => r.name === hit.name && r.emp_no !== hit.emp_no);
+    const sameName = results.some((r) => r.name === hit.name && r.emp_no !== hit.emp_no);
     onPeopleChange([...people, { ...hit, sameName }]);
     setNote(null);
     reset();
@@ -141,6 +169,46 @@ export default function AttendeePicker({ people, onPeopleChange, meAttends, onMe
     else addPerson(option.hit);
   }
 
+  /**
+   * 결과가 아직 안 왔는데 Enter를 눌렀다 (빨리 치고 바로 Enter): 바로 물어보고 맨 위 것을 고른다.
+   * 그사이 입력을 바꿨으면 고르지 않는다
+   */
+  async function chooseFirstWhenLoaded() {
+    const asked = query;
+    const q = asked.trim();
+    if (!q || waiting) return;
+    setWaiting(true);
+    try {
+      let first: Option | undefined;
+      let hits: EmployeeHit[] = [];
+      if (teamMode) {
+        const res = await fetch(`/api/employees/teams?${new URLSearchParams({ q: teamQuery.trim() })}`);
+        if (!res.ok) throw new Error(String(res.status));
+        const team = ((await res.json()) as { teams: TeamHit[] }).teams[0];
+        first = team && { kind: "team", team };
+      } else {
+        const params = new URLSearchParams({ q, limit: "20" });
+        if (when) Object.entries(when).forEach(([k, v]) => params.set(k, String(v)));
+        const [teamRes, personRes] = await Promise.all([
+          q.length >= 2 ? fetch(`/api/employees/teams?${new URLSearchParams({ q })}`) : null,
+          fetch(`/api/employees/search?${params}`),
+        ]);
+        if (!personRes.ok || (teamRes && !teamRes.ok)) throw new Error("search");
+        const team = teamRes ? ((await teamRes.json()) as { teams: TeamHit[] }).teams[0] : undefined;
+        hits = ((await personRes.json()) as { results: EmployeeHit[] }).results;
+        first = team ? { kind: "team", team } : hits[0] && { kind: "person", hit: hits[0] };
+      }
+      if (queryRef.current !== asked) return;
+      if (!first) setNote(`‘${q}’에 맞는 사람이 없습니다`);
+      else if (first.kind === "team") void addTeam(first.team);
+      else addPerson(first.hit, hits);
+    } catch {
+      setNote("찾지 못했습니다. 잠시 후 다시 시도하세요.");
+    } finally {
+      setWaiting(false);
+    }
+  }
+
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     const last = options.length - 1;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -149,7 +217,9 @@ export default function AttendeePicker({ people, onPeopleChange, meAttends, onMe
       setActive((i) => (event.key === "ArrowDown" ? Math.min(last, i + 1) : Math.max(0, i - 1)));
     } else if (event.key === "Enter") {
       event.preventDefault(); // 폼이 제출되지 않게
-      if (showList) choose(options[Math.max(0, activeIndex)]);
+      const loading = teamMode ? teamSearch.loading : search.loading || nameTeams.loading;
+      if (showList && loading && activeIndex < 0) void chooseFirstWhenLoaded();
+      else if (showList) choose(options[Math.max(0, activeIndex)]);
     } else if (event.key === "Escape" && showList) {
       event.preventDefault(); // 예약 팝업이 같이 닫히지 않게
       event.stopPropagation();
@@ -170,7 +240,8 @@ export default function AttendeePicker({ people, onPeopleChange, meAttends, onMe
     else if (teamSearch.failed) status = "팀을 찾지 못했습니다. 잠시 후 다시 시도하세요.";
     else if (options.length === 0) status = `‘${name}’에 맞는 팀·부서가 없습니다`;
     else status = name ? `팀 사람 한꺼번에 넣기 · ‘${name}’ ${options.length}개` : "팀 이름을 이어서 쓰세요";
-  } else if (search.loading) status = "찾는 중…";
+  } else if (waiting) status = "찾는 중… 맨 위 사람을 넣어요";
+  else if (search.loading) status = "찾는 중…";
   else if (search.failed) status = "검색하지 못했습니다. 잠시 후 다시 시도하세요.";
   else if (options.length === 0) status = `‘${query.trim()}’에 맞는 사람이 없습니다`;
   else if (sameNameCount > 1) status = `‘${query.trim()}’ 동명이인 ${sameNameCount}명 · 소속과 위치를 확인하고 골라주세요`;
@@ -211,8 +282,17 @@ export default function AttendeePicker({ people, onPeopleChange, meAttends, onMe
     <div ref={boxRef} className={styles.attendees}>
       <ul className={styles.chips} aria-label="참석자">
         {meAttends ? (
-          <li className={`${styles.chip} ${styles.meChip}`}>
+          <li
+            className={`${styles.chip} ${styles.meChip}`}
+            data-conflict={!!myConflict || undefined}
+            title={myConflict ?? undefined}
+          >
             <PersonIcon size={14} />나 · 예약한 사람
+            {myConflict && (
+              <span className={styles.chipWarn} aria-label={myConflict}>
+                !
+              </span>
+            )}
             <button
               type="button"
               className={styles.chipRemove}
@@ -282,6 +362,7 @@ export default function AttendeePicker({ people, onPeopleChange, meAttends, onMe
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);
+            queryRef.current = event.target.value;
             setOpen(true);
             setActive(-1);
           }}

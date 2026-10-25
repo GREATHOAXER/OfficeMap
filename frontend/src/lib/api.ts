@@ -295,6 +295,7 @@ export type Booking = {
   organizer: string;
   department: string;
   mine: boolean; // 내가 만들었거나 참석하는 예약
+  organized: boolean; // 내가 만든 예약 (참석만 하는 회의는 false)
 };
 
 export type RoomDay = {
@@ -332,6 +333,8 @@ export type MyReservation = {
   room: string;
   floor_id: number;
   floor: string;
+  site: string;
+  floor_ambiguous: boolean; // 다른 사업장에도 같은 이름의 층이 있다 (사업장 이름을 붙여 보여 준다)
   is_organizer: boolean; // 내가 예약했다
   attending: boolean; // 내가 회의에 들어간다 (예약만 해 줬으면 false)
   organizer: string;
@@ -346,6 +349,7 @@ export type ReservationDetail = {
   ends_at: string;
   status: ReservationStatus;
   created_at: string;
+  updated_at: string; // 고칠 때 돌려보낸다 (그사이 다른 곳에서 고쳤으면 서버가 막는다)
   checked_in_at: string | null;
   cancelled_at: string | null;
   room: {
@@ -355,6 +359,7 @@ export type ReservationDetail = {
     equipment: string[];
     floor_id: number;
     floor: string;
+    site_id: number;
     site: string;
   };
   organizer: {

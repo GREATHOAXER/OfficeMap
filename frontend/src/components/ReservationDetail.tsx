@@ -174,6 +174,8 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
   }
 
   const day = detail && kstDate(detail.starts_at);
+  // 그 예약이 있는 날·사업장의 예약 현황표
+  const timetable = detail && `/rooms?date=${day}&site=${detail.room.site_id}`;
   const others = detail ? detail.attendees.filter((a) => !a.is_organizer).length : 0; // 나 말고 알려 줄 사람
   const series = detail?.series && detail.series.left > 1 ? detail.series : null;
   const footer = detail && (
@@ -182,12 +184,12 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
         도면에서 보기
       </Link>
       {showTimetableLink && (
-        <Link className={styles.link} onClick={close} href={`/rooms?date=${day}&floor=${detail.room.floor_id}`}>
+        <Link className={styles.link} onClick={close} href={`${timetable}&floor=${detail.room.floor_id}`}>
           예약 현황표에서 보기
         </Link>
       )}
       {detail.status === "CANCELLED" && detail.is_organizer && !detail.ended && (
-        <Link className={styles.link} onClick={close} href={`/rooms?date=${day}&floor=${detail.room.floor_id}`}>
+        <Link className={styles.link} onClick={close} href={`${timetable}&floor=${detail.room.floor_id}`}>
           다시 예약하기
         </Link>
       )}
@@ -224,7 +226,7 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
           </span>
         ) : (
           <>
-            <Link className={styles.secondary} onClick={close} href={`/rooms?date=${day}&edit=${detail.id}`}>
+            <Link className={styles.secondary} onClick={close} href={`${timetable}&edit=${detail.id}`}>
               수정
             </Link>
             <button type="button" className={styles.secondary} onClick={() => setConfirming(true)}>

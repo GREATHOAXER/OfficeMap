@@ -1,6 +1,6 @@
 "use client";
 
-import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { addDays, daysInMonth, formatDay, isoOf, partsOf, WEEKDAY_NAMES, weekdayOf } from "@/lib/dates";
 import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from "./icons";
 import styles from "./DatePicker.module.css";
@@ -26,6 +26,8 @@ type Props = {
 };
 
 const YEARS_PER_PAGE = 12;
+const GAP_PX = 6; // 버튼과 달력 사이
+const MARGIN_PX = 8; // 화면 끝과 달력 사이
 
 /**
  * 날짜 고르기. 버튼을 누르면 달력이 뜨고, 위의 "2026년 10월"을 누르면 월 → 연도 순으로 넓게 볼 수 있다.
@@ -40,7 +42,24 @@ export default function DatePicker(props: Props) {
   const boxRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
+
+  // 달력은 화면 기준(fixed)으로 띄운다. 예약 팝업처럼 스크롤되는 칸 안에 있어도 잘리거나 팝업 아래 단추에 가리지 않게.
+  // 그리는 내용(달·연도 보기)이 바뀔 때마다, 그리고 화면·팝업을 스크롤할 때 다시 맞춘다
+  useLayoutEffect(() => {
+    if (open) placePanel(buttonRef.current, panelRef.current, align);
+  });
+  useEffect(() => {
+    if (!open) return;
+    const place = () => placePanel(buttonRef.current, panelRef.current, align);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true); // 팝업 안 스크롤도
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, align]);
 
   function openCalendar() {
     setCursor(value);
@@ -249,10 +268,10 @@ export default function DatePicker(props: Props) {
       </button>
       {open && (
         <div
+          ref={panelRef}
           role="dialog"
           aria-label={`${label} 달력`}
           className={styles.panel}
-          data-align={align}
           onKeyDown={onPanelKeyDown}
         >
           {header}
@@ -266,6 +285,25 @@ export default function DatePicker(props: Props) {
       )}
     </div>
   );
+}
+
+/** 달력을 버튼 아래에 붙인다. 아래에 자리가 없으면 위로, 화면 밖으로 나가면 안쪽으로 */
+function placePanel(button: HTMLElement | null, panel: HTMLElement | null, align: "start" | "end") {
+  if (!button || !panel) return;
+  const b = button.getBoundingClientRect();
+  const width = panel.offsetWidth;
+  const height = panel.offsetHeight;
+  const viewW = document.documentElement.clientWidth;
+  const viewH = window.innerHeight;
+  const fitsBelow = b.bottom + GAP_PX + height <= viewH - MARGIN_PX;
+  const fitsAbove = b.top - GAP_PX - height >= MARGIN_PX;
+  const top =
+    fitsBelow || !fitsAbove
+      ? Math.max(MARGIN_PX, Math.min(b.bottom + GAP_PX, viewH - MARGIN_PX - height))
+      : b.top - GAP_PX - height;
+  const left = align === "end" ? b.right - width : b.left;
+  panel.style.top = `${top}px`;
+  panel.style.left = `${Math.max(MARGIN_PX, Math.min(left, viewW - MARGIN_PX - width))}px`;
 }
 
 type HeaderProps = {

@@ -82,7 +82,7 @@ def rooms_day(user: CurrentUser, date: dt.date | None = None, site_id: int | Non
             SELECT r.id, r.room_id, r.title, r.status, r.starts_at, r.ends_at,
                    greatest(0, extract(epoch FROM r.starts_at - %(start)s) / 60)::int AS start_min,
                    least(1440, extract(epoch FROM r.ends_at - %(start)s) / 60)::int AS end_min,
-                   e.name AS organizer, d.name AS department,
+                   e.name AS organizer, d.name AS department, r.organizer_id = %(me)s AS organized,
                    (r.organizer_id = %(me)s OR EXISTS (
                        SELECT 1 FROM reservation_attendees ra
                        WHERE ra.reservation_id = r.id AND ra.employee_id = %(me)s)) AS mine
@@ -139,6 +139,8 @@ class ReservationIn(BaseModel):
     repeat_until: dt.date | None = None  # 반복할 때 마지막 날 (그날까지 포함)
     skip_conflicts: bool = False  # 반복 예약에서 이미 차 있는 날은 빼고 나머지만 예약
     notify: bool = True
+    # 고칠 때: 폼을 채울 때 읽은 예약의 updated_at. 그 뒤에 다른 곳(다른 탭·창)에서 고쳤으면 덮어쓰지 않는다
+    expected_updated_at: dt.datetime | None = None
 
 
 def _occurrences(body: ReservationIn) -> list[dt.date]:
@@ -233,13 +235,14 @@ def create_reservation(body: ReservationIn, user: CurrentUser) -> dict[str, Any]
     with pool.connection() as conn:
         room, attendee_ids = _check_request(conn, body, user, span_days, days[0])
         spans = [(_at(d, body.start_min), _at(d + dt.timedelta(days=span_days), body.end_min)) for d in days]
+        # 회차마다 겹치는 예약 (회차 날짜와 함께). 여러 날 예약 하나가 회차 여러 개와 겹칠 수 있어서,
+        # 겹치는 날은 기존 예약의 시작 날이 아니라 그 회차의 날이다
         taken = conn.execute(
             """
-            SELECT DISTINCT r.id, r.title, r.starts_at, r.ends_at,
-                   (r.starts_at AT TIME ZONE 'Asia/Seoul')::date AS day
+            SELECT r.id, r.title, r.starts_at, r.ends_at, (w.s AT TIME ZONE 'Asia/Seoul')::date AS day
             FROM reservations r, unnest(%(starts)s::timestamptz[], %(ends)s::timestamptz[]) AS w(s, e)
             WHERE r.room_id = %(room)s AND r.status = 'CONFIRMED' AND r.starts_at < w.e AND r.ends_at > w.s
-            ORDER BY r.starts_at
+            ORDER BY w.s, r.starts_at
             """,
             {
                 "starts": [s for s, _ in spans],
@@ -256,13 +259,14 @@ def create_reservation(body: ReservationIn, user: CurrentUser) -> dict[str, Any]
             spans = [span for _, span in kept]
             taken = [] if days else taken
         if taken:
+            unique = list({t["id"]: t for t in taken}.values())  # 같은 예약은 한 번만
             raise _error(
                 409,
                 "TIME_TAKEN",
                 dates=sorted({t["day"].isoformat() for t in taken}),
                 conflicts=[
                     {"title": t["title"], "starts_at": t["starts_at"].isoformat(), "ends_at": t["ends_at"].isoformat()}
-                    for t in taken[:5]
+                    for t in unique[:5]
                 ],
             )
 
@@ -350,7 +354,7 @@ def update_reservation(reservation_id: int, body: ReservationIn, user: CurrentUs
     with pool.connection() as conn:
         row = conn.execute(
             """
-            SELECT organizer_id, status, starts_at, ends_at > now() AS open
+            SELECT organizer_id, status, starts_at, updated_at, ends_at > now() AS open
             FROM reservations WHERE id = %s FOR UPDATE
             """,
             (reservation_id,),
@@ -361,6 +365,9 @@ def update_reservation(reservation_id: int, body: ReservationIn, user: CurrentUs
             raise _error(403, "NOT_ORGANIZER")
         if row["status"] != "CONFIRMED" or not row["open"]:
             raise _error(409, "NOT_EDITABLE")
+        # 폼을 채운 뒤 다른 탭·창에서 먼저 고쳤다: 오래된 내용으로 덮어쓰지 않고 다시 불러오게 한다
+        if body.expected_updated_at is not None and row["updated_at"] != body.expected_updated_at:
+            raise _error(409, "CHANGED_ELSEWHERE")
         room, attendee_ids = _check_request(conn, body, user, span_days, body.date, row["starts_at"])
         starts_at = _at(body.date, body.start_min)
         ends_at = _at(body.date + dt.timedelta(days=span_days), body.end_min)
@@ -384,15 +391,16 @@ def update_reservation(reservation_id: int, body: ReservationIn, user: CurrentUs
             )
         try:
             with conn.transaction():
-                conn.execute(
+                updated_at = conn.execute(
                     """
                     UPDATE reservations
                     SET room_id = %s, title = %s, starts_at = %s, ends_at = %s, notify_attendees = %s,
                         updated_at = now()
                     WHERE id = %s
+                    RETURNING updated_at
                     """,
                     (room["id"], title, starts_at, ends_at, body.notify, reservation_id),
-                )
+                ).fetchone()["updated_at"]
                 conn.execute("DELETE FROM reservation_attendees WHERE reservation_id = %s", (reservation_id,))
                 if attendee_ids:
                     conn.execute(
@@ -416,7 +424,13 @@ def update_reservation(reservation_id: int, body: ReservationIn, user: CurrentUs
                     )
         except psycopg.errors.ExclusionViolation:
             raise _error(409, "TIME_TAKEN", dates=[]) from None
-    return {"id": reservation_id, "room": room["name"], "starts_at": starts_at, "ends_at": ends_at}
+    return {
+        "id": reservation_id,
+        "room": room["name"],
+        "starts_at": starts_at,
+        "ends_at": ends_at,
+        "updated_at": updated_at,
+    }
 
 
 @router.get("/rooms/{room_id}/conflicts")
@@ -453,6 +467,46 @@ def room_conflicts(
     return {"conflicts": rows}
 
 
+@router.get("/reservations/mine/clash")
+def my_clash(
+    user: CurrentUser,
+    start_date: dt.date,
+    start_min: int = Query(ge=0, le=1440),
+    end_date: dt.date | None = None,
+    end_min: int = Query(ge=0, le=1440),
+    exclude: int | None = None,
+) -> dict[str, Any]:
+    """그 시간에 내가 들어가는 다른 회의나 휴가·출장·재택이 있나. 예약 폼의 "나" 칩에 다른 참석자처럼 표시한다.
+
+    exclude: 고치고 있는 예약 (자기 자신과는 겹치지 않는다)"""
+    starts_at = _at(start_date, start_min)
+    ends_at = _at(end_date or start_date, end_min)
+    if ends_at <= starts_at:
+        return {"busy": None, "absence": None}
+    with pool.connection() as conn:
+        busy = conn.execute(
+            """
+            SELECT r.title, r.starts_at, r.ends_at FROM reservations r
+            WHERE r.status = 'CONFIRMED' AND r.starts_at < %(end)s AND r.ends_at > %(start)s
+              AND r.id IS DISTINCT FROM %(exclude)s
+              -- 실제로 들어가는 회의만 (예약만 해 준 회의는 내 일정이 아니다)
+              AND EXISTS (SELECT 1 FROM reservation_attendees ra
+                          WHERE ra.reservation_id = r.id AND ra.employee_id = %(me)s)
+            ORDER BY r.starts_at LIMIT 1
+            """,
+            {"start": starts_at, "end": ends_at, "exclude": exclude, "me": user["employee_id"]},
+        ).fetchone()
+        absence = conn.execute(
+            """
+            SELECT kind FROM employee_absences
+            WHERE employee_id = %s AND starts_at < %s AND ends_at > %s
+            ORDER BY starts_at LIMIT 1
+            """,
+            (user["employee_id"], ends_at, starts_at),
+        ).fetchone()
+    return {"busy": busy, "absence": absence["kind"] if absence else None}
+
+
 @router.get("/reservations/mine")
 def my_reservations(
     user: CurrentUser,
@@ -480,7 +534,11 @@ def my_reservations(
         rows = conn.execute(
             f"""
             SELECT r.id, r.title, r.starts_at, r.ends_at, r.status, r.series_id, r.cancelled_at,
-                   m.name AS room, f.id AS floor_id, f.name AS floor,
+                   m.name AS room, f.id AS floor_id, f.name AS floor, si.name AS site,
+                   -- 다른 사업장에도 같은 이름의 층이 있으면 화면이 사업장 이름을 붙인다 ("QA 테스트 센터 1F")
+                   EXISTS (SELECT 1 FROM floors f2 JOIN sites s2 ON s2.id = f2.site_id
+                           WHERE f2.name = f.name AND f2.site_id <> f.site_id AND f2.is_active AND s2.is_active
+                   ) AS floor_ambiguous,
                    r.organizer_id = %(me)s AS is_organizer, e.name AS organizer, d.name AS organizer_department,
                    EXISTS (SELECT 1 FROM reservation_attendees ra
                            WHERE ra.reservation_id = r.id AND ra.employee_id = %(me)s) AS attending,
@@ -488,6 +546,7 @@ def my_reservations(
             FROM reservations r
             JOIN meeting_rooms m ON m.id = r.room_id
             JOIN floors f ON f.id = m.floor_id
+            JOIN sites si ON si.id = f.site_id
             JOIN employees e ON e.id = r.organizer_id
             JOIN departments d ON d.id = e.department_id
             WHERE {where}
@@ -508,12 +567,18 @@ def reservation_detail(reservation_id: int, user: CurrentUser) -> dict[str, Any]
     with pool.connection() as conn:
         row = conn.execute(
             """
-            SELECT r.id, r.title, r.starts_at, r.ends_at, r.status, r.created_at, r.checked_in_at, r.cancelled_at,
-                   r.ends_at > now() AS open, r.series_id, m.id AS room_id,
+            SELECT r.id, r.title, r.starts_at, r.ends_at, r.status, r.created_at, r.updated_at, r.checked_in_at,
+                   r.cancelled_at, r.ends_at > now() AS open, r.series_id, m.id AS room_id,
                    (SELECT count(*) FROM reservations o
                     WHERE o.series_id = r.series_id AND o.status = 'CONFIRMED' AND o.starts_at >= r.starts_at
                    )::int AS series_left,
-                   m.name AS room, m.capacity, m.equipment, f.id AS floor_id, f.name AS floor, si.name AS site,
+                   -- 반복 기간은 취소되지 않은 회차의 첫날~마지막 날 (뒤 회차를 취소하면 줄어든다)
+                   (SELECT min(o.starts_at AT TIME ZONE 'Asia/Seoul')::date FROM reservations o
+                    WHERE o.series_id = r.series_id AND o.status <> 'CANCELLED') AS series_first,
+                   (SELECT max(o.starts_at AT TIME ZONE 'Asia/Seoul')::date FROM reservations o
+                    WHERE o.series_id = r.series_id AND o.status <> 'CANCELLED') AS series_last,
+                   m.name AS room, m.capacity, m.equipment, f.id AS floor_id, f.name AS floor,
+                   si.id AS site_id, si.name AS site,
                    e.id AS organizer_id, e.emp_no, e.name, e.rank_name, d.name AS department, e.extension, e.email,
                    s.repeat_rule, s.first_date, s.last_date
             FROM reservations r
@@ -558,6 +623,8 @@ def reservation_detail(reservation_id: int, user: CurrentUser) -> dict[str, Any]
         "ends_at": row["ends_at"],
         "status": row["status"],
         "created_at": row["created_at"],
+        # 고치기 폼이 돌려보낸다 (그사이 다른 곳에서 고쳤는지 서버가 확인)
+        "updated_at": row["updated_at"],
         "checked_in_at": row["checked_in_at"],
         "cancelled_at": row["cancelled_at"],
         "room": {
@@ -567,6 +634,7 @@ def reservation_detail(reservation_id: int, user: CurrentUser) -> dict[str, Any]
             "equipment": row["equipment"],
             "floor_id": row["floor_id"],
             "floor": row["floor"],
+            "site_id": row["site_id"],
             "site": row["site"],
         },
         "organizer": {
@@ -583,8 +651,9 @@ def reservation_detail(reservation_id: int, user: CurrentUser) -> dict[str, Any]
         "series": (
             {
                 "repeat": row["repeat_rule"],
-                "first_date": row["first_date"],
-                "last_date": row["last_date"],
+                # 모든 회차가 취소됐으면 처음 정한 기간
+                "first_date": row["series_first"] or row["first_date"],
+                "last_date": row["series_last"] or row["last_date"],
                 # 이 회차를 포함해 앞으로 남은 확정 회차 수 (이후 회차 모두 취소할 때 알려 준다)
                 "left": row["series_left"],
             }

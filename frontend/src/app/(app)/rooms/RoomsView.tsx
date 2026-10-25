@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import DatePicker from "@/components/DatePicker";
 import Dialog from "@/components/Dialog";
 import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from "@/components/icons";
@@ -12,8 +12,19 @@ import { addDays, daysBetween, formatShortDay, kstDate, minToHHMM } from "@/lib/
 import { expiredLoginUrl } from "@/lib/loginRedirect";
 import { hhmm } from "@/lib/rooms";
 import { ROOMS_FLOOR_COOKIE } from "@/lib/roomsFloor";
+import { useNow } from "@/lib/useNow";
+import { saveDraft, takeDraft } from "./draftStore";
 import ReservationForm, { equipmentText } from "./ReservationForm";
-import { type Attendee, defaultRange, type Draft, EMPTY_DRAFT, headcount, timeIsFree, withoutBooking } from "./slots";
+import {
+  type Attendee,
+  defaultRange,
+  type Draft,
+  EMPTY_DRAFT,
+  headcount,
+  liveDay,
+  timeIsFree,
+  withoutBooking,
+} from "./slots";
 import Timeline from "./Timeline";
 import { useConflicts } from "./useConflicts";
 import styles from "./rooms.module.css";
@@ -51,11 +62,26 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [editing, setEditing] = useState<{ id: number; title: string } | null>(null);
+  // 고치는 예약. updatedAt: 폼을 채울 때 읽은 버전 (그사이 다른 탭·창에서 고쳤으면 서버가 저장을 막는다)
+  const [editing, setEditing] = useState<{ id: number; title: string; updatedAt: string } | null>(null);
+  const [staleEdit, setStaleEdit] = useState(false); // 다른 곳에서 먼저 고쳐서 저장하지 못했다 (다시 불러오기)
   const [skipDates, setSkipDates] = useState<string[] | null>(null);
   const [capacityOk, setCapacityOk] = useState(false); // 정원 초과를 알고도 예약하겠다고 한 번 더 눌렀다
+  // 화면을 열어 둔 동안에도 지난 칸·"지금" 선·오늘이 시계를 따라간다 (서버가 읽어 온 때에 멈춰 있지 않게)
+  const now = useNow();
+  const live = useMemo(() => liveDay(fetchedDay, now), [fetchedDay, now]);
   // 고치는 예약은 빈 시간 계산에서 뺀다 (자기 자리와 겹친다고 막지 않게)
-  const day = withoutBooking(fetchedDay, editing?.id ?? null);
+  const editingId = editing?.id ?? null;
+  const day = useMemo(() => withoutBooking(live, editingId), [live, editingId]);
+  const restoredEdit = useRef<number | null>(null); // 로그인이 끊겨 맡겨 둔 내용으로 채운 고치기 (서버 내용으로 덮지 않게)
+
+  // 자정이 지나면 새 날의 예약 현황을 다시 읽는다 (주소에 날짜가 없으면 새 "오늘"을 보여 준다)
+  const lastToday = useRef(fetchedDay.today);
+  useEffect(() => {
+    if (live.today === lastToday.current) return;
+    lastToday.current = live.today;
+    router.refresh();
+  }, [live.today, router]);
 
   // 날짜를 바꾸거나 데이터를 다시 읽으면, 작성 중인 예약의 회의실이 그날에도 있는지 다시 본다.
   // 시간이 차 있으면 지우지 않고 폼이 알려 준다
@@ -65,7 +91,31 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
     setDraft((d) => keepRoomIfExists(d, fetchedDay));
   }
 
-  // ?edit=예약ID 로 들어오면 그 예약을 불러와 폼을 채운다
+  // 예약을 확정하다가 로그인이 끊겼으면, 다시 로그인하고 돌아왔을 때 쓰던 내용을 그대로 채운다.
+  // 화면이 붙은 뒤에 꺼낸다 (서버가 그린 빈 폼과 어긋나지 않게. 개발 모드에서 효과가 두 번 돌아도 한 번만 꺼내게)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const saved = takeDraft();
+      if (!saved) return;
+      if (saved.edit) {
+        restoredEdit.current = saved.edit.id;
+        setEditing(saved.edit);
+      }
+      setDraft(saved.draft);
+      setFormOpen(true);
+      setNotice("로그인이 끊겨 저장하지 못한 예약을 다시 채웠어요. 확인하고 다시 확정하세요.");
+      if (saved.date !== fetchedDay.date || saved.siteId !== fetchedDay.site.id) {
+        const edit = saved.edit ? `&edit=${saved.edit.id}` : "";
+        router.replace(`/rooms?date=${saved.date}&site=${saved.siteId}${edit}`, { scroll: false });
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+    // 처음 열 때 한 번만
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ?edit=예약ID 로 들어오면 그 예약을 불러와 폼을 채운다. 고칠 수 없는 예약(다른 사람 것, 끝난 것)이면
+  // 그 예약을 자세히 보기로 열고 왜 못 고치는지 알려 준다
   useEffect(() => {
     if (!editId) return;
     const controller = new AbortController();
@@ -74,19 +124,53 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
         if (!res.ok) throw new Error(String(res.status));
         const detail = (await res.json()) as Detail;
         if (!detail.can_cancel) {
-          setNotice("이 예약은 고칠 수 없어요 (내가 만든, 아직 끝나지 않은 예약만 고칠 수 있어요).");
+          setNotice(
+            detail.is_organizer
+              ? "이 예약은 이미 끝났거나 취소돼서 고칠 수 없어요."
+              : "다른 사람이 만든 예약이라 고칠 수 없어요. 예약한 사람에게 부탁하세요.",
+          );
+          setDetailId(detail.id);
+          router.replace(`/rooms?date=${kstDate(detail.starts_at)}&site=${detail.room.site_id}`, { scroll: false });
           return;
         }
-        setEditing({ id: detail.id, title: detail.title });
+        if (restoredEdit.current === detail.id) return; // 맡겨 둔 내용으로 이미 채웠다
+        setEditing({ id: detail.id, title: detail.title, updatedAt: detail.updated_at });
         setDraft(draftOf(detail));
         setError(null);
         setFormOpen(true);
       })
       .catch(() => {
-        if (!controller.signal.aborted) setNotice("고칠 예약을 불러오지 못했어요.");
+        if (!controller.signal.aborted) setNotice("고칠 예약을 찾지 못했어요. 이미 지워졌거나 잘못된 주소예요.");
       });
     return () => controller.abort();
-  }, [editId]);
+  }, [editId, router]);
+
+  /** 다른 곳에서 먼저 고친 예약: 최신 내용으로 폼을 다시 채운다 (지금 고친 것은 버린다) */
+  async function reloadEdit() {
+    if (!editing) return;
+    try {
+      const res = await fetch(`/api/reservations/${editing.id}`);
+      if (!res.ok) throw new Error(String(res.status));
+      const detail = (await res.json()) as Detail;
+      if (!detail.can_cancel) {
+        closeForm();
+        setNotice("그사이 이 예약이 끝났거나 취소됐어요.");
+        router.refresh();
+        return;
+      }
+      setEditing({ id: detail.id, title: detail.title, updatedAt: detail.updated_at });
+      setDraft(draftOf(detail));
+      setError(null);
+      setStaleEdit(false);
+      // 다른 곳에서 날짜·사업장을 옮겼으면 그 날로, 아니면 현황표만 다시 읽는다
+      const date = kstDate(detail.starts_at);
+      if (date !== day.date || detail.room.site_id !== day.site.id) {
+        router.replace(`/rooms?date=${date}&site=${detail.room.site_id}&edit=${detail.id}`, { scroll: false });
+      } else router.refresh();
+    } catch {
+      setError("최신 내용을 불러오지 못했어요. 잠시 후 다시 시도하세요.");
+    }
+  }
 
   const { conflicts, checking } = useConflicts(day, draft, editing?.id ?? null);
 
@@ -125,6 +209,7 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
   function openForm() {
     setError(null);
     setSkipDates(null);
+    setStaleEdit(false);
     setFormOpen(true);
   }
 
@@ -135,6 +220,7 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
     );
     setError(null);
     setSkipDates(null);
+    setStaleEdit(false);
     setCapacityOk(false);
     if (editing) {
       setEditing(null);
@@ -160,6 +246,7 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
     setDraft(EMPTY_DRAFT);
     setError(null);
     setSkipDates(null);
+    setStaleEdit(false);
     setCapacityOk(false);
     if (editing) {
       setEditing(null);
@@ -215,15 +302,19 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
           repeat_until: editing || draft.repeat === "NONE" ? null : draft.repeatUntil,
           skip_conflicts: skipConflicts,
           notify: draft.notify,
+          expected_updated_at: editing?.updatedAt ?? null,
         }),
       });
       if (res.status === 401) {
+        // 로그인이 끊겼다: 쓰던 내용을 맡겨 두고, 다시 로그인하고 돌아오면 그대로 채운다
+        saveDraft({ date: day.date, siteId: day.site.id, draft, edit: editing });
         router.replace(expiredLoginUrl());
         return;
       }
       const data = await res.json().catch(() => null);
       if (!res.ok) {
         setError(errorText(data?.detail));
+        setStaleEdit(data?.detail?.code === "CHANGED_ELSEWHERE");
         // 반복 예약 중 몇 날만 겹치면 그날만 빼고 예약할 수 있게 한다
         const dates: string[] = data?.detail?.dates ?? [];
         setSkipDates(
@@ -351,7 +442,7 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
               예약됨
             </span>
             <span className={styles.legend}>
-              <span className={styles.lgMine} aria-hidden="true" />내 예약
+              <span className={styles.lgMine} aria-hidden="true" />내 회의 (예약·참석)
             </span>
             <span className={styles.legend}>
               <span className={styles.lgSelected} aria-hidden="true" />
@@ -370,7 +461,9 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
             <span className={styles.ttHint}>빈 칸을 누르거나 끌어서 예약 · 예약을 누르면 자세히</span>
           </div>
           {day.past && <p className={styles.pastNote}>지난 날짜예요. 예약 현황만 볼 수 있어요.</p>}
-          {rooms.length === 0 ? (
+          {day.rooms.length === 0 ? (
+            <p className={styles.empty}>{day.site.name}에는 예약할 수 있는 회의실이 아직 없어요.</p>
+          ) : rooms.length === 0 ? (
             <p className={styles.empty}>
               조건에 맞는 회의실이 없어요.
               {filtered && (
@@ -423,6 +516,7 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
             setDraft(update);
             setError(null);
             setSkipDates(null);
+            setStaleEdit(false);
             setCapacityOk(false);
           }}
           onDateChange={goToDate}
@@ -431,8 +525,10 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
           conflicts={conflicts}
           checking={checking}
           editing={editing !== null}
+          editingId={editing?.id ?? null}
           skipDates={skipDates}
           onSkipConflicts={() => void submit(true)}
+          onReloadEdit={staleEdit ? () => void reloadEdit() : null}
         />
       </Dialog>
 
@@ -494,6 +590,10 @@ const maxText = (minutes: number) => (minutes >= 1440 ? `${Math.floor(minutes / 
 
 function errorText(detail: ErrorDetail): string {
   switch (detail?.code) {
+    case "CHANGED_ELSEWHERE":
+      return "다른 탭이나 창에서 이 예약을 먼저 고쳤어요. 덮어쓰지 않으려고 저장하지 않았어요. 최신 내용을 불러와 다시 고쳐 주세요.";
+    case "NOT_EDITABLE":
+      return "이 예약은 이미 끝났거나 취소돼서 고칠 수 없어요.";
     case "TIME_TAKEN":
       return detail.dates?.length
         ? `그 시간에 이미 예약이 있어요: ${detail.dates.map(formatShortDay).join(", ")}`
