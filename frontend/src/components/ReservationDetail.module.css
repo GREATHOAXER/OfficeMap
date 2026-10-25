@@ -89,7 +89,7 @@
 
 .team ul {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 4px 12px;
   margin: 0;
   padding: 0;
@@ -110,10 +110,32 @@
   width: 12px;
 }
 
+/* 이름·"나"·"예약" 표시는 한 줄. 넘치면 말줄임 */
+.who {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bookerTag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--ink);
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+
 .presence {
+  flex: none;
   margin-left: auto;
   font-size: 11px;
   color: var(--muted);
+  white-space: nowrap;
 }
 
 .error {

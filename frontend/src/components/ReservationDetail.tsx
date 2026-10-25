@@ -146,9 +146,16 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
                     <span className={styles.markSlot}>
                       {p.presence && <span className="mk" data-status={p.presence} aria-hidden="true" />}
                     </span>
-                    {p.name} {p.rank}
-                    {p.is_me && <span className={styles.me}>나</span>}
-                    {p.is_organizer && <span className={styles.sub}> · 예약한 사람</span>}
+                    {/* 이름과 표시는 한 줄로 (칸이 좁으면 말줄임, 마우스를 올리면 전체) */}
+                    <span className={styles.who} title={`${p.name} ${p.rank ?? ""}${p.is_organizer ? " · 예약한 사람" : ""}`}>
+                      {p.name} {p.rank}
+                      {p.is_me && <span className={styles.me}>나</span>}
+                      {p.is_organizer && (
+                        <span className={styles.bookerTag} aria-label="예약한 사람">
+                          예약
+                        </span>
+                      )}
+                    </span>
                     <span className={styles.presence}>{p.presence ? PRESENCE_LABEL[p.presence] : NO_STATUS_LABEL}</span>
                   </li>
                 ))}
