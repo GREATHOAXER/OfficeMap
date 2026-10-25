@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // scripts/copy-pdfjs.mjs가 node_modules에서 복사한 pdf.js 파일
+    "public/pdfjs/**",
   ]),
 ]);
 

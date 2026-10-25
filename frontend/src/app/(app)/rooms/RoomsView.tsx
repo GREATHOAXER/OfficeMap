@@ -13,16 +13,7 @@ import { expiredLoginUrl } from "@/lib/loginRedirect";
 import { hhmm } from "@/lib/rooms";
 import { ROOMS_FLOOR_COOKIE } from "@/lib/roomsFloor";
 import ReservationForm, { equipmentText } from "./ReservationForm";
-import {
-  type Attendee,
-  defaultRange,
-  type Draft,
-  EMPTY_DRAFT,
-  headcount,
-  latestEnd,
-  timeIsFree,
-  withoutBooking,
-} from "./slots";
+import { type Attendee, defaultRange, type Draft, EMPTY_DRAFT, headcount, timeIsFree, withoutBooking } from "./slots";
 import Timeline from "./Timeline";
 import { useConflicts } from "./useConflicts";
 import styles from "./rooms.module.css";
@@ -61,7 +52,6 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: number; title: string } | null>(null);
-  const [carried, setCarried] = useState(false); // 새 칸을 눌렀는데 앞에서 쓰던 제목·참석자가 남아 있다
   const [skipDates, setSkipDates] = useState<string[] | null>(null);
   const [capacityOk, setCapacityOk] = useState(false); // 정원 초과를 알고도 예약하겠다고 한 번 더 눌렀다
   // 고치는 예약은 빈 시간 계산에서 뺀다 (자기 자리와 겹친다고 막지 않게)
@@ -140,8 +130,9 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
 
   /** 새로 쓰기: 제목·참석자는 비우고, 방금 고른 회의실·시간은 남긴다. 고치던 중이면 그만둔다 */
   function startOver() {
-    setDraft((d) => (editing ? EMPTY_DRAFT : { ...EMPTY_DRAFT, roomId: d.roomId, start: d.start, endDays: d.endDays, end: d.end }));
-    setCarried(false);
+    setDraft((d) =>
+      editing ? EMPTY_DRAFT : { ...EMPTY_DRAFT, roomId: d.roomId, start: d.start, endDays: d.endDays, end: d.end },
+    );
     setError(null);
     setSkipDates(null);
     setCapacityOk(false);
@@ -151,25 +142,29 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
     }
   }
 
-  /** 빈 칸을 누르면 그 칸부터 1시간으로 예약 팝업을 연다. 팝업을 닫고 같은 줄 뒤 칸을 누르면 끝 시각을 거기까지 늘린다 */
+  /** 빈 칸을 누르면 그 칸부터 1시간으로 예약 팝업을 연다 */
   function pickSlot(room: RoomDay, start: number) {
-    const slot = day.policy.slot;
-    setDraft((d) => {
-      // 같은 회의실에서 고른 시작보다 뒤 칸을 누르면 끝 시각을 거기까지 옮긴다 (하루 안의 예약일 때)
-      if (
-        d.roomId === room.id &&
-        d.start !== null &&
-        d.endDays === 0 &&
-        start > d.start &&
-        start + slot <= latestEnd(day, room, d.start)
-      ) {
-        return { ...d, end: start + slot };
-      }
-      // 다른 칸으로 새로 시작하는데 앞에서 쓰던 내용이 있으면 폼 위에 알려 준다
-      if (d.title.trim() || d.attendees.length) setCarried(true);
-      return { ...d, roomId: room.id, ...defaultRange(day, room, start) };
-    });
+    setDraft({ ...EMPTY_DRAFT, roomId: room.id, ...defaultRange(day, room, start) });
     openForm();
+  }
+
+  /** 빈 칸을 끌어서 고른 시간으로 예약 팝업을 연다 */
+  function pickRange(room: RoomDay, start: number, end: number) {
+    setDraft({ ...EMPTY_DRAFT, roomId: room.id, start, endDays: 0, end });
+    openForm();
+  }
+
+  /** 예약하지 않고 팝업을 닫으면 고른 칸·쓰던 내용을 모두 비운다 (다음에 열면 빈 폼). 고치던 중이면 그만둔다 */
+  function closeForm() {
+    setFormOpen(false);
+    setDraft(EMPTY_DRAFT);
+    setError(null);
+    setSkipDates(null);
+    setCapacityOk(false);
+    if (editing) {
+      setEditing(null);
+      router.replace(`/rooms?date=${day.date}&site=${day.site.id}`, { scroll: false });
+    }
   }
 
   /** 예약 확정을 눌렀을 때 빠진 것: 버튼을 막아 두지 않고 무엇을 채워야 하는지 알려 준다 */
@@ -231,7 +226,9 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
         setError(errorText(data?.detail));
         // 반복 예약 중 몇 날만 겹치면 그날만 빼고 예약할 수 있게 한다
         const dates: string[] = data?.detail?.dates ?? [];
-        setSkipDates(data?.detail?.code === "TIME_TAKEN" && draft.repeat !== "NONE" && !editing && dates.length ? dates : null);
+        setSkipDates(
+          data?.detail?.code === "TIME_TAKEN" && draft.repeat !== "NONE" && !editing && dates.length ? dates : null,
+        );
         if (res.status === 409) router.refresh(); // 먼저 잡힌 예약을 현황표에 보여 준다
         return;
       }
@@ -249,7 +246,6 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
             }`,
       );
       setDraft(EMPTY_DRAFT);
-      setCarried(false);
       setSkipDates(null);
       setCapacityOk(false);
       setFormOpen(false);
@@ -272,20 +268,35 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
       <header className={styles.header}>
         <h1 className={styles.title}>회의실 확인·예약</h1>
         <div className={styles.dateNav} role="group" aria-label="날짜">
-          <button type="button" className={styles.iconButton} aria-label="이전 날" onClick={() => goToDate(addDays(day.date, -1))}>
+          <button
+            type="button"
+            className={styles.iconButton}
+            aria-label="이전 날"
+            onClick={() => goToDate(addDays(day.date, -1))}
+          >
             <ChevronLeftIcon size={18} />
           </button>
           <DatePicker label="보는 날짜" value={day.date} today={day.today} onChange={goToDate} />
-          <button type="button" className={styles.iconButton} aria-label="다음 날" onClick={() => goToDate(addDays(day.date, 1))}>
+          <button
+            type="button"
+            className={styles.iconButton}
+            aria-label="다음 날"
+            onClick={() => goToDate(addDays(day.date, 1))}
+          >
             <ChevronRightIcon size={18} />
           </button>
-          <button type="button" className={styles.textButton} disabled={day.date === day.today} onClick={() => goToDate(day.today)}>
+          <button
+            type="button"
+            className={styles.textButton}
+            disabled={day.date === day.today}
+            onClick={() => goToDate(day.today)}
+          >
             오늘
           </button>
         </div>
         <button type="button" className={styles.openForm} aria-haspopup="dialog" onClick={openForm}>
           <PlusIcon size={18} />
-          {hasDraft ? "작성 중인 예약 이어서" : "예약하기"}
+          예약하기
         </button>
       </header>
 
@@ -356,7 +367,7 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
               <span className={styles.lgPast} aria-hidden="true" />
               지난 시간·운영 시간 밖
             </span>
-            <span className={styles.ttHint}>빈 칸을 누르면 예약 · 예약을 누르면 자세히</span>
+            <span className={styles.ttHint}>빈 칸을 누르거나 끌어서 예약 · 예약을 누르면 자세히</span>
           </div>
           {day.past && <p className={styles.pastNote}>지난 날짜예요. 예약 현황만 볼 수 있어요.</p>}
           {rooms.length === 0 ? (
@@ -369,14 +380,21 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
               )}
             </p>
           ) : (
-            <Timeline day={day} rooms={rooms} draft={draft} onPick={pickSlot} onOpenBooking={setDetailId} />
+            <Timeline
+              day={day}
+              rooms={rooms}
+              draft={draft}
+              onPick={pickSlot}
+              onPickRange={pickRange}
+              onOpenBooking={setDetailId}
+            />
           )}
         </section>
       </main>
 
       <Dialog
         open={formOpen}
-        onClose={() => setFormOpen(false)}
+        onClose={closeForm}
         title={editing ? `예약 고치기 · ${editing.title}` : "예약하기"}
         size="wide"
         footer={
@@ -387,7 +405,7 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
               </button>
             )}
             <span className={styles.spacer} />
-            <button type="button" className={styles.textButton} onClick={() => setFormOpen(false)}>
+            <button type="button" className={styles.textButton} onClick={closeForm}>
               닫기
             </button>
             <button type="submit" form={formId} className={styles.submit} disabled={submitting || checking}>
@@ -413,11 +431,6 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
           conflicts={conflicts}
           checking={checking}
           editing={editing !== null}
-          carried={carried}
-          onClearCarried={() => {
-            setDraft((d) => ({ ...d, title: "", attendees: [], meAttends: true }));
-            setCarried(false);
-          }}
           skipDates={skipDates}
           onSkipConflicts={() => void submit(true)}
         />
@@ -458,18 +471,20 @@ function draftOf(detail: Detail): Draft {
     title: detail.title,
     // 고치는 사람은 예약한 사람이다. 나는 "나" 칩으로, 나머지는 한 사람씩
     meAttends: detail.organizer.attends,
-    attendees: detail.attendees.filter((a) => !a.is_organizer).map(
-      (a) =>
-        ({
-          emp_no: a.emp_no,
-          name: a.name,
-          rank: a.rank,
-          department: a.department,
-          is_me: a.is_me,
-          seat: a.color_key ? { color_key: a.color_key } : null,
-          presence: a.presence ? { status: a.presence, message: null } : null,
-        }) as unknown as Attendee,
-    ),
+    attendees: detail.attendees
+      .filter((a) => !a.is_organizer)
+      .map(
+        (a) =>
+          ({
+            emp_no: a.emp_no,
+            name: a.name,
+            rank: a.rank,
+            department: a.department,
+            is_me: a.is_me,
+            seat: a.color_key ? { color_key: a.color_key } : null,
+            presence: a.presence ? { status: a.presence, message: null } : null,
+          }) as unknown as Attendee,
+      ),
   };
 }
 
@@ -560,7 +575,8 @@ function NowCards({ day, rooms, onNextDay }: { day: RoomsDay; rooms: RoomDay[]; 
               </span>
               <span>{text}</span>
               <span className={`mono ${styles.muted}`}>
-                {room.floor.name} · {room.capacity}인{room.equipment.length ? ` · ${equipmentText(room.equipment)}` : ""}
+                {room.floor.name} · {room.capacity}인
+                {room.equipment.length ? ` · ${equipmentText(room.equipment)}` : ""}
               </span>
             </li>
           );

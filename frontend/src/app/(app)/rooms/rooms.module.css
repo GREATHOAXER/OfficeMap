@@ -214,7 +214,6 @@
 }
 
 /* 앞에서 쓰던 제목·참석자를 이어 쓰는 중 */
-.carried,
 .closedNote {
   display: flex;
   flex-wrap: wrap;
@@ -228,7 +227,6 @@
   font-size: 12px;
 }
 
-.carried button,
 .closedNote button,
 .alternatives button,
 .skipButton {
@@ -501,6 +499,24 @@
 .ttCell[data-past] {
   background-image: repeating-linear-gradient(45deg, transparent 0 5px, #ececE8 5px 6px);
   cursor: not-allowed;
+}
+
+/* 끌어서 고르는 동안: 글자 선택·포인터 모양 */
+.tt[data-dragging] {
+  user-select: none;
+  cursor: col-resize;
+}
+
+.tt[data-dragging] .ttCell {
+  cursor: col-resize;
+}
+
+.dragStatus {
+  min-height: 1.4em;
+  margin: 0 0 4px;
+  font-size: 12.5px;
+  color: var(--link);
+  font-weight: 600;
 }
 
 .ttCell[data-selected] {

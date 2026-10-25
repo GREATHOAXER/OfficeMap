@@ -49,8 +49,6 @@ type Props = {
   /** 이미 있는 예약을 고치는 중 (반복은 못 바꾼다) */
   editing: boolean;
   /** 앞에서 쓰던 제목·참석자를 새 칸에 이어서 쓰는 중 */
-  carried: boolean;
-  onClearCarried: () => void;
   /** 반복 예약 중 겹치는 날이 있을 때: 그날만 빼고 예약하기 */
   skipDates: string[] | null;
   onSkipConflicts: () => void;
@@ -66,7 +64,7 @@ export const isReady = (draft: Draft) =>
  */
 export default function ReservationForm(props: Props) {
   const { formId, day, draft, onDraftChange, onDateChange, onSubmit, error, conflicts, checking } = props;
-  const { editing, carried, onClearCarried, skipDates, onSkipConflicts } = props;
+  const { editing, skipDates, onSkipConflicts } = props;
   const ids = useId();
   const room = day.rooms.find((r) => r.id === draft.roomId) ?? null;
   const set = (patch: Partial<Draft>) => onDraftChange((d) => ({ ...d, ...patch }));
@@ -98,7 +96,8 @@ export default function ReservationForm(props: Props) {
     const list: { value: number; note: string | null }[] = [];
     if (draft.endDays === 0) {
       const limit = latestEnd(day, room, draft.start);
-      for (let e = draft.start + slot; e <= close; e += slot) list.push({ value: e, note: e > limit ? "예약 있음" : null });
+      for (let e = draft.start + slot; e <= close; e += slot)
+        list.push({ value: e, note: e > limit ? "예약 있음" : null });
     } else {
       for (let e = open; e <= close; e += slot) {
         if (draft.endDays * 1440 + e - draft.start <= day.policy.max) list.push({ value: e, note: null });
@@ -142,7 +141,8 @@ export default function ReservationForm(props: Props) {
     if (next.endDays === 0) {
       for (let e = next.start + slot; e <= latestEnd(day, room, next.start); e += slot) result.push(e);
     } else {
-      for (let e = open; e <= close; e += slot) if (next.endDays * 1440 + e - next.start <= day.policy.max) result.push(e);
+      for (let e = open; e <= close; e += slot)
+        if (next.endDays * 1440 + e - next.start <= day.policy.max) result.push(e);
     }
     return result;
   }
@@ -157,14 +157,6 @@ export default function ReservationForm(props: Props) {
     <form id={formId} className={styles.form} onSubmit={submit}>
       <div className={styles.formCols}>
         <div className={styles.formCol}>
-          {carried && (
-            <p className={styles.carried}>
-              앞에서 쓰던 제목·참석자를 이어서 쓰고 있어요.
-              <button type="button" onClick={onClearCarried}>
-                지우고 새로 쓰기
-              </button>
-            </p>
-          )}
           <div className={styles.summary} aria-live="polite">
             {room && draft.start !== null && draft.end !== null ? (
               <>
@@ -267,17 +259,19 @@ export default function ReservationForm(props: Props) {
           </fieldset>
           {dayClosed && (
             <p className={styles.closedNote}>
-              이날({formatShortDay(day.date)})은 더 예약할 수 있는 시간이 없어요 (운영 {minToHHMM(open)}–{minToHHMM(close)}).
-              <button type="button" onClick={() => onDateChange(addDays(day.date < day.today ? day.today : day.date, 1))}>
+              이날({formatShortDay(day.date)})은 더 예약할 수 있는 시간이 없어요 (운영 {minToHHMM(open)}–
+              {minToHHMM(close)}).
+              <button
+                type="button"
+                onClick={() => onDateChange(addDays(day.date < day.today ? day.today : day.date, 1))}
+              >
                 다음 날로
               </button>
             </p>
           )}
           {taken && (
             <div className={styles.conflictBox} data-ok={false} role="status">
-              <strong>
-                이 시간에 {room.name}에 이미 예약이 있어요. 시간을 바꾸거나 다른 회의실을 고르세요.
-              </strong>
+              <strong>이 시간에 {room.name}에 이미 예약이 있어요. 시간을 바꾸거나 다른 회의실을 고르세요.</strong>
               {alternatives.length > 0 && (
                 <span className={styles.alternatives}>
                   이 시간에 비어 있는 곳:
@@ -291,8 +285,8 @@ export default function ReservationForm(props: Props) {
             </div>
           )}
           <p id={`${ids}-end-note`} className={styles.policy}>
-            여러 날에 걸쳐 잡을 수 있어요 (최대 {maxEndDays(day)}일) · 시작·끝 시각은 {minToHHMM(open)}–{minToHHMM(close)} 사이
-            · {slot}분 단위
+            여러 날에 걸쳐 잡을 수 있어요 (최대 {maxEndDays(day)}일) · 시작·끝 시각은 {minToHHMM(open)}–
+            {minToHHMM(close)} 사이 · {slot}분 단위
           </p>
           {multiDay && room && draft.start !== null && draft.end !== null && (
             <div className={styles.conflictBox} data-ok={!checking && conflicts.length === 0} role="status">
@@ -332,44 +326,44 @@ export default function ReservationForm(props: Props) {
           {editing ? (
             <p className={styles.policy}>예약을 고치면 이 회차만 바뀌어요. 반복 설정은 바꿀 수 없어요.</p>
           ) : (
-          <div className={styles.fieldRow}>
-            <label className={styles.field}>
-              반복
-              <select
-                value={draft.repeat}
-                disabled={multiDay}
-                aria-describedby={multiDay ? `${ids}-repeat-note` : undefined}
-                onChange={(event) => {
-                  const repeat = event.target.value as Repeat;
-                  set({ repeat, repeatUntil: repeat === "NONE" ? null : defaultRepeatUntil(day.date, repeat) });
-                }}
-              >
-                {REPEATS.map((r) => (
-                  <option key={r.value} value={r.value}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {draft.repeat !== "NONE" && (
-              <div className={styles.field}>
-                <span>반복 종료일</span>
-                <DatePicker
-                  label="반복 종료일"
-                  value={draft.repeatUntil ?? day.date}
-                  today={day.today}
-                  min={day.date}
-                  align="end"
-                  onChange={(repeatUntil) => set({ repeatUntil })}
-                />
-              </div>
-            )}
-            {draft.repeat !== "NONE" && (
-              <p className={styles.occurrences} aria-live="polite">
-                총 <strong className="mono">{occurrences}</strong>회
-              </p>
-            )}
-          </div>
+            <div className={styles.fieldRow}>
+              <label className={styles.field}>
+                반복
+                <select
+                  value={draft.repeat}
+                  disabled={multiDay}
+                  aria-describedby={multiDay ? `${ids}-repeat-note` : undefined}
+                  onChange={(event) => {
+                    const repeat = event.target.value as Repeat;
+                    set({ repeat, repeatUntil: repeat === "NONE" ? null : defaultRepeatUntil(day.date, repeat) });
+                  }}
+                >
+                  {REPEATS.map((r) => (
+                    <option key={r.value} value={r.value}>
+                      {r.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {draft.repeat !== "NONE" && (
+                <div className={styles.field}>
+                  <span>반복 종료일</span>
+                  <DatePicker
+                    label="반복 종료일"
+                    value={draft.repeatUntil ?? day.date}
+                    today={day.today}
+                    min={day.date}
+                    align="end"
+                    onChange={(repeatUntil) => set({ repeatUntil })}
+                  />
+                </div>
+              )}
+              {draft.repeat !== "NONE" && (
+                <p className={styles.occurrences} aria-live="polite">
+                  총 <strong className="mono">{occurrences}</strong>회
+                </p>
+              )}
+            </div>
           )}
 
           {multiDay && (
@@ -406,8 +400,7 @@ export default function ReservationForm(props: Props) {
 
           <div className={styles.field}>
             <span>
-              참석자 {people}명
-              {!draft.meAttends && <span className={styles.muted}> · 나는 예약만</span>}
+              참석자 {people}명{!draft.meAttends && <span className={styles.muted}> · 나는 예약만</span>}
               {overCapacity && <span className={styles.warn}> · {room.capacity}인실 정원을 넘어요</span>}
             </span>
             <AttendeePicker

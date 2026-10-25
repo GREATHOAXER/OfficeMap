@@ -103,7 +103,8 @@ export default function LoginForm({ ssoEnabled, supportContact, maxFailedCount, 
         <span aria-hidden="true" />
       </div>
 
-      <form className={styles.form} onSubmit={handleSubmit} noValidate>
+      {/* 화면 스크립트가 뜨기 전에 눌러도 비밀번호가 주소(?password=…)에 남지 않게 POST로 둔다 */}
+      <form className={styles.form} method="post" onSubmit={handleSubmit} noValidate>
         <label className={styles.field}>
           사번
           <input

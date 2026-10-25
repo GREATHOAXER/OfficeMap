@@ -5,7 +5,7 @@ import type { RoomDay, RoomsDay } from "@/lib/api";
 import { minToHHMM } from "@/lib/dates";
 import { rangeText, spanDays } from "@/lib/rooms";
 import { equipmentText } from "./ReservationForm";
-import { type Draft, isPast, slotStarts } from "./slots";
+import { type Draft, dragRange, isPast, slotStarts } from "./slots";
 import styles from "./rooms.module.css";
 
 type Props = {
@@ -13,6 +13,8 @@ type Props = {
   rooms: RoomDay[]; // 필터를 거친 회의실
   draft: Draft;
   onPick: (room: RoomDay, start: number) => void;
+  /** 빈 칸을 끌어서 고른 시간 (마우스) */
+  onPickRange: (room: RoomDay, start: number, end: number) => void;
   onOpenBooking: (reservationId: number) => void;
 };
 
@@ -20,11 +22,11 @@ type Props = {
 type NavCell = { el: HTMLElement; r: number; c: number; span: number };
 
 /**
- * 예약 현황표. 회의실마다 한 줄, 칸 하나 = 30분. 빈 칸을 누르면 그 시간을 고른다.
+ * 예약 현황표. 회의실마다 한 줄, 칸 하나 = 30분. 빈 칸을 누르면 그 시간부터 1시간, 마우스로 끌면 끈 만큼 고른다.
  * 예약은 칸 여러 개를 이어 붙인 블록 하나로 그리고, 누르면 자세한 내용을 띄운다 (내 예약은 검정).
  * 키보드: 표 전체가 Tab 한 번이고, 안에서는 방향키·Home·End로 옮긴다 (칸 수백 개를 Tab으로 지나가지 않게)
  */
-export default function Timeline({ day, rooms, draft, onPick, onOpenBooking }: Props) {
+export default function Timeline({ day, rooms, draft, onPick, onPickRange, onOpenBooking }: Props) {
   const { open_start: open, open_end: close, slot } = day.policy;
   const starts = slotStarts(day);
   const col = (minute: number) => 2 + Math.round((Math.min(Math.max(minute, open), close) - open) / slot);
@@ -34,6 +36,42 @@ export default function Timeline({ day, rooms, draft, onPick, onOpenBooking }: P
   const gridRef = useRef<HTMLDivElement>(null);
   const [overflowing, setOverflowing] = useState(false);
   const [activeKey, setActiveKey] = useState<string | null>(null);
+  // 마우스로 끌어서 시간 고르기: 누른 칸(from)부터 지금 포인터가 있는 칸(to)까지, 같은 회의실 줄 안에서만
+  const [drag, setDrag] = useState<{ room: RoomDay; from: number; to: number } | null>(null);
+  const dragRef = useRef(drag);
+  const suppressClick = useRef(false);
+  const dragSel = drag ? dragRange(day, drag.room, drag.from, drag.to) : null;
+
+  useEffect(() => {
+    dragRef.current = drag;
+  });
+
+  // 손을 떼면(표 밖에서 떼도) 고른 시간으로 예약 팝업을 연다. 한 칸에서 누르고 떼기만 했으면 그 칸부터 1시간. Esc는 그만두기
+  const dragging = drag !== null;
+  useEffect(() => {
+    if (!dragging) return;
+    function finish() {
+      const d = dragRef.current;
+      setDrag(null);
+      if (!d) return;
+      suppressClick.current = true; // 뒤따르는 click으로 한 번 더 열리지 않게
+      setTimeout(() => (suppressClick.current = false), 0);
+      if (d.to === d.from) onPick(d.room, d.from);
+      else {
+        const r = dragRange(day, d.room, d.from, d.to);
+        onPickRange(d.room, r.start, r.end);
+      }
+    }
+    function onKey(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") setDrag(null);
+    }
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [dragging, day, onPick, onPickRange]);
 
   // 표가 옆으로 넘치면 알려 주고, 오늘이면 지금 시각이 보이게 처음에 옆으로 밀어 둔다
   useEffect(() => {
@@ -62,7 +100,10 @@ export default function Timeline({ day, rooms, draft, onPick, onOpenBooking }: P
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     const target = event.target as HTMLElement;
-    if (!target.dataset.nav || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
+    if (
+      !target.dataset.nav ||
+      !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)
+    ) {
       return;
     }
     const cells = navCells();
@@ -71,7 +112,10 @@ export default function Timeline({ day, rooms, draft, onPick, onOpenBooking }: P
     const row = (r: number) => cells.filter((x) => x.r === r).sort((a, b) => a.c - b.c);
     let next: NavCell | undefined;
     if (event.key === "ArrowRight") next = row(cur.r).find((x) => x.c >= cur.c + cur.span);
-    else if (event.key === "ArrowLeft") next = row(cur.r).filter((x) => x.c < cur.c).at(-1);
+    else if (event.key === "ArrowLeft")
+      next = row(cur.r)
+        .filter((x) => x.c < cur.c)
+        .at(-1);
     else if (event.key === "Home") next = row(cur.r)[0];
     else if (event.key === "End") next = row(cur.r).at(-1);
     else {
@@ -102,11 +146,19 @@ export default function Timeline({ day, rooms, draft, onPick, onOpenBooking }: P
 
   return (
     <>
-      {overflowing && <p className={styles.scrollHint}>표를 옆으로 밀면 다른 시간이 보여요 · 칸에서 방향키로도 옮길 수 있어요</p>}
+      {overflowing && (
+        <p className={styles.scrollHint}>표를 옆으로 밀면 다른 시간이 보여요 · 칸에서 방향키로도 옮길 수 있어요</p>
+      )}
+      <p className={styles.dragStatus} aria-live="polite">
+        {drag && dragSel
+          ? `${drag.room.name} ${minToHHMM(dragSel.start)}–${minToHHMM(dragSel.end)} · 손을 떼면 예약 (Esc: 그만두기)`
+          : ""}
+      </p>
       <div ref={scrollRef} className={styles.ttScroll}>
         <div
           ref={gridRef}
           className={styles.tt}
+          data-dragging={dragging || undefined}
           style={{ "--slots": starts.length, "--rows": rooms.length } as CSSProperties}
           role="grid"
           aria-label="예약 현황표"
@@ -138,19 +190,21 @@ export default function Timeline({ day, rooms, draft, onPick, onOpenBooking }: P
               <div role="rowheader" className={styles.ttRoom}>
                 <strong>{room.name}</strong>
                 <span className="mono">
-                  {room.floor.name} · {room.capacity}인{room.equipment.length ? ` · ${equipmentText(room.equipment)}` : ""}
+                  {room.floor.name} · {room.capacity}인
+                  {room.equipment.length ? ` · ${equipmentText(room.equipment)}` : ""}
                 </span>
               </div>
               {starts.map((s) => {
                 if (room.bookings.some((b) => b.start_min <= s && b.end_min > s)) return null; // 예약 블록이 덮는 칸
                 const past = isPast(day, s);
-                // 여러 날 예약을 고르면 시작 날에는 시작 칸부터 문 닫을 때까지 칠한다
-                const selected =
-                  draft.roomId === room.id &&
-                  draft.start !== null &&
-                  draft.end !== null &&
-                  s >= draft.start &&
-                  (draft.endDays > 0 || s < draft.end);
+                // 여러 날 예약을 고르면 시작 날에는 시작 칸부터 문 닫을 때까지 칠한다. 끄는 중이면 끈 만큼
+                const selected = dragSel
+                  ? drag!.room.id === room.id && s >= dragSel.start && s < dragSel.end
+                  : draft.roomId === room.id &&
+                    draft.start !== null &&
+                    draft.end !== null &&
+                    s >= draft.start &&
+                    (draft.endDays > 0 || s < draft.end);
                 const key = `${r}:${col(s)}`;
                 return (
                   <button
@@ -170,7 +224,18 @@ export default function Timeline({ day, rooms, draft, onPick, onOpenBooking }: P
                     disabled={past}
                     aria-selected={selected}
                     aria-label={`${room.name} ${minToHHMM(s)}–${minToHHMM(s + slot)} ${past ? "지난 시간" : "비어 있음"}`}
-                    onClick={() => onPick(room, s)}
+                    onPointerDown={(event) => {
+                      // 마우스만 끌어서 고른다 (터치는 손가락으로 밀면 표가 옆으로 넘어가야 한다)
+                      if (event.pointerType === "touch" || event.button !== 0 || past) return;
+                      event.preventDefault();
+                      setDrag({ room, from: s, to: s });
+                    }}
+                    onPointerEnter={() => {
+                      if (drag && drag.room.id === room.id && drag.to !== s) setDrag({ ...drag, to: s });
+                    }}
+                    onClick={() => {
+                      if (!suppressClick.current) onPick(room, s); // 키보드(Enter·Space)·터치
+                    }}
                   />
                 );
               })}

@@ -25,6 +25,7 @@ app/
 scripts/
   init_db.py       db/schema + db/seed 실행
   purge_history.py 보관 기간(5년)이 지난 이력 지우기 (--dry-run, --years)
+  gen_dense_floor.py 목업 8F(사람이 많은 층, 68석) 도면·좌석 SQL 만들기 → db/seed/03_dense_floor.sql
 ```
 
 ## 로그인 API
