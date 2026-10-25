@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type DragEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Dialog from "@/components/Dialog";
+import FloorExportDialog from "@/components/FloorExportDialog";
 import PendingButton from "@/components/PendingButton";
 import { SearchIcon } from "@/components/icons";
 import type {
@@ -18,6 +20,7 @@ import type {
   UnassignedPerson,
 } from "@/lib/api";
 import { addDays, kstDate, shortDate } from "@/lib/dates";
+import { drawingFromSeating } from "@/lib/floorDrawing";
 import { useNow } from "@/lib/useNow";
 import { autoRects, zoneRects } from "@/lib/zoneShape";
 import {
@@ -117,6 +120,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [rejecting, setRejecting] = useState<{ id: number; comment: string; error: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const pageRef = useRef<HTMLDivElement>(null);
   const [cols, setCols] = useState<1 | 2 | 3>(2);
   const wide = cols === 3;
@@ -200,8 +204,9 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
       const zoneId = layout.zoneOf(seat);
       if (zoneId !== null) members.set(zoneId, [...(members.get(zoneId) ?? []), seat]);
     }
-    return new Map([...members].map(([zoneId, seats]) => [zoneId, autoRects(seats)]));
-  }, [zoneMoved, data.seats, layout]);
+    const size = { width_m: data.plan?.width_m ?? 50, height_m: data.plan?.height_m ?? 30 };
+    return new Map([...members].map(([zoneId, seats]) => [zoneId, autoRects(seats, size)]));
+  }, [zoneMoved, data.seats, data.plan, layout]);
   const rectsOf = useCallback(
     (zone: SeatingZone) => (autoShapes ? (autoShapes.get(zone.id) ?? []) : zoneRects(zone.shape)),
     [autoShapes],
@@ -786,7 +791,9 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
   function cancelScheduled(row: ChangeRequestRow) {
     setConfirm({
       title: "예정된 변경을 취소할까요?",
-      body: `${row.effective_at ? shortDate(row.effective_at) : ""}부터 바뀌기로 한 ${row.item_count}건이 없던 일이 되고, 지금 자리가 그대로 유지돼요.`,
+      body: `${row.effective_at ? shortDate(row.effective_at) : ""}부터 바뀌기로 한 ${row.item_count}건이 없던 일이 되고, 지금 자리가 그대로 유지돼요.${
+        row.team_move ? " 팀 이사로 함께 만든 다른 층의 변경도 함께 취소돼요." : ""
+      }`,
       action: "예정 취소",
       danger: true,
       run: async () => {
@@ -1282,6 +1289,8 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
     />
   );
 
+  const exportDrawing = exporting ? drawingFromSeating(data) : null;
+
   return (
     <div ref={pageRef} className={styles.page}>
       <header className={styles.header}>
@@ -1308,6 +1317,11 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
           {!review && (
             <button type="button" className={styles.btn} aria-pressed={preview} onClick={() => setPreview((p) => !p)}>
               {preview ? "미리보기 끄기" : "직원 화면 미리보기"}
+            </button>
+          )}
+          {!review && data.plan && (
+            <button type="button" className={styles.btn} onClick={() => setExporting(true)}>
+              내보내기
             </button>
           )}
           {!review &&
@@ -1342,6 +1356,17 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
           : "사람을 끌어 자리에 놓고(사람 위에 놓으면 자리 교환), 모아서 한 번에 반영해요. 반영하기 전에는 직원 화면에 보이지 않아요."}
       </p>
       {notice && <p className={styles.notice}>{notice}</p>}
+      {data.plan_scheduled && (
+        <p className={styles.notice}>
+          {shortDate(data.plan_scheduled.effective_at)} 0시에 새 도면(v{data.plan_scheduled.version})이 게시돼요. 그때
+          없어지는 책상에 앉은 사람은 미배치가 돼요 (게시 예약 때 새 자리를 정한 사람 제외).
+          {perms.mode === "FLOOR" && (
+            <Link className={styles.linkButton} href={`/admin/plans?floor=${floorId}`}>
+              예약한 도면 보기
+            </Link>
+          )}
+        </p>
+      )}
 
       <div className={styles.body} data-cols={cols}>
         {wide && (
@@ -1503,6 +1528,15 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
           <p>{confirm?.body}</p>
         </div>
       </Dialog>
+
+      {exportDrawing && (
+        <FloorExportDialog
+          drawing={exportDrawing}
+          title={`${data.floor.site.name} ${data.floor.name} 좌석 배치도`}
+          fileBase={`${data.floor.name}-좌석배치`}
+          onClose={() => setExporting(false)}
+        />
+      )}
 
       {zoneDialog && (
         <ZoneDialog

@@ -2,14 +2,14 @@
 // 배치 화면에서 좌석을 다른 구역으로 옮길 때 반영 전에 바뀔 모양을 미리 그리는 데 쓴다
 
 import type { Rect, ZoneShape } from "./api";
+import { seatRatio } from "./planGeometry";
 
-// 좌석 크기(도면 대비 비율)와 여백. 위쪽 여백은 구역 이름표 자리
-const SEAT_W = 0.0533;
-const SEAT_H = 0.0556;
-const NEAR = 0.05; // 좌석 사이가 이보다 가까우면 한 덩어리
-const PAD_X = 0.01;
-const PAD_TOP = 0.05;
-const PAD_BOTTOM = 0.03;
+// 여백 (m). 도면 크기로 나눠 비율로 쓴다. 위쪽 여백은 구역 이름표 자리
+const NEAR_X = 2.5; // 좌석 사이가 이보다 가까우면 한 덩어리
+const NEAR_Y = 1.5;
+const PAD_X = 0.5;
+const PAD_TOP = 1.5;
+const PAD_BOTTOM = 0.9;
 
 /** 저장된 모양 → 사각형 목록 (없으면 빈 목록) */
 export function zoneRects(shape: ZoneShape | null | undefined): Rect[] {
@@ -18,8 +18,11 @@ export function zoneRects(shape: ZoneShape | null | undefined): Rect[] {
   return [{ x: shape.x, y: shape.y, w: shape.w, h: shape.h }];
 }
 
-/** 좌석 중심점들 → 덩어리마다 감싸는 사각형 (위에서 아래, 왼쪽에서 오른쪽 순) */
-export function autoRects(points: { x: number; y: number }[]): Rect[] {
+/** 좌석 중심점들 → 덩어리마다 감싸는 사각형 (위에서 아래, 왼쪽에서 오른쪽 순). 크기는 도면 크기(m) */
+export function autoRects(points: { x: number; y: number }[], size: { width_m: number; height_m: number }): Rect[] {
+  const { w: SEAT_W, h: SEAT_H } = seatRatio(size.width_m, size.height_m);
+  const [nearX, nearY] = [NEAR_X / size.width_m, NEAR_Y / size.height_m];
+  const [padX, padTop, padBottom] = [PAD_X / size.width_m, PAD_TOP / size.height_m, PAD_BOTTOM / size.height_m];
   const n = points.length;
   const label = points.map((_, i) => i);
   let changed = true;
@@ -29,8 +32,8 @@ export function autoRects(points: { x: number; y: number }[]): Rect[] {
       for (let j = i + 1; j < n; j++) {
         if (
           label[i] !== label[j] &&
-          Math.abs(points[i].x - points[j].x) <= SEAT_W + NEAR &&
-          Math.abs(points[i].y - points[j].y) <= SEAT_H + NEAR
+          Math.abs(points[i].x - points[j].x) <= SEAT_W + nearX &&
+          Math.abs(points[i].y - points[j].y) <= SEAT_H + nearY
         ) {
           const m = Math.min(label[i], label[j]);
           label[i] = m;
@@ -43,10 +46,10 @@ export function autoRects(points: { x: number; y: number }[]): Rect[] {
   const boxes = new Map<number, { x0: number; y0: number; x1: number; y1: number }>();
   points.forEach((p, i) => {
     const b = boxes.get(label[i]) ?? { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
-    b.x0 = Math.min(b.x0, p.x - SEAT_W / 2 - PAD_X);
-    b.y0 = Math.min(b.y0, p.y - SEAT_H / 2 - PAD_TOP);
-    b.x1 = Math.max(b.x1, p.x + SEAT_W / 2 + PAD_X);
-    b.y1 = Math.max(b.y1, p.y + SEAT_H / 2 + PAD_BOTTOM);
+    b.x0 = Math.min(b.x0, p.x - SEAT_W / 2 - padX);
+    b.y0 = Math.min(b.y0, p.y - SEAT_H / 2 - padTop);
+    b.x1 = Math.max(b.x1, p.x + SEAT_W / 2 + padX);
+    b.y1 = Math.max(b.y1, p.y + SEAT_H / 2 + padBottom);
     boxes.set(label[i], b);
   });
   return [...boxes.values()]

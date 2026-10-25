@@ -11,6 +11,7 @@ app/
   session.py       로그인 확인. 로그인이 필요한 API는 CurrentUser 인자를 받는다
   admin_auth.py    관리자 로그인 확인 (CurrentAdmin)
   plan_geometry.py 도면 모양(JSON v1, 미터) 검사·변환, 책상 칸 위치 계산
+  jobs.py          정기 작업: 1분마다 게시 예약 게시, 하루 한 번 이력 정리(5년)
   routers/auth.py      로그인 화면 API
   routers/office.py    자리·재실 현황 API
   routers/presence.py  내 재실 상태 바꾸기, 실시간 알림(SSE) API
@@ -18,10 +19,12 @@ app/
   routers/rooms.py     회의실 확인·예약 API
   routers/admin.py     관리자 로그인·첫 화면 API
   routers/seating.py   좌석 배치 편집·팀 구역 API
-  routers/plans.py     도면 편집 API (초안·자동 저장·편집 잠금·게시 점검·게시)
+  routers/plans.py     도면 편집 API (초안·자동 저장·편집 잠금·게시 점검·게시·게시 예약)
+  routers/moves.py     팀 이사 도우미 API
   realtime.py      재실 상태 변경을 DB에서 받아(LISTEN) 열린 화면마다 나눠 주기
 scripts/
   init_db.py       db/schema + db/seed 실행
+  purge_history.py 보관 기간(5년)이 지난 이력 지우기 (--dry-run, --years)
 ```
 
 ## 로그인 API
@@ -203,11 +206,12 @@ scripts/
 | `GET /api/admin/plans/floors` | 도면을 편집할 수 있는 층 (`published`, `drafting`) |
 | `GET /api/admin/floors/{층 ID}/plan` | 편집 화면: `draft`(모양·`revision`·편집 중인 사람), `published`, `archived`, 복제할 수 있는 층(`sources`), `live`(책상 칸·회의실마다 지금 앉은 사람·남은 예약) |
 | `POST /api/admin/floors/{층 ID}/plan/draft` | 초안 만들기 `{source: published\|blank\|archived\|floor, plan_id?, floor_id?}`. 이미 있으면 409 `HAS_DRAFT` |
-| `PUT /api/admin/plans/{ID}` | 자동 저장 `{revision, geometry}` → `{revision, updated_at}`. 409 `REVISION`(먼저 저장한 곳이 있음, 서버 `revision` 포함), 423 `EDITING`(다른 사람이 편집 중), 422 `BAD_GEOMETRY` |
+| `PUT /api/admin/plans/{ID}` | 자동 저장 `{revision, geometry, width_m?, height_m?}` (도면 크기 10~300 m) → `{revision, updated_at}`. 409 `REVISION`(먼저 저장한 곳이 있음, 서버 `revision` 포함), 423 `EDITING`(다른 사람이 편집 중), 409 `SCHEDULED`(게시 예약 중), 422 `BAD_GEOMETRY` |
 | `POST /api/admin/plans/{ID}/heartbeat` | 편집 중 표시 (30초마다). `{take_over: true}`면 넘겨받기 |
 | `DELETE /api/admin/plans/{ID}` | 초안 버리기 |
 | `GET /api/admin/plans/{ID}/check` | 게시 전 점검: `summary`(좌석 수·새로·빠짐·옮김·번호 바뀜), `people`(자리가 없어지는 사람과 추천 자리), `rooms_removed`(남은 예약), `rooms_added`·`rooms_changed`, 고를 수 있는 자리·회의실, `problems` |
-| `POST /api/admin/plans/{ID}/publish` | 게시 `{revision, people: [{emp_no, to_key?}], rooms: [{room_id, action: MOVE\|CANCEL, to_key?}], note?}` |
+| `POST /api/admin/plans/{ID}/publish` | 게시 `{revision, people: [{emp_no, to_key?}], rooms: [{room_id, action: MOVE\|CANCEL, to_key?}], note?, effective_date?}`. `effective_date`(내일~1년)를 주면 게시 예약 → `{scheduled: {version, effective_at}}` |
+| `POST /api/admin/plans/{ID}/unschedule` | 게시 예약 취소 (다시 고칠 수 있는 초안으로) |
 
 - 책상 칸 하나가 좌석 하나이고, 칸 `id`가 `seats.plan_element_key`입니다. 같은 칸이면 같은 좌석이라 옮기거나 번호를 바꿔도
   앉은 사람은 그대로입니다. 초안에 없는 좌석은 `REMOVED`(지우지 않음), 새 칸은 새 좌석(같은 묶음의 가장 많은 구역·유형).
@@ -218,6 +222,38 @@ scripts/
   `RESERVATION_CANCELLED` 알림, `audit_logs`(`PLAN_DRAFT_CREATE`, `PLAN_TAKE_OVER`, `PLAN_DRAFT_DISCARD`, `PLAN_PUBLISH`).
   직원 화면에는 `floor` 이벤트 `kind: plan`이 가서 배너를 띄우고 5초 뒤 새로 읽습니다.
 - 목업 게시본(v0, 비율 좌표)은 초안을 만들 때 v1으로 바꿉니다(구역마다 좌석을 책상 묶음으로 맞춤).
+- **게시 예약**(`SCHEDULED`): 예약할 때는 고른 자리·회의실이 초안에 있는지만 보고, 없어지는 회의실은 예약이 없어도 모두
+  정해야 합니다(422 `ROOMS_UNRESOLVED`). 그날 0시(서울)에 서버 작업(`app/jobs.py`, 1분마다)이 같은 방식으로 게시하는데,
+  그사이 고른 자리가 찼으면 그 사람은 미배치, 옮길 회의실에 같은 시간 예약이 있으면 그 예약만 취소합니다. 실패하면 초안으로
+  돌리고 예약한 사람에게 `PLAN_PUBLISH_FAILED` 알림. 감사 기록 `PLAN_SCHEDULE`, `PLAN_UNSCHEDULE`, `PLAN_SCHEDULE_FAILED`.
+- **도면 크기**: 책상 크기는 미터로 고정(2.665 × 1.668 m)이라, 도면이 커지면 직원 화면의 좌석 비율이 작아집니다.
+  구역 모양(`zone_auto_shape`)도 층의 게시본 크기로 계산하고, 게시하면 그 층 구역 모양을 다시 계산합니다.
+
+## 팀 이사 도우미 API (`/api/admin/moves`, 목적지 층의 층 관리자 이상)
+
+| 요청 | 하는 일 |
+|---|---|
+| `GET /api/admin/moves/options` | 옮길 수 있는 팀(인원)과 목적지로 고를 수 있는 층 |
+| `GET /api/admin/moves/team?department_id=` | 그 팀 사람과 지금 자리 (`locked`: 날짜를 정한 변경이 걸려 있음) |
+| `POST /api/admin/moves` | `{department_id, to_floor_id, moves: [{emp_no, seat_id\|null}], effective_date?, note?, zone_ids?}` → 201 `{move: {id, scheduled, moved, unassigned, requests}}` |
+
+- `seat_id`가 null이면 미배치로(지금 자리만 끝냄). 목록에 없는 팀원은 그대로입니다.
+- 목적지 층에 "새 자리 배정" 묶음, 미배치로 보내는 사람이 앉은 층마다 "자리 비우기" 묶음을 만들어 같은 `move_group`으로
+  묶고 한 트랜잭션에 반영합니다(`change-sets`의 반영과 같은 규칙과 충돌 검사: 409 `CONFLICTS`). 미배치로 보내는 사람의 층도
+  층 관리자여야 합니다(403 `FLOOR_ADMIN_ONLY`). 고른 자리는 비어 있어야 하고, 함께 옮기는 팀원의 자리만 예외입니다.
+- `zone_ids`: 목적지 구역을 이 팀 구역으로 바꿉니다(날짜와 상관없이 바로). 다른 팀 사람이 앉아 있으면 409 `ZONE_OCCUPIED`.
+- 날짜를 정했으면 배치 화면 요청 목록에 예정으로 뜨고(`team_move: true`), 어느 층에서 "예정 취소"를 하든 함께 취소됩니다.
+- 감사 기록 `TEAM_MOVE`.
+
+## 정기 작업과 이력 정리
+
+- 서버가 켜져 있는 동안 `app/jobs.py`가 1분마다 게시 예약을 게시하고, 켜질 때와 그 뒤 하루마다 `purge_history()`
+  (`db/schema/09_retention.sql`)로 5년이 지난 이력을 지웁니다: 끝난 배정, 끝난 작업 묶음(남은 배정이 가리키지 않는 것),
+  지난 예약, 감사 기록, 알림, 로그인 기록, 오래전에 빠진 좌석. 도면 보관본은 모두 남습니다. 지운 개수는 `audit_logs`에
+  `HISTORY_PURGE`로 남습니다.
+- 서버를 여러 개 띄워도 DB 잠금(`pg_try_advisory_lock`)으로 한 곳에서만 돕니다.
+- 손으로: `python -m scripts.purge_history --dry-run`(개수만 보고 되돌리기), `--years 7`(보관 기간 바꾸기).
+
 
 ## 내 재실 상태 API (로그인 필요)
 

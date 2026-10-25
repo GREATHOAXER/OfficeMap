@@ -34,7 +34,9 @@ CREATE TABLE floor_plans (
     id                 bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     floor_id           bigint       NOT NULL REFERENCES floors(id),
     version            integer      NOT NULL,
-    status             varchar(10)  NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'PUBLISHED', 'ARCHIVED')),
+    -- SCHEDULED: 게시를 예약한 초안 (effective_at에 서버가 게시한다. 예약을 취소하면 다시 DRAFT)
+    status             varchar(10)  NOT NULL DEFAULT 'DRAFT'
+                       CHECK (status IN ('DRAFT', 'SCHEDULED', 'PUBLISHED', 'ARCHIVED')),
     background_file_id bigint REFERENCES files(id),       -- 원본 PDF 또는 변환 이미지
     background_opacity numeric(3,2) NOT NULL DEFAULT 1.00 CHECK (background_opacity BETWEEN 0 AND 1),
     width_m            numeric(6,2),                      -- 실제 폭·높이(m). 축척, 격자 맞춤용
@@ -51,10 +53,16 @@ CREATE TABLE floor_plans (
     revision           integer      NOT NULL DEFAULT 1,  -- 자동 저장마다 +1. 다른 탭·사람이 먼저 저장했으면 덮어쓰지 않는다
     editing_by         bigint REFERENCES employees(id),   -- 지금 편집 중인 사람 (한 초안은 한 사람이 편집)
     editing_heartbeat_at timestamptz,                     -- 편집 화면이 30초마다 알린다. 2분 넘게 없으면 잠금이 풀린다
-    UNIQUE (floor_id, version)
+    effective_at       timestamptz,                       -- 게시 예약 시각 (SCHEDULED)
+    publish_options    jsonb,                             -- 게시 예약 때 정한 것 {people: [{emp_no, to_key}], rooms: [...]}
+    scheduled_by       bigint REFERENCES employees(id),   -- 게시를 예약한 사람 (그날 이 사람 이름으로 게시된다)
+    UNIQUE (floor_id, version),
+    CHECK (status <> 'SCHEDULED' OR (effective_at IS NOT NULL AND scheduled_by IS NOT NULL))
 );
 CREATE UNIQUE INDEX floor_plans_one_published_idx ON floor_plans (floor_id) WHERE status = 'PUBLISHED';
-CREATE UNIQUE INDEX floor_plans_one_draft_idx ON floor_plans (floor_id) WHERE status = 'DRAFT';
+-- 층마다 고치는 중인 초안(게시 예약한 초안 포함)은 하나
+CREATE UNIQUE INDEX floor_plans_one_draft_idx ON floor_plans (floor_id) WHERE status IN ('DRAFT', 'SCHEDULED');
+CREATE INDEX floor_plans_scheduled_idx ON floor_plans (effective_at) WHERE status = 'SCHEDULED';
 
 -- 팀 구역: 한 팀(부서)이 쓰는 좌석 묶음 + 색 (예: 재무팀 · B, 공용 자율석 · Z)
 -- 구역의 원본은 "좌석 묶음"(seats.zone_id)이다. 도면에 칠하는 모양(shape)은 그 좌석들을 감싸서 자동으로 계산한
@@ -108,16 +116,20 @@ CREATE UNIQUE INDEX seats_floor_element_idx ON seats (floor_id, plan_element_key
 
 -- 구역 모양 자동 계산 ----------------------------------------------------------
 -- 구역 좌석들을 가까운 것끼리 덩어리로 묶고(책상을 붙여 놓은 섬), 덩어리마다 좌석을 감싸는 사각형을 만든다.
--- 좌석 크기는 화면(FloorPlan.tsx, frontend/src/lib/zoneShape.ts)과 같아야 한다. 위쪽 여백은 구역 이름표 자리
+-- 좌석 크기·여백은 미터로 정하고 층의 게시본 도면 크기로 나눠 비율로 쓴다 (없으면 50 × 30 m).
+-- 화면(frontend/src/lib/zoneShape.ts)과 같아야 한다. 위쪽 여백은 구역 이름표 자리
 CREATE OR REPLACE FUNCTION zone_auto_shape(p_zone bigint) RETURNS jsonb
 LANGUAGE plpgsql STABLE AS $$
 DECLARE
-    seat_w CONSTANT numeric := 0.0533;
-    seat_h CONSTANT numeric := 0.0556;
-    near   CONSTANT numeric := 0.05;    -- 좌석 사이가 이보다 가까우면 한 덩어리
-    pad_x  CONSTANT numeric := 0.01;
-    pad_t  CONSTANT numeric := 0.05;
-    pad_b  CONSTANT numeric := 0.03;
+    plan_w numeric;
+    plan_h numeric;
+    seat_w numeric;
+    seat_h numeric;
+    near_x numeric;    -- 좌석 사이가 이보다 가까우면 한 덩어리 (가로 2.5 m, 세로 1.5 m)
+    near_y numeric;
+    pad_x  numeric;
+    pad_t  numeric;
+    pad_b  numeric;
     xs numeric[];
     ys numeric[];
     label int[];
@@ -126,6 +138,18 @@ DECLARE
     changed boolean;
     rects jsonb;
 BEGIN
+    SELECT coalesce(p.width_m, 50), coalesce(p.height_m, 30) INTO plan_w, plan_h
+    FROM zones z LEFT JOIN floor_plans p ON p.floor_id = z.floor_id AND p.status = 'PUBLISHED'
+    WHERE z.id = p_zone;
+    plan_w := coalesce(plan_w, 50);
+    plan_h := coalesce(plan_h, 30);
+    seat_w := 2.665 / plan_w;
+    seat_h := 1.668 / plan_h;
+    near_x := 2.5 / plan_w;
+    near_y := 1.5 / plan_h;
+    pad_x := 0.5 / plan_w;
+    pad_t := 1.5 / plan_h;
+    pad_b := 0.9 / plan_h;
     SELECT array_agg(x ORDER BY id), array_agg(y ORDER BY id) INTO xs, ys
     FROM seats WHERE zone_id = p_zone AND status <> 'REMOVED';
     IF xs IS NULL THEN
@@ -139,7 +163,7 @@ BEGIN
         FOR i IN 1..n LOOP
             FOR j IN i + 1..n LOOP
                 IF label[i] <> label[j]
-                   AND abs(xs[i] - xs[j]) <= seat_w + near AND abs(ys[i] - ys[j]) <= seat_h + near THEN
+                   AND abs(xs[i] - xs[j]) <= seat_w + near_x AND abs(ys[i] - ys[j]) <= seat_h + near_y THEN
                     m := least(label[i], label[j]);
                     label[i] := m;
                     label[j] := m;

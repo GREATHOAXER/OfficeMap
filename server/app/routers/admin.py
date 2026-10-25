@@ -192,6 +192,8 @@ def overview(admin: CurrentAdmin) -> dict[str, Any]:
                    (SELECT count(*) FROM meeting_rooms m WHERE m.floor_id = f.id AND m.is_active)::int AS rooms,
                    EXISTS (SELECT 1 FROM floor_plans p WHERE p.floor_id = f.id AND p.status = 'PUBLISHED') AS published,
                    EXISTS (SELECT 1 FROM floor_plans p WHERE p.floor_id = f.id AND p.status = 'DRAFT') AS drafting,
+                   (SELECT p.effective_at FROM floor_plans p
+                    WHERE p.floor_id = f.id AND p.status = 'SCHEDULED') AS plan_scheduled_at,
                    last.updated_at AS plan_updated_at, last.updated_by AS plan_updated_by
             FROM floors f
             LEFT JOIN LATERAL (
@@ -256,6 +258,8 @@ def overview(admin: CurrentAdmin) -> dict[str, Any]:
         return "ZONE" if any(g["role"] == "ZONE_ADMIN" and g["floor_id"] == floor["id"] for g in mine) else None
 
     def plan_state(floor: dict[str, Any]) -> str:
+        if floor["plan_scheduled_at"]:
+            return "SCHEDULED"
         if floor["published"]:
             return "EDITING" if floor["drafting"] else "PUBLISHED"
         return "DRAFT" if floor["drafting"] else "NONE"
@@ -296,6 +300,7 @@ def overview(admin: CurrentAdmin) -> dict[str, Any]:
                         "zone_admins": len(holders("ZONE_ADMIN", "floor_id", f["id"])),
                         "plan": plan_state(f),
                         "plan_updated_at": f["plan_updated_at"],
+                        "plan_scheduled_at": f["plan_scheduled_at"],  # 게시 예약 시각
                         "plan_updated_by": f["plan_updated_by"],
                         "in_scope": in_scope(f),
                     }

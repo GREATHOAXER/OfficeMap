@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Dialog from "@/components/Dialog";
 import type { PublishCheck } from "@/lib/api";
-import { shortDate } from "@/lib/dates";
+import { addDays, kstDate, shortDate } from "@/lib/dates";
 import ui from "../seating/seating.module.css";
 import styles from "./plans.module.css";
 
@@ -19,6 +19,10 @@ export type PublishResult = {
 };
 
 type RoomChoice = { action: "CANCEL" | "MOVE"; to_key: string | null };
+export type ScheduleResult = { version: number; effective_at: string };
+
+const MAX_SCHEDULE_DAYS = 365; // 서버와 같다 (1년 안)
+const todayKst = () => kstDate(new Date().toISOString());
 
 type Props = {
   planId: number;
@@ -27,6 +31,8 @@ type Props = {
   first: boolean;
   onClose: () => void;
   onPublished: (result: PublishResult) => void;
+  /** 날짜를 정해 게시를 예약했다 */
+  onScheduled: (result: ScheduleResult) => void;
   /** 도면에서 고칠 요소로 가기 */
   onShowElement: (id: string) => void;
   onExpired: () => void;
@@ -64,6 +70,8 @@ function errorText(code: string | undefined): string {
       return "예약이 남은 회의실을 어떻게 할지 골라 주세요";
     case "EDITING":
       return "다른 관리자가 이 초안을 편집 중이에요";
+    case "BAD_DATE":
+      return "게시 날짜는 내일부터 1년 안에서 고르세요";
     case "ROOM_TIME_TAKEN":
       return "옮길 회의실에 같은 시간 예약이 있어요. 다른 회의실을 고르거나 취소를 고르세요";
     case "SEAT_CODE_TAKEN":
@@ -81,6 +89,7 @@ export default function PublishDialog({
   first,
   onClose,
   onPublished,
+  onScheduled,
   onShowElement,
   onExpired,
 }: Props) {
@@ -91,6 +100,7 @@ export default function PublishDialog({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [triedSubmit, setTriedSubmit] = useState(false);
+  const [when, setWhen] = useState({ later: false, date: addDays(todayKst(), 1) });
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/admin/plans/${planId}/check`).catch(() => null);
@@ -114,12 +124,10 @@ export default function PublishDialog({
     const roomKeys = new Set(data.room_targets.map((t) => t.key));
     setRooms((prev) =>
       Object.fromEntries(
-        data.rooms_removed
-          .filter((r) => r.upcoming > 0)
-          .map((r) => {
-            const old = prev[r.id];
-            return [r.id, old && (old.action === "CANCEL" || roomKeys.has(old.to_key ?? "")) ? old : null];
-          }),
+        data.rooms_removed.map((r) => {
+          const old = prev[r.id];
+          return [r.id, old && (old.action === "CANCEL" || roomKeys.has(old.to_key ?? "")) ? old : null];
+        }),
       ),
     );
   }, [planId, onExpired]);
@@ -144,7 +152,8 @@ export default function PublishDialog({
 
   const s = check.summary;
   const blocking = check.problems.length > 0;
-  const roomsToDecide = check.rooms_removed.filter((r) => r.upcoming > 0);
+  // 바로 게시하면 남은 예약이 있는 회의실만, 예약해 두면 그사이 예약이 생길 수 있어 없어지는 회의실 모두 정한다
+  const roomsToDecide = check.rooms_removed.filter((r) => r.upcoming > 0 || when.later);
   const undecided = roomsToDecide.filter((r) => !rooms[r.id]);
   const chosen = new Map<string, string>(); // 자리 → 고른 사람
   for (const [emp, key] of Object.entries(people)) if (key) chosen.set(key, emp);
@@ -167,7 +176,13 @@ export default function PublishDialog({
     if (!check) return;
     setTriedSubmit(true);
     if (blocking || undecided.length > 0) {
-      setError(blocking ? "게시 전에 고칠 것이 있어요" : "예약이 남은 회의실을 어떻게 할지 골라 주세요");
+      setError(
+        blocking
+          ? "게시 전에 고칠 것이 있어요"
+          : when.later
+            ? "없어지는 회의실의 예약을 어떻게 할지 골라 주세요"
+            : "예약이 남은 회의실을 어떻게 할지 골라 주세요",
+      );
       return;
     }
     setBusy(true);
@@ -183,6 +198,7 @@ export default function PublishDialog({
             .map(([emp_no, to_key]) => ({ emp_no, to_key })),
           rooms: roomsToDecide.map((r) => ({ room_id: r.id, ...rooms[r.id]! })),
           note: note.trim() || null,
+          effective_date: when.later ? when.date : null,
         }),
       });
       if (res.status === 401) {
@@ -198,7 +214,8 @@ export default function PublishDialog({
         }
         return;
       }
-      onPublished(body.published as PublishResult);
+      if (body.scheduled) onScheduled(body.scheduled as ScheduleResult);
+      else onPublished(body.published as PublishResult);
     } catch {
       setError("네트워크 오류로 게시하지 못했어요");
     } finally {
@@ -223,7 +240,7 @@ export default function PublishDialog({
             disabled={busy || blocking}
             onClick={() => void publish()}
           >
-            {busy ? "게시 중…" : "게시하기"}
+            {busy ? "게시 중…" : when.later ? "게시 예약하기" : "게시하기"}
           </button>
         </>
       }
@@ -344,7 +361,7 @@ export default function PublishDialog({
                           : "남은 예약 없음"}
                       </small>
                     </span>
-                    {r.upcoming > 0 && (
+                    {(r.upcoming > 0 || when.later) && (
                       <select
                         aria-label={`${r.name} 예약`}
                         aria-invalid={(triedSubmit && !choice) || undefined}
@@ -375,8 +392,10 @@ export default function PublishDialog({
             </ul>
             {roomsToDecide.length > 0 && (
               <p className={ui.hint}>
-                옮기면 같은 시간에 그 회의실로 바뀌어요 (겹치는 예약이 있으면 게시되지 않아요). 어느 쪽이든 예약한
-                사람에게 알림이 가요.
+                {when.later
+                  ? "그날 남아 있는 예약에 적용해요. 옮길 회의실에 같은 시간 예약이 있으면 그 예약만 취소돼요."
+                  : "옮기면 같은 시간에 그 회의실로 바뀌어요 (겹치는 예약이 있으면 게시되지 않아요)."}{" "}
+                어느 쪽이든 예약한 사람에게 알림이 가요.
                 {roomsToDecide.some((r) => rooms[r.id]?.action === "MOVE") &&
                   ` 옮길 곳: ${roomsToDecide
                     .filter((r) => rooms[r.id]?.action === "MOVE")
@@ -386,6 +405,44 @@ export default function PublishDialog({
             )}
           </section>
         )}
+
+        <fieldset className={ui.when}>
+          <legend>언제 게시할까요</legend>
+          <label>
+            <input
+              type="radio"
+              name="publish-when"
+              checked={!when.later}
+              onChange={() => setWhen({ ...when, later: false })}
+            />
+            지금
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="publish-when"
+              checked={when.later}
+              onChange={() => setWhen({ ...when, later: true })}
+            />
+            날짜 지정
+            <input
+              type="date"
+              className={ui.dateInput}
+              aria-label="게시 날짜"
+              value={when.date}
+              min={addDays(todayKst(), 1)}
+              max={addDays(todayKst(), MAX_SCHEDULE_DAYS)}
+              onChange={(e) => setWhen({ later: true, date: e.target.value })}
+            />
+            <span className={ui.muted}>그날 0시</span>
+          </label>
+          {when.later && (
+            <p className={ui.hint}>
+              그날 0시에 서버가 게시해요. 그때까지 초안은 고칠 수 없고(예약을 취소하면 다시 고쳐요), 그사이 고른 자리에
+              다른 사람이 배정되면 그 사람은 미배치가 돼요. 이사·리모델링처럼 날이 정해진 변경에 써요.
+            </p>
+          )}
+        </fieldset>
 
         <label className={ui.noteField}>
           <span>게시 메모 (보관본 목록에 남아요, 선택)</span>

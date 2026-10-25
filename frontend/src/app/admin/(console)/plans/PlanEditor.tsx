@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Dialog from "@/components/Dialog";
+import FloorExportDialog from "@/components/FloorExportDialog";
 import type {
   Admin,
   DeskGroup,
@@ -12,15 +13,27 @@ import type {
   PlanElement,
   PlanGeometry,
   PlanRect,
+  PublishCheck,
   SpaceKind,
 } from "@/lib/api";
-import { agoText, kstDate } from "@/lib/dates";
-import { groupSize, makeDeskGroup, newId, problemsOf, snapTo, SPACE_KINDS, TYPE_LABEL } from "@/lib/planGeometry";
+import { agoText, kstDate, shortDate } from "@/lib/dates";
+import { drawingFromPlan } from "@/lib/floorDrawing";
+import {
+  boxOf,
+  copyElement,
+  groupSize,
+  makeDeskGroup,
+  newId,
+  problemsOf,
+  snapTo,
+  SPACE_KINDS,
+  TYPE_LABEL,
+} from "@/lib/planGeometry";
 import { useNow } from "@/lib/useNow";
 import ui from "../seating/seating.module.css";
 import PlanCanvas, { type DrawTool, type Tool } from "./PlanCanvas";
 import PlanPanel from "./PlanPanel";
-import PublishDialog, { type PublishResult } from "./PublishDialog";
+import PublishDialog, { type PublishResult, type ScheduleResult } from "./PublishDialog";
 import styles from "./plans.module.css";
 
 const EXPIRED = "/admin/login?reason=expired&next=/admin/plans";
@@ -53,6 +66,19 @@ const PRESETS: { key: string; label: string; layout: DeskGroup["layout"]; rows: 
 const HATCHED: SpaceKind[] = ["core", "restroom", "service", "restricted"];
 
 type Toast = { text: string; tone?: "error" } | null;
+/** 복사한 요소 (층 사이 붙여넣기) */
+type Clip = { element: PlanElement; floorId: number; floor: string };
+const CLIP_KEY = "officemap.plan.clipboard";
+
+function readClip(): Clip | null {
+  try {
+    const raw = localStorage.getItem(CLIP_KEY);
+    const clip = raw ? (JSON.parse(raw) as Clip) : null;
+    return clip?.element?.type ? clip : null;
+  } catch {
+    return null;
+  }
+}
 type SaveState = { state: "clean" | "dirty" | "saving" | "saved" | "error"; message?: string; at?: string };
 /** 잠김: 다른 사람이 편집 중(by) 이거나, 그 사람이 나가서 이어 받을 수 있음(by = null) */
 type Lock = { by: string | null } | null;
@@ -90,7 +116,18 @@ export default function PlanEditor({ admin, initial, notice }: Props) {
 
   return (
     <div className={ui.page}>
-      {data.draft ? (
+      {data.draft?.status === "SCHEDULED" ? (
+        <ScheduledView
+          key={`scheduled-${data.draft.id}`}
+          admin={admin}
+          data={data}
+          setData={setData}
+          reload={reload}
+          showToast={showToast}
+          goFloor={goFloor}
+          notice={notice}
+        />
+      ) : data.draft ? (
         <DraftEditor
           key={data.draft.id}
           admin={admin}
@@ -344,16 +381,22 @@ function StartScreen({ admin, data, setData, reload, showToast, goFloor, notice 
 
 // 초안 편집 --------------------------------------------------------------------
 
-type History = { past: PlanGeometry[]; future: PlanGeometry[] };
+/** 되돌리기 단위: 도면 모양과 크기 (m) */
+type Doc = { geometry: PlanGeometry; width: number; height: number };
+type History = { past: Doc[]; future: Doc[] };
 
 function DraftEditor({ admin, data, reload, showToast, goFloor, notice }: ScreenProps) {
   const router = useRouter();
   const draft = data.draft!;
   const planId = draft.id;
-  const { width_m: width, height_m: height } = data.size;
   const now = useNow();
 
-  const [geometry, setGeometry] = useState<PlanGeometry>(draft.geometry);
+  const [doc, setDoc] = useState<Doc>(() => ({
+    geometry: draft.geometry,
+    width: data.size.width_m,
+    height: data.size.height_m,
+  }));
+  const { geometry, width, height } = doc;
   const [history, setHistory] = useState<History>({ past: [], future: [] });
   const [tool, setTool] = useState<Tool>("select");
   const [spaceKind, setSpaceKind] = useState<SpaceKind>("lounge");
@@ -369,6 +412,7 @@ function DraftEditor({ admin, data, reload, showToast, goFloor, notice }: Screen
   const [conflict, setConflict] = useState<{ revision: number } | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [discarding, setDiscarding] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [busy, setBusy] = useState(false);
   const pageRef = useRef<HTMLDivElement>(null);
   const [cols, setCols] = useState<1 | 2 | 3>(2);
@@ -386,13 +430,13 @@ function DraftEditor({ admin, data, reload, showToast, goFloor, notice }: Screen
   }, []);
 
   // 저장·이벤트 처리에서 읽는 최신 값
-  const geoRef = useRef(geometry);
+  const docRef = useRef(doc);
   const revRef = useRef(draft.revision);
   const dirtyRef = useRef(false);
   const blockedRef = useRef(false); // 잠김·충돌 중에는 저장하지 않는다
   const lastEdit = useRef<{ key: string | null; at: number }>({ key: null, at: 0 });
   useEffect(() => {
-    geoRef.current = geometry;
+    docRef.current = doc;
     blockedRef.current = readOnly || conflict !== null;
   });
 
@@ -420,7 +464,12 @@ function DraftEditor({ admin, data, reload, showToast, goFloor, notice }: Screen
         const res = await fetch(`/api/admin/plans/${planId}`, {
           method: "PUT",
           headers: json,
-          body: JSON.stringify({ revision: revRef.current, geometry: geoRef.current }),
+          body: JSON.stringify({
+            revision: revRef.current,
+            geometry: docRef.current.geometry,
+            width_m: docRef.current.width,
+            height_m: docRef.current.height,
+          }),
         });
         if (res.status === 401) {
           router.replace(EXPIRED);
@@ -481,7 +530,9 @@ function DraftEditor({ admin, data, reload, showToast, goFloor, notice }: Screen
     if (!fresh.draft) return;
     revRef.current = fresh.draft.revision;
     dirtyRef.current = false;
-    setGeometry(fresh.draft.geometry);
+    const next = { geometry: fresh.draft.geometry, width: fresh.size.width_m, height: fresh.size.height_m };
+    docRef.current = next;
+    setDoc(next);
     setSave({ state: "clean", at: fresh.draft.updated_at });
   }, []);
 
@@ -545,56 +596,47 @@ function DraftEditor({ admin, data, reload, showToast, goFloor, notice }: Screen
   }, [readOnly, claim, reload, adopt, planId]);
 
   // 다른 관리자가 이 층에 게시하거나 좌석을 바꾸면 다시 읽는다 (앉은 사람·예약 표시)
-  const refreshRef = useRef(refresh);
-  useEffect(() => {
-    refreshRef.current = refresh;
-  });
-  useEffect(() => {
-    let source: EventSource | null = null;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const later = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => void refreshRef.current(), 500);
-    };
-    source = new EventSource("/api/admin/stream");
-    source.addEventListener("floor", (event) => {
-      const change = JSON.parse((event as MessageEvent<string>).data) as FloorEvent;
-      if (change.floor_id === data.floor.id && change.kind !== "requests") later();
-    });
-    return () => {
-      clearTimeout(timer);
-      source?.close();
-    };
-  }, [data.floor.id]);
+  useFloorChanges(data.floor.id, refresh);
 
   // 바꾸기 ---------------------------------------------------------------------
 
   const commit = useCallback(
-    (next: PlanGeometry, key?: string) => {
+    (next: Doc, key?: string) => {
       if (blockedRef.current) return;
       const at = Date.now();
       const coalesce = !!key && lastEdit.current.key === key && at - lastEdit.current.at < COALESCE_MS;
       lastEdit.current = { key: key ?? null, at };
-      const prev = geoRef.current;
+      const prev = docRef.current;
       setHistory((h) => ({ past: coalesce ? h.past : [...h.past.slice(-(HISTORY_MAX - 1)), prev], future: [] }));
-      geoRef.current = next;
-      setGeometry(next);
+      docRef.current = next;
+      setDoc(next);
       markDirty();
     },
     [markDirty],
   );
 
+  const commitGeometry = useCallback(
+    (geometry: PlanGeometry, key?: string) => commit({ ...docRef.current, geometry }, key),
+    [commit],
+  );
+
   const replaceElement = useCallback(
     (el: PlanElement, key?: string) => {
-      const g = geoRef.current;
-      commit({ ...g, elements: g.elements.map((e) => (e.id === el.id ? el : e)) }, key);
+      const g = docRef.current.geometry;
+      commitGeometry({ ...g, elements: g.elements.map((e) => (e.id === el.id ? el : e)) }, key);
     },
+    [commitGeometry],
+  );
+
+  /** 도면 크기 바꾸기: 요소는 그 자리(m)에 두고 도면만 넓히거나 줄인다 (밖으로 나간 요소는 "고칠 것"에 뜬다) */
+  const resizePlan = useCallback(
+    (size: { width: number; height: number }) => commit({ ...docRef.current, ...size }, "plan-size"),
     [commit],
   );
 
   function addElement(el: PlanElement) {
-    const g = geoRef.current;
-    commit({ ...g, elements: [...g.elements, el] });
+    const g = docRef.current.geometry;
+    commitGeometry({ ...g, elements: [...g.elements, el] });
     setSelectedId(el.id);
     setTool("select");
   }
@@ -604,9 +646,9 @@ function DraftEditor({ admin, data, reload, showToast, goFloor, notice }: Screen
     setHistory((h) => {
       if (h.past.length === 0) return h;
       const prev = h.past[h.past.length - 1];
-      const current = geoRef.current;
-      geoRef.current = prev;
-      setGeometry(prev);
+      const current = docRef.current;
+      docRef.current = prev;
+      setDoc(prev);
       return { past: h.past.slice(0, -1), future: [current, ...h.future] };
     });
     lastEdit.current = { key: null, at: 0 };
@@ -618,9 +660,9 @@ function DraftEditor({ admin, data, reload, showToast, goFloor, notice }: Screen
     setHistory((h) => {
       if (h.future.length === 0) return h;
       const [next, ...rest] = h.future;
-      const current = geoRef.current;
-      geoRef.current = next;
-      setGeometry(next);
+      const current = docRef.current;
+      docRef.current = next;
+      setDoc(next);
       return { past: [...h.past, current], future: rest };
     });
     lastEdit.current = { key: null, at: 0 };
@@ -628,7 +670,7 @@ function DraftEditor({ admin, data, reload, showToast, goFloor, notice }: Screen
   }, [markDirty]);
 
   function nextRoomName(base = "회의실"): string {
-    const names = new Set(geoRef.current.elements.flatMap((e) => (e.type === "room" ? [e.name] : [])));
+    const names = new Set(docRef.current.geometry.elements.flatMap((e) => (e.type === "room" ? [e.name] : [])));
     for (let n = 1; ; n++) {
       const name = `${base} ${n}`;
       if (!names.has(name)) return name;
@@ -649,12 +691,12 @@ function DraftEditor({ admin, data, reload, showToast, goFloor, notice }: Screen
 
   function onPlaceDesk(point: { x: number; y: number }) {
     const p = PRESETS.find((x) => x.key === preset) ?? PRESETS[0];
-    const size = groupSize(p, width, height);
+    const size = groupSize(p);
     const group = makeDeskGroup(
       snapTo(point.x - size.w / 2, snap),
       snapTo(point.y - size.h / 2, snap),
       p,
-      geoRef.current,
+      docRef.current.geometry,
     );
     addElement(group);
     showToast(`책상 ${group.cells.length}석을 놓았어요 (${group.cells[0].code}부터). 오른쪽에서 번호를 고칠 수 있어요`);
@@ -680,36 +722,64 @@ function DraftEditor({ admin, data, reload, showToast, goFloor, notice }: Screen
   );
 
   const deleteSelected = useCallback(() => {
-    const g = geoRef.current;
+    const g = docRef.current.geometry;
     const el = g.elements.find((e) => e.id === selectedId);
     if (!el) return;
-    commit({ ...g, elements: g.elements.filter((e) => e.id !== el.id) });
+    commitGeometry({ ...g, elements: g.elements.filter((e) => e.id !== el.id) });
     setSelectedId(null);
     showToast(lossText(el) ?? `${TYPE_LABEL[el.type]}을 지웠어요 · 되돌리기 Ctrl+Z`);
-  }, [selectedId, commit, lossText, showToast]);
+  }, [selectedId, commitGeometry, lossText, showToast]);
 
-  const duplicateSelected = useCallback(() => {
-    const g = geoRef.current;
-    const el = g.elements.find((e) => e.id === selectedId);
-    if (!el) return;
-    let copy: PlanElement;
-    if (el.type === "desk_group") {
-      const prefix = el.cells.find((c) => c.desk && c.code)?.code.split("-")[0] || "N";
-      const made = makeDeskGroup(el.x + 1, el.y + 1, el, g, prefix);
-      copy = { ...made, cells: made.cells.map((c, i) => ({ ...c, desk: el.cells[i].desk })) };
-    } else if (el.type === "room") {
-      copy = {
-        ...el,
-        id: newId("room"),
-        x: el.x + 1,
-        y: el.y + 1,
-        name: nextRoomName(el.name.replace(/\s*\d+$/, "") || "회의실"),
-      };
-    } else {
-      copy = { ...el, id: newId(el.type), x: el.x + 1, y: el.y + 1 };
+  /** 복사본을 넣는다. 회의실 이름이 겹치면 번호를 붙인다 */
+  function placeCopy(el: PlanElement, dx: number, dy: number) {
+    const g = docRef.current.geometry;
+    const copy = copyElement(el, g, dx, dy);
+    if (copy.type === "room" && g.elements.some((e) => e.type === "room" && e.name === copy.name)) {
+      copy.name = nextRoomName(copy.name.replace(/\s*\d+$/, "") || "회의실");
     }
     addElement(copy);
+    return copy;
+  }
+
+  const duplicateSelected = useCallback(() => {
+    const el = docRef.current.geometry.elements.find((e) => e.id === selectedId);
+    if (el) placeCopy(el, 1, 1);
   }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 층 사이 복사·붙여넣기: 이 브라우저의 다른 층 도면 편집 화면에서도 붙여 넣을 수 있게 localStorage에 둔다
+  const [clip, setClip] = useState<Clip | null>(null);
+  useEffect(() => {
+    const read = () => setClip(readClip());
+    read();
+    window.addEventListener("storage", read);
+    return () => window.removeEventListener("storage", read);
+  }, []);
+
+  const copySelected = useCallback(() => {
+    const el = docRef.current.geometry.elements.find((e) => e.id === selectedId);
+    if (!el) return;
+    const next: Clip = { element: el, floorId: data.floor.id, floor: data.floor.name };
+    try {
+      localStorage.setItem(CLIP_KEY, JSON.stringify(next));
+    } catch {
+      // 저장소를 못 쓰면 이 화면 안에서만 붙여 넣는다
+    }
+    setClip(next);
+    showToast(`복사했어요: ${TYPE_LABEL[el.type]} · 다른 층 도면에서도 Ctrl+V로 붙여 넣을 수 있어요`);
+  }, [selectedId, data.floor.id, data.floor.name, showToast]);
+
+  const paste = useCallback(() => {
+    const c = readClip() ?? clip;
+    if (!c || blockedRef.current) return;
+    // 같은 층이면 옆으로 1 m, 다른 층이면 같은 자리 (도면 밖으로 나가면 안으로 당긴다)
+    const offset = c.floorId === data.floor.id ? 1 : 0;
+    const box = boxOf(c.element);
+    const { width: W, height: H } = docRef.current;
+    const x = Math.min(Math.max(c.element.x + offset, 0), Math.max(W - box.w, 0));
+    const y = Math.min(Math.max(c.element.y + offset, 0), Math.max(H - box.h, 0));
+    const copy = placeCopy(c.element, x - c.element.x, y - c.element.y);
+    showToast(`붙여 넣었어요: ${TYPE_LABEL[copy.type]}${c.floorId !== data.floor.id ? ` (${c.floor}에서)` : ""}`);
+  }, [clip, data.floor.id, showToast]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 키보드: Delete 지우기, 방향키 옮기기, Ctrl+Z/Y 되돌리기·다시, Ctrl+D 복제, Esc 놓기
   useEffect(() => {
@@ -733,6 +803,17 @@ function DraftEditor({ admin, data, reload, showToast, goFloor, notice }: Screen
         else setSelectedId(null);
         return;
       }
+      if (!readOnly && mod && key === "v") {
+        event.preventDefault();
+        paste();
+        return;
+      }
+      // 복사는 보기만 할 때도 된다 (바꾸는 것이 없다)
+      if (selectedId && mod && key === "c") {
+        event.preventDefault();
+        copySelected();
+        return;
+      }
       if (readOnly || !selectedId) return;
       if (mod && key === "d") {
         event.preventDefault();
@@ -753,7 +834,7 @@ function DraftEditor({ admin, data, reload, showToast, goFloor, notice }: Screen
       const dir = arrows[event.key];
       if (!dir) return;
       event.preventDefault();
-      const el = geoRef.current.elements.find((e) => e.id === selectedId);
+      const el = docRef.current.geometry.elements.find((e) => e.id === selectedId);
       if (!el) return;
       const step = event.shiftKey ? 1 : snap ? 0.5 : 0.1;
       replaceElement(
@@ -763,7 +844,19 @@ function DraftEditor({ admin, data, reload, showToast, goFloor, notice }: Screen
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [tool, readOnly, selectedId, snap, undo, redo, deleteSelected, duplicateSelected, replaceElement]);
+  }, [
+    tool,
+    readOnly,
+    selectedId,
+    snap,
+    undo,
+    redo,
+    deleteSelected,
+    duplicateSelected,
+    copySelected,
+    paste,
+    replaceElement,
+  ]);
 
   // 게시 · 버리기 ---------------------------------------------------------------
 
@@ -786,6 +879,15 @@ function DraftEditor({ admin, data, reload, showToast, goFloor, notice }: Screen
     ].filter(Boolean);
     showToast(
       `${data.floor.name} 도면을 게시했어요 (v${result.version})${parts.length ? ` · ${parts.join(" · ")}` : ""}`,
+    );
+    await reload();
+  }
+
+  async function onScheduled(result: ScheduleResult) {
+    setPublishing(false);
+    dirtyRef.current = false;
+    showToast(
+      `${data.floor.name} 도면 게시를 예약했어요: ${shortDate(result.effective_at)} 0시 (v${result.version}). 그때까지 직원 화면은 그대로예요`,
     );
     await reload();
   }
@@ -931,7 +1033,9 @@ function DraftEditor({ admin, data, reload, showToast, goFloor, notice }: Screen
       onChange={replaceElement}
       onDelete={deleteSelected}
       onDuplicate={duplicateSelected}
+      onCopy={copySelected}
       onSelect={setSelectedId}
+      onResize={resizePlan}
       onNotice={(text) => showToast(text)}
     />
   );
@@ -939,7 +1043,7 @@ function DraftEditor({ admin, data, reload, showToast, goFloor, notice }: Screen
   const hint = readOnly
     ? "보기만 할 수 있어요. 요소를 누르면 속성을 볼 수 있어요."
     : tool === "select"
-      ? "요소를 눌러 고르고 끌어서 옮겨요. 손잡이로 크기를 바꾸고, 방향키로 조금씩(Shift는 1m), Delete로 지워요."
+      ? "요소를 눌러 고르고 끌어서 옮겨요. 손잡이로 크기를 바꾸고, 방향키로 조금씩(Shift는 1m), Delete로 지워요. Ctrl+C·Ctrl+V로 다른 층 도면에도 붙여 넣어요."
       : tool === "desk"
         ? `도면을 누르면 ${PRESETS.find((p) => p.key === preset)?.label} 묶음이 놓여요. Esc로 그만 놓기`
         : `끌어서 ${tool === "space" ? SPACE_KINDS.find((k) => k.kind === spaceKind)?.label : TYPE_LABEL[tool]} 사각형을 그려요. 누르기만 하면 ${DEFAULT_SIZE[tool].w}×${DEFAULT_SIZE[tool].h}m로 놓여요.`;
@@ -965,6 +1069,9 @@ function DraftEditor({ admin, data, reload, showToast, goFloor, notice }: Screen
           </span>
         }
       >
+        <button type="button" className={ui.btn} onClick={() => setExporting(true)}>
+          내보내기
+        </button>
         <button type="button" className={ui.btn} disabled={readOnly || busy} onClick={() => setDiscarding(true)}>
           초안 버리기
         </button>
@@ -1032,6 +1139,17 @@ function DraftEditor({ admin, data, reload, showToast, goFloor, notice }: Screen
                 title="다시 하기 (Ctrl+Shift+Z)"
               >
                 다시 하기
+              </button>
+              <button
+                type="button"
+                className={ui.btn}
+                onClick={paste}
+                disabled={readOnly || !clip}
+                title={
+                  clip ? `붙여넣기 (Ctrl+V): ${clip.floor} ${TYPE_LABEL[clip.element.type]}` : "복사한 요소가 없어요"
+                }
+              >
+                붙여넣기
               </button>
             </div>
             <span className={styles.coords} aria-live="off">
@@ -1102,12 +1220,22 @@ function DraftEditor({ admin, data, reload, showToast, goFloor, notice }: Screen
           first={!data.published}
           onClose={() => setPublishing(false)}
           onPublished={(r) => void onPublished(r)}
+          onScheduled={(r) => void onScheduled(r)}
           onShowElement={(id) => {
             setPublishing(false);
             setTool("select");
             setSelectedId(id);
           }}
           onExpired={() => router.replace(EXPIRED)}
+        />
+      )}
+
+      {exporting && (
+        <FloorExportDialog
+          drawing={drawingFromPlan(geometry, width, height, data.live)}
+          title={`${data.floor.site.name} ${data.floor.name} 도면 초안 v${draft.version}`}
+          fileBase={`${data.floor.name}-도면초안-v${draft.version}`}
+          onClose={() => setExporting(false)}
         />
       )}
 
@@ -1133,6 +1261,226 @@ function DraftEditor({ admin, data, reload, showToast, goFloor, notice }: Screen
           </p>
         </div>
       </Dialog>
+    </>
+  );
+}
+
+/** 이 층에 게시·좌석 변경이 생기면 (조금 모았다가) 다시 읽는다. 관리자 화면 알림(/api/admin/stream)을 쓴다 */
+function useFloorChanges(floorId: number, onChange: () => unknown) {
+  const latest = useRef(onChange);
+  useEffect(() => {
+    latest.current = onChange;
+  });
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const source = new EventSource("/api/admin/stream");
+    source.addEventListener("floor", (event) => {
+      const change = JSON.parse((event as MessageEvent<string>).data) as FloorEvent;
+      if (change.floor_id !== floorId || change.kind === "requests") return;
+      clearTimeout(timer);
+      timer = setTimeout(() => void latest.current(), 500);
+    });
+    return () => {
+      clearTimeout(timer);
+      source.close();
+    };
+  }, [floorId]);
+}
+
+// 게시 예약 --------------------------------------------------------------------
+
+/** 게시를 예약한 초안: 고칠 수 없고 보기만. 예약을 취소하면 다시 초안이 된다 */
+function ScheduledView({ admin, data, setData, reload, showToast, goFloor, notice }: ScreenProps) {
+  const router = useRouter();
+  const draft = data.draft!;
+  const { width_m: width, height_m: height } = data.size;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [busy, setBusy] = useState(false);
+  const [check, setCheck] = useState<PublishCheck | null>(null);
+  useFloorChanges(data.floor.id, reload);
+
+  useEffect(() => {
+    let alive = true;
+    void fetch(`/api/admin/plans/${draft.id}/check`)
+      .then((res) => (res.ok ? (res.json() as Promise<PublishCheck>) : null))
+      .then((c) => alive && setCheck(c))
+      .catch(() => null);
+    return () => {
+      alive = false;
+    };
+  }, [draft.id, draft.revision]);
+
+  async function unschedule() {
+    setBusy(true);
+    const res = await fetch(`/api/admin/plans/${draft.id}/unschedule`, { method: "POST" }).catch(() => null);
+    setBusy(false);
+    if (res?.status === 401) {
+      router.replace(EXPIRED);
+      return;
+    }
+    if (!res?.ok) {
+      showToast("예약을 취소하지 못했어요. 이미 게시됐는지 확인하세요", "error");
+      await reload();
+      return;
+    }
+    setData((await res.json()) as PlanEditorData);
+    showToast("게시 예약을 취소했어요. 다시 고칠 수 있어요");
+  }
+
+  const codeOf = new Map(
+    draft.geometry.elements.flatMap((el) => (el.type === "desk_group" ? el.cells.map((c) => [c.id, c.code]) : [])),
+  );
+  const roomNameOf = new Map(
+    draft.geometry.elements.flatMap((el) => (el.type === "room" ? [[el.id, el.name] as const] : [])),
+  );
+  const chosen = new Map((draft.options?.people ?? []).map((p) => [p.emp_no, p.to_key]));
+  const roomChoice = new Map((draft.options?.rooms ?? []).map((r) => [r.room_id, r]));
+  const problems = problemsOf(draft.geometry, width, height);
+  const when = draft.effective_at ? `${shortDate(draft.effective_at)} 0시` : "";
+
+  return (
+    <>
+      <Header
+        admin={admin}
+        data={data}
+        goFloor={goFloor}
+        status={
+          <span className={ui.status} role="status">
+            초안 v{draft.version} · 게시 예약 {when}
+          </span>
+        }
+      >
+        <button type="button" className={`${ui.btn} ${ui.pri}`} disabled={busy} onClick={() => void unschedule()}>
+          예약 취소하고 고치기
+        </button>
+      </Header>
+      <p className={styles.banner} role="status">
+        이 도면은 {when}에 게시돼요{draft.scheduled_by ? ` (${draft.scheduled_by} 님이 예약)` : ""}. 그때까지 직원
+        화면은 지금 도면 그대로이고, 이 초안은 고칠 수 없어요.
+      </p>
+      {notice && <p className={ui.notice}>{notice}</p>}
+      <div className={`${ui.body} ${styles.body}`} data-cols={2}>
+        <div className={ui.center}>
+          <div className={ui.toolbar}>
+            <span className={styles.coords}>
+              {width} × {height} m
+            </span>
+            <div className={ui.zoom} role="group" aria-label="확대·축소">
+              <button
+                type="button"
+                aria-label="축소"
+                disabled={zoom <= ZOOM_STEPS[0]}
+                onClick={() => setZoom(ZOOM_STEPS[Math.max(0, ZOOM_STEPS.indexOf(zoom) - 1)])}
+              >
+                −
+              </button>
+              <button type="button" aria-label="원래 크기" onClick={() => setZoom(1)}>
+                {Math.round(zoom * 100)}%
+              </button>
+              <button
+                type="button"
+                aria-label="확대"
+                disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}
+                onClick={() => setZoom(ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, ZOOM_STEPS.indexOf(zoom) + 1)])}
+              >
+                +
+              </button>
+            </div>
+          </div>
+          <div className={ui.canvasCard}>
+            <PlanCanvas
+              geometry={draft.geometry}
+              width={width}
+              height={height}
+              zoom={zoom}
+              tool="select"
+              snap
+              readOnly
+              selectedId={selectedId}
+              live={data.live}
+              problemIds={new Set(problems.map((p) => p.elementId))}
+              onSelect={setSelectedId}
+              onDraw={() => undefined}
+              onPlaceDesk={() => undefined}
+              onChange={() => undefined}
+              onCursor={() => undefined}
+            />
+          </div>
+        </div>
+        <aside className={ui.right}>
+          <section className={`${ui.card} ${ui.selected}`} aria-labelledby="scheduled-title">
+            <h2 id="scheduled-title" className={ui.cardTitle}>
+              게시 예약 · {when}
+            </h2>
+            <dl className={styles.stats}>
+              <dt>예약한 사람</dt>
+              <dd>{draft.scheduled_by ?? "—"}</dd>
+              <dt>메모</dt>
+              <dd>{draft.note ?? "—"}</dd>
+              {check && (
+                <>
+                  <dt>좌석</dt>
+                  <dd>
+                    {check.summary.seats_before} → {check.summary.seats_after}석
+                  </dd>
+                </>
+              )}
+            </dl>
+          </section>
+          {check && check.people.length > 0 && (
+            <section className={ui.card} aria-labelledby="scheduled-people">
+              <h2 id="scheduled-people" className={ui.cardTitle}>
+                그날 책상이 없어지는 사람 (지금 기준)
+              </h2>
+              <ul className={styles.problemList}>
+                {check.people.map((p) => {
+                  const key = chosen.get(p.emp_no);
+                  return (
+                    <li key={p.emp_no} className={ui.hint}>
+                      {p.name} {p.rank} · {p.seat_code} → {key ? (codeOf.get(key) ?? "새 자리") : "미배치"}
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className={ui.hint}>그사이 고른 자리에 다른 사람이 배정되면 그 사람은 미배치가 돼요.</p>
+            </section>
+          )}
+          {check && check.rooms_removed.length > 0 && (
+            <section className={ui.card} aria-labelledby="scheduled-rooms">
+              <h2 id="scheduled-rooms" className={ui.cardTitle}>
+                그날 없어지는 회의실
+              </h2>
+              <ul className={styles.problemList}>
+                {check.rooms_removed.map((r) => {
+                  const c = roomChoice.get(r.id);
+                  return (
+                    <li key={r.id} className={ui.hint}>
+                      {r.name} · 남은 예약 {r.upcoming}건 →{" "}
+                      {c?.action === "MOVE" ? `${roomNameOf.get(c.to_key ?? "") ?? "새 회의실"}로 옮기기` : "예약 취소"}
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
+          <PlanPanel
+            geometry={draft.geometry}
+            selected={draft.geometry.elements.find((e) => e.id === selectedId) ?? null}
+            width={width}
+            height={height}
+            live={data.live}
+            readOnly
+            problems={problems}
+            onChange={() => undefined}
+            onDelete={() => undefined}
+            onDuplicate={() => undefined}
+            onSelect={setSelectedId}
+            onResize={() => undefined}
+            onNotice={() => undefined}
+          />
+        </aside>
+      </div>
     </>
   );
 }

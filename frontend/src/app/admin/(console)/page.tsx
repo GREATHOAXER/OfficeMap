@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import PendingButton from "@/components/PendingButton";
 import { applyModeText, canEditPlan, canManage, canManageSite, LEVELS, PLAN_LABEL, ROLE_TASKS } from "@/lib/admin";
 import { type Admin, type AdminFloor, type AdminSite, ApiError, fetchAdmin, fetchAdminOverview } from "@/lib/api";
-import { kstDate } from "@/lib/dates";
+import { kstDate, shortDate } from "@/lib/dates";
 import styles from "./admin.module.css";
 
 // 아직 화면이 없는 작업 버튼 (누르면 "준비 중" 말풍선)
@@ -287,6 +287,7 @@ function FloorRow({ floor, siteWide, editPlan }: { floor: AdminFloor; siteWide: 
         <span className={styles.plan} data-plan={floor.plan}>
           <i aria-hidden="true" />
           {PLAN_LABEL[floor.plan]}
+          {floor.plan_scheduled_at && ` ${shortDate(floor.plan_scheduled_at)}`}
         </span>
       </td>
       <td data-label="최종 수정" className={`mono ${styles.updated}`}>

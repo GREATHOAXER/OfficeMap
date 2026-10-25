@@ -5,6 +5,8 @@ import type { DeskGroup, PlanEditorData, PlanElement, PlanGeometry, SpaceKind } 
 import {
   countsOf,
   EQUIPMENT,
+  MAX_SIZE,
+  MIN_SIZE,
   type PlanProblem,
   renumber,
   resizeGroup,
@@ -29,7 +31,11 @@ type Props = {
   onChange: (el: PlanElement, key?: string) => void;
   onDelete: () => void;
   onDuplicate: () => void;
+  /** 다른 층 도면에도 붙여 넣을 수 있게 복사 (없으면 복사 단추를 숨긴다) */
+  onCopy?: () => void;
   onSelect: (id: string | null) => void;
+  /** 도면 크기 (m) 바꾸기 */
+  onResize: (size: { width: number; height: number }) => void;
   /** 바꾼 것 때문에 앉은 사람의 책상이 빠졌을 때 알림 */
   onNotice: (text: string) => void;
 };
@@ -41,7 +47,7 @@ export default function PlanPanel(props: Props) {
   return <Properties key={selected.id} {...props} selected={selected} />;
 }
 
-function Summary({ geometry, width, height, live, problems, onSelect }: Props) {
+function Summary({ geometry, width, height, live, readOnly, problems, onSelect, onResize }: Props) {
   const counts = countsOf(geometry);
   const impact = impactOf(geometry, live);
   const kinds = { wall: 0, pillar: 0, space: 0 };
@@ -66,6 +72,31 @@ function Summary({ geometry, width, height, live, problems, onSelect }: Props) {
           </dd>
         </dl>
         <p className={ui.hint}>요소를 누르면 여기서 크기·이름·좌석 번호를 고칠 수 있어요.</p>
+        <fieldset disabled={readOnly} className={ui.when}>
+          <legend>도면 크기 (m)</legend>
+          <div className={styles.numbers}>
+            <Num
+              label="폭"
+              value={width}
+              min={MIN_SIZE}
+              max={MAX_SIZE}
+              step={0.5}
+              onChange={(w) => onResize({ width: w, height })}
+            />
+            <Num
+              label="높이"
+              value={height}
+              min={MIN_SIZE}
+              max={MAX_SIZE}
+              step={0.5}
+              onChange={(h) => onResize({ width, height: h })}
+            />
+          </div>
+          <p className={ui.hint}>
+            요소는 그 자리에 두고 도면만 넓히거나 줄여요. 책상 크기는 그대로라, 도면이 커지면 직원 화면의 좌석은 작게
+            보여요.
+          </p>
+        </fieldset>
       </section>
       <section className={ui.card} aria-label="게시하면 바뀌는 것">
         <h2 className={ui.cardTitle}>게시하면</h2>
@@ -81,7 +112,7 @@ function Summary({ geometry, width, height, live, problems, onSelect }: Props) {
             {impact.roomsRemoved.length}개{impact.reservations > 0 && ` · 남은 예약 ${impact.reservations}건`}
           </dd>
         </dl>
-        {impact.displaced.length > 0 && (
+        {impact.displaced.length > 0 && !readOnly && (
           <p className={styles.warn}>
             {impact.displaced.slice(0, 3).join(", ")}
             {impact.displaced.length > 3 && ` 외 ${impact.displaced.length - 3}명`} 님의 책상이 초안에 없어요. 게시할 때
@@ -137,6 +168,7 @@ function Properties({
   onChange,
   onDelete,
   onDuplicate,
+  onCopy,
   onNotice,
 }: Props & { selected: PlanElement }) {
   const el = selected;
@@ -148,16 +180,23 @@ function Properties({
     <section className={`${ui.card} ${ui.selected}`} aria-label={`${TYPE_LABEL[el.type]} 속성`}>
       <div className={ui.cardHead}>
         <h2 className={ui.cardTitle}>{titleOf(el)}</h2>
-        {!readOnly && (
-          <div className={ui.rowButtons}>
+        <div className={ui.rowButtons}>
+          {!readOnly && (
             <button type="button" className={ui.btn} onClick={onDuplicate} title="복제 (Ctrl+D)">
               복제
             </button>
+          )}
+          {onCopy && (
+            <button type="button" className={ui.btn} onClick={onCopy} title="복사 (Ctrl+C) · 다른 층 도면에서 붙여넣기">
+              복사
+            </button>
+          )}
+          {!readOnly && (
             <button type="button" className={`${ui.btn} ${ui.ghost}`} onClick={onDelete} title="지우기 (Delete)">
               지우기
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
       {mine.map((p, i) => (
         <p key={i} className={ui.conflictNote} role="alert">

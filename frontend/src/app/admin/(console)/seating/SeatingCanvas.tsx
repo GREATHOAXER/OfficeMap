@@ -4,13 +4,12 @@ import { type CSSProperties, type DragEvent, type PointerEvent, useRef, useState
 import office from "@/app/(app)/office.module.css";
 import type { Rect, SeatingData, SeatingSeat, SeatingZone } from "@/lib/api";
 import { shortDate } from "@/lib/dates";
+import { seatRatio } from "@/lib/planGeometry";
 import type { Layout, Person } from "@/lib/seating";
 import { zonePieces } from "@/lib/zoneShape";
 import styles from "./seating.module.css";
 
 // 직원 화면 도면과 같은 크기·좌표 (FloorPlan.tsx)
-const SEAT_W = 0.0533;
-const SEAT_H = 0.0556;
 const pct = (v: number) => `${(v * 100).toFixed(3)}%`;
 const rectStyle = (r: Rect): CSSProperties => ({ left: pct(r.x), top: pct(r.y), width: pct(r.w), height: pct(r.h) });
 const BOX_THRESHOLD_PX = 5; // 이보다 적게 움직이면 네모 묶기가 아니라 누르기
@@ -71,6 +70,7 @@ export default function SeatingCanvas(props: Props) {
     return <p className={office.noPlan}>{data.floor.name}에 게시된 도면이 아직 없어요. 도면을 먼저 게시하세요.</p>;
   const geometry = plan.geometry ?? {};
   const zones = new Map(data.zones.map((z) => [z.id, z]));
+  const seatSize = seatRatio(plan.width_m, plan.height_m); // 좌석 크기 (도면 대비)
 
   // 팀 구역 지정: 도면 위를 끌어서 네모 안 좌석을 한 번에 고른다 (조금만 움직이면 좌석 누르기)
   const ratio = (event: PointerEvent) => {
@@ -224,10 +224,10 @@ export default function SeatingCanvas(props: Props) {
               data-drop={dropState}
               data-seat-id={seat.id}
               style={{
-                left: pct(seat.x - SEAT_W / 2),
-                top: pct(seat.y - SEAT_H / 2),
-                width: pct(SEAT_W),
-                height: pct(SEAT_H),
+                left: pct(seat.x - seatSize.w / 2),
+                top: pct(seat.y - seatSize.h / 2),
+                width: pct(seatSize.w),
+                height: pct(seatSize.h),
               }}
               title={view.conflict && !plain ? `${seat.code} · ${view.conflict}` : `${seat.code} · ${text}`}
               aria-label={label}

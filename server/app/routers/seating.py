@@ -174,6 +174,14 @@ def _seating(conn: Connection, admin: dict[str, Any], floor: dict[str, Any], acc
     ).fetchone()
     if plan is not None:
         plan["geometry"] = to_ratio(plan["geometry"], plan["width_m"], plan["height_m"])
+    # 게시를 예약한 새 도면: 그날 없어지는 좌석에 앉은 사람은 (게시할 때 정한 사람 말고는) 미배치가 된다
+    plan_scheduled = conn.execute(
+        """
+        SELECT version, effective_at FROM floor_plans
+        WHERE floor_id = %s AND status = 'SCHEDULED'
+        """,
+        (floor_id,),
+    ).fetchone()
     rooms = conn.execute(
         "SELECT id, name, shape FROM meeting_rooms WHERE floor_id = %s AND is_active ORDER BY sort_order, id",
         (floor_id,),
@@ -278,6 +286,7 @@ def _seating(conn: Connection, admin: dict[str, Any], floor: dict[str, Any], acc
             "floor_admins": floor_admins,
         },
         "plan": plan,
+        "plan_scheduled": plan_scheduled,
         "rooms": rooms,
         "zones": zones,
         # 구역에 고를 수 있는 부서 (구역을 만들고 고치는 층 관리자 이상만)
@@ -448,7 +457,7 @@ def _requests(conn: Connection, admin: dict[str, Any], floor_id: int, access: di
     rows = conn.execute(
         """
         SELECT c.id, c.request_type, c.status, c.note, c.effective_at, c.submitted_at, c.reviewed_at,
-               c.review_comment, c.updated_at, c.requested_by = %(me)s AS mine,
+               c.review_comment, c.updated_at, c.requested_by = %(me)s AS mine, c.move_group,
                rq.name AS requester_name, rq.rank_name AS requester_rank, rv.name AS reviewer_name,
                c.status = 'APPROVED' AND c.effective_at > now() AS scheduled,
                (SELECT count(*) FROM change_request_items i WHERE i.request_id = c.id)::int AS item_count,
@@ -485,6 +494,7 @@ def _requests(conn: Connection, admin: dict[str, Any], floor_id: int, access: di
             "mine": r["mine"],
             "item_count": r["item_count"],
             "zone_moves": r["zone_moves"],  # 구역 경계 변경이 들어 있다
+            "team_move": r["move_group"] is not None,  # 팀 이사로 여러 층에 함께 만든 묶음 (취소도 함께)
             "summary": summaries.get(r["id"], []),
             "can_review": r["status"] == "PENDING" and access["mode"] == "FLOOR",
             "can_cancel": r["scheduled"] and (r["mine"] or access["mode"] == "FLOOR"),
@@ -1003,7 +1013,7 @@ def delete_zone(zone_id: int, body: ZoneDeleteIn, admin: CurrentAdmin, request: 
 def _load(conn: Connection, request_id: int, *, lock: bool = False) -> dict[str, Any]:
     cr = conn.execute(
         f"""
-        SELECT id, floor_id, status, request_type, effective_at, requested_by, note,
+        SELECT id, floor_id, status, request_type, effective_at, requested_by, note, move_group,
                effective_at > now() AS in_future
         FROM change_requests WHERE id = %s {"FOR UPDATE" if lock else ""}
         """,
@@ -1422,28 +1432,54 @@ def reopen_change_set(request_id: int, admin: CurrentAdmin) -> dict[str, Any]:
 
 @router.post("/change-sets/{request_id}/cancel")
 def cancel_scheduled(request_id: int, admin: CurrentAdmin, request: Request) -> dict[str, Any]:
-    """날짜를 정해 반영한 묶음을 그날이 오기 전에 취소한다. 새 배정은 지우고, 끝내기로 한 배정은 되살린다"""
+    """날짜를 정해 반영한 묶음을 그날이 오기 전에 취소한다. 새 배정은 지우고, 끝내기로 한 배정은 되살린다.
+    팀 이사처럼 여러 층에 걸쳐 함께 만든 묶음(move_group)은 함께 취소한다"""
     with pool.connection() as conn:
         cr = _load(conn, request_id, lock=True)
         if cr["status"] != "APPROVED" or not cr["in_future"]:
             raise HTTPException(status_code=409, detail={"code": "NOT_SCHEDULED"})
-        access = _require_access(admin, _floor(conn, cr["floor_id"]))
-        if access["mode"] != "FLOOR" and cr["requested_by"] != admin["employee_id"]:
-            raise HTTPException(status_code=403, detail={"code": "NOT_IN_SCOPE"})
-        conn.execute("SELECT pg_advisory_xact_lock(%s, %s)", (LOCK_SEATING, cr["floor_id"]))
-        conn.execute("DELETE FROM seat_assignments WHERE change_request_id = %s AND starts_at > now()", (request_id,))
-        conn.execute(
-            """
-            UPDATE seat_assignments SET ends_at = NULL, ended_by_request_id = NULL
-            WHERE ended_by_request_id = %s AND kind = 'FIXED' AND ends_at > now()
-            """,
-            (request_id,),
-        )
-        conn.execute("UPDATE change_requests SET status = 'CANCELLED', updated_at = now() WHERE id = %s", (request_id,))
-        _audit(
-            conn, admin["employee_id"], "CHANGE_SET_CANCEL", request_id, {"effective_at": cr["effective_at"]}, request
-        )
-    return {"status": "CANCELLED"}
+        group = [cr]
+        if cr["move_group"] is not None:
+            group = [
+                _load(conn, r["id"], lock=True)
+                for r in conn.execute(
+                    """
+                    SELECT id FROM change_requests
+                    WHERE move_group = %s AND status = 'APPROVED' AND effective_at > now()
+                    ORDER BY floor_id
+                    """,
+                    (cr["move_group"],),
+                ).fetchall()
+            ]
+        for item in group:
+            access = _require_access(admin, _floor(conn, item["floor_id"]))
+            if access["mode"] != "FLOOR" and item["requested_by"] != admin["employee_id"]:
+                raise HTTPException(status_code=403, detail={"code": "NOT_IN_SCOPE"})
+        for floor_id in sorted({item["floor_id"] for item in group}):
+            conn.execute("SELECT pg_advisory_xact_lock(%s, %s)", (LOCK_SEATING, floor_id))
+        for item in group:
+            conn.execute(
+                "DELETE FROM seat_assignments WHERE change_request_id = %s AND starts_at > now()", (item["id"],)
+            )
+            conn.execute(
+                """
+                UPDATE seat_assignments SET ends_at = NULL, ended_by_request_id = NULL
+                WHERE ended_by_request_id = %s AND kind = 'FIXED' AND ends_at > now()
+                """,
+                (item["id"],),
+            )
+            conn.execute(
+                "UPDATE change_requests SET status = 'CANCELLED', updated_at = now() WHERE id = %s", (item["id"],)
+            )
+            _audit(
+                conn,
+                admin["employee_id"],
+                "CHANGE_SET_CANCEL",
+                item["id"],
+                {"effective_at": item["effective_at"], "move_group": item["move_group"]},
+                request,
+            )
+    return {"status": "CANCELLED", "cancelled": [item["id"] for item in group]}
 
 
 # 실시간 ----------------------------------------------------------------------

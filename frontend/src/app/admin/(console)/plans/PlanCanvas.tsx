@@ -3,7 +3,7 @@
 import { type CSSProperties, type PointerEvent, useRef, useState } from "react";
 import office from "@/app/(app)/office.module.css";
 import type { PlanEditorData, PlanElement, PlanGeometry, PlanRect } from "@/lib/api";
-import { boxOf, cellCenter, deskSize, snapTo, SPACE_KINDS } from "@/lib/planGeometry";
+import { boxOf, cellCenter, DESK, snapTo, SPACE_KINDS } from "@/lib/planGeometry";
 import styles from "./plans.module.css";
 
 export type DrawTool = "wall" | "pillar" | "space" | "room";
@@ -50,7 +50,6 @@ export default function PlanCanvas(props: Props) {
   const px = (v: number) => `${((v / width) * 100).toFixed(3)}%`;
   const py = (v: number) => `${((v / height) * 100).toFixed(3)}%`;
   const rectStyle = (r: PlanRect): CSSProperties => ({ left: px(r.x), top: py(r.y), width: px(r.w), height: py(r.h) });
-  const desk = deskSize(width, height);
 
   function meters(event: PointerEvent): { x: number; y: number } {
     const r = ref.current!.getBoundingClientRect();
@@ -150,7 +149,7 @@ export default function PlanCanvas(props: Props) {
         {[...shown]
           .sort((a, b) => order[a.type] - order[b.type])
           .map((el) => {
-            const box = boxOf(el, width, height);
+            const box = boxOf(el);
             const common = {
               "data-el": el.id,
               "data-selected": el.id === selectedId || undefined,
@@ -202,13 +201,13 @@ export default function PlanCanvas(props: Props) {
             return (
               <div key={el.id} {...common} className={`${styles.desks} ${styles.el}`} style={rectStyle(box)}>
                 {el.cells.map((cell, i) => {
-                  const c = cellCenter(el, Math.floor(i / el.cols), i % el.cols, width, height);
+                  const c = cellCenter(el, Math.floor(i / el.cols), i % el.cols);
                   const seat = live.seats[cell.id];
                   const style: CSSProperties = {
-                    left: `${(((c.x - desk.w / 2 - box.x) / box.w) * 100).toFixed(3)}%`,
-                    top: `${(((c.y - desk.h / 2 - box.y) / box.h) * 100).toFixed(3)}%`,
-                    width: `${((desk.w / box.w) * 100).toFixed(3)}%`,
-                    height: `${((desk.h / box.h) * 100).toFixed(3)}%`,
+                    left: `${(((c.x - DESK.w / 2 - box.x) / box.w) * 100).toFixed(3)}%`,
+                    top: `${(((c.y - DESK.h / 2 - box.y) / box.h) * 100).toFixed(3)}%`,
+                    width: `${((DESK.w / box.w) * 100).toFixed(3)}%`,
+                    height: `${((DESK.h / box.h) * 100).toFixed(3)}%`,
                   };
                   return (
                     <span
@@ -240,7 +239,7 @@ export default function PlanCanvas(props: Props) {
             );
           })}
         {selected && (
-          <div className={styles.selection} style={rectStyle(boxOf(selected, width, height))}>
+          <div className={styles.selection} style={rectStyle(boxOf(selected))}>
             {!readOnly &&
               selected.type !== "desk_group" &&
               HANDLES.map((h) => <span key={h} className={styles.handle} data-handle={h} aria-hidden="true" />)}

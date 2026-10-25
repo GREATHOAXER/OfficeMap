@@ -33,6 +33,7 @@ import {
   PersonIcon,
   ShieldIcon,
   SparkleIcon,
+  TruckIcon,
 } from "./icons";
 import LogoutButton from "./LogoutButton";
 import SessionWatch from "./SessionWatch";
@@ -63,7 +64,12 @@ function consoleMenu(admin: Admin): MenuGroup[] {
         { label: "사업장·권한", icon: <ShieldIcon />, href: "/admin" },
         { label: "좌석 배치 편집", icon: <MoveIcon />, href: "/admin/seating" },
         // 도면 편집은 층 관리자 이상 (구역 관리자는 보기만)
-        ...(hasPlanRole(admin) ? [{ label: "도면 편집", icon: <PenIcon />, href: "/admin/plans" }] : []),
+        ...(hasPlanRole(admin)
+          ? [
+              { label: "도면 편집", icon: <PenIcon />, href: "/admin/plans" },
+              { label: "팀 이사", icon: <TruckIcon />, href: "/admin/moves" },
+            ]
+          : []),
       ],
     },
     { title: "직원 화면", items: [{ label: "자리·재실 현황", icon: <GridIcon />, href: "/" }] },

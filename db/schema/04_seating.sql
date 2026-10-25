@@ -20,10 +20,14 @@ CREATE TABLE change_requests (
     reviewed_by    bigint REFERENCES employees(id),
     reviewed_at    timestamptz,
     review_comment text,
+    -- 팀 이사처럼 여러 층에 걸친 변경을 한 번에 만들면 같은 값(목적지 층 묶음의 id)으로 묶는다.
+    -- 예정 취소는 같은 묶음끼리 함께 한다
+    move_group     bigint,
     created_at     timestamptz NOT NULL DEFAULT now(),
     updated_at     timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX change_requests_floor_status_idx ON change_requests (floor_id, status);
+CREATE INDEX change_requests_move_group_idx ON change_requests (move_group) WHERE move_group IS NOT NULL;
 -- 관리자 한 명이 한 층에 진행 중인(작성 중·승인 대기) 좌석 배치 묶음은 하나
 CREATE UNIQUE INDEX change_requests_one_open_idx ON change_requests (floor_id, requested_by)
     WHERE status IN ('DRAFT', 'PENDING') AND request_type = 'SEAT_ASSIGNMENT';

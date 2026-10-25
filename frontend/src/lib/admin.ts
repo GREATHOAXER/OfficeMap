@@ -37,6 +37,7 @@ export const ROLE_TASKS: Record<AdminRole, string> = {
 export const PLAN_LABEL: Record<PlanState, string> = {
   PUBLISHED: "작성 완료",
   EDITING: "수정 중",
+  SCHEDULED: "게시 예약",
   DRAFT: "초안",
   NONE: "미작성",
 };

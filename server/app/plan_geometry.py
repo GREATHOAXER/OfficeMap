@@ -12,7 +12,8 @@ v1 (도면 편집기): {"schema": 1, "grid_m": 0.5, "elements": [...]}. 좌표�
                 책상 묶음. 책상 칸 하나 = 좌석 하나 (seats.plan_element_key = 칸 id). 칸은 줄 순서로 rows × cols 개
                 layout face: 두 줄씩 마주 붙이고 위 줄은 의자가 위, 아래 줄은 의자가 아래 / one: 모두 의자가 아래
 
-책상 크기·간격은 직원 화면의 좌석 크기(도면 대비 비율)를 미터로 바꾼 값이라, 도면 크기가 달라도 화면과 맞는다.
+책상 크기·간격은 미터로 정해져 있다. 직원 화면은 좌석을 "책상 크기 ÷ 도면 크기" 비율로 그리므로(seat_ratio),
+도면이 커지면 화면의 좌석이 그만큼 작아진다. 목업 도면(50 × 30 m)에서 이 값은 예전 고정 비율(0.0533 × 0.0556)과 같다.
 """
 
 import math
@@ -22,14 +23,16 @@ from typing import Any
 SCHEMA = 1
 GRID_M = 0.5
 
-# 직원 화면(FloorPlan.tsx)의 좌석 크기와 같은 비율. 미터 = 비율 × 도면 폭(또는 높이)
-SEAT_W = 0.0533
-SEAT_H = 0.0556
-PITCH_X = 0.055  # 옆 책상 중심 간격 (폭 대비)
-PAIR_PITCH = 0.145  # 마주보기: 두 줄 묶음 사이 간격 (높이 대비)
-ONE_PITCH = 0.0906  # 한 방향: 줄 간격 (높이 대비, 의자 자리 포함)
+# 책상 크기·간격 (m). 화면(frontend/src/lib/planGeometry.ts)과 같아야 한다
+DESK_W = 2.665
+DESK_H = 1.668
+PITCH_X = 2.75  # 옆 책상 중심 간격
+PAIR_PITCH = 4.35  # 마주보기: 두 줄 묶음 사이 간격
+ONE_PITCH = 2.718  # 한 방향: 줄 간격 (의자 자리 포함)
 PILLAR_W = 0.015  # v0 기둥 크기 (비율)
 PILLAR_H = 0.025
+DEFAULT_SIZE = (50.0, 30.0)  # 도면이 없는 층의 크기 (m)
+MIN_SIZE, MAX_SIZE = 10.0, 300.0  # 도면 크기로 고를 수 있는 범위 (m)
 
 SPACE_KINDS = ("core", "pantry", "restroom", "lounge", "storage", "service", "restricted")
 ELEMENT_TYPES = ("wall", "pillar", "space", "room", "desk_group")
@@ -50,32 +53,31 @@ def is_v1(geometry: Any) -> bool:
 # 책상 묶음 ----------------------------------------------------------------------
 
 
-def desk_size(width_m: float, height_m: float) -> tuple[float, float]:
-    return SEAT_W * width_m, SEAT_H * height_m
+def seat_ratio(width_m: float, height_m: float) -> tuple[float, float]:
+    """직원 화면이 그리는 좌석 크기 (도면 대비 비율)"""
+    return DESK_W / width_m, DESK_H / height_m
 
 
-def cell_center(group: dict[str, Any], row: int, col: int, width_m: float, height_m: float) -> tuple[float, float, int]:
+def cell_center(group: dict[str, Any], row: int, col: int) -> tuple[float, float, int]:
     """칸 하나의 중심(미터)과 의자 방향 (0 = 아래, 180 = 위)"""
-    desk_w, desk_h = desk_size(width_m, height_m)
-    cx = group["x"] + desk_w / 2 + col * PITCH_X * width_m
+    cx = group["x"] + DESK_W / 2 + col * PITCH_X
     if group["layout"] == "face":
-        cy = group["y"] + desk_h / 2 + (row // 2) * PAIR_PITCH * height_m + (row % 2) * desk_h
+        cy = group["y"] + DESK_H / 2 + (row // 2) * PAIR_PITCH + (row % 2) * DESK_H
         rotation = 180 if row % 2 == 0 else 0
     else:
-        cy = group["y"] + desk_h / 2 + row * ONE_PITCH * height_m
+        cy = group["y"] + DESK_H / 2 + row * ONE_PITCH
         rotation = 0
     return cx, cy, rotation
 
 
-def group_size(group: dict[str, Any], width_m: float, height_m: float) -> tuple[float, float]:
-    desk_w, desk_h = desk_size(width_m, height_m)
+def group_size(group: dict[str, Any]) -> tuple[float, float]:
     rows, cols = group["rows"], group["cols"]
-    w = desk_w + (cols - 1) * PITCH_X * width_m
+    w = DESK_W + (cols - 1) * PITCH_X
     if group["layout"] == "face":
         last = rows - 1
-        h = (last // 2) * PAIR_PITCH * height_m + (last % 2) * desk_h + desk_h
+        h = (last // 2) * PAIR_PITCH + (last % 2) * DESK_H + DESK_H
     else:
-        h = desk_h + (rows - 1) * ONE_PITCH * height_m
+        h = DESK_H + (rows - 1) * ONE_PITCH
     return w, h
 
 
@@ -88,7 +90,7 @@ def desk_cells(geometry: dict[str, Any], width_m: float, height_m: float) -> dic
         for i, cell in enumerate(el["cells"]):
             if not cell["desk"]:
                 continue
-            cx, cy, rotation = cell_center(el, i // el["cols"], i % el["cols"], width_m, height_m)
+            cx, cy, rotation = cell_center(el, i // el["cols"], i % el["cols"])
             out[cell["id"]] = {
                 "code": cell["code"].strip(),
                 "x": cx / width_m,
@@ -218,8 +220,8 @@ def _seat_key(seat: dict[str, Any]) -> str:
 def _fit_group(prefix: str, seats: list[dict[str, Any]], width_m: float, height_m: float) -> list[dict[str, Any]]:
     """좌석들이 마주보기 책상 묶음 한 개의 칸에 딱 맞으면 그 묶음을 돌려준다 (아니면 빈 목록)"""
     tol = 0.05
-    desk_w, desk_h = desk_size(width_m, height_m)
-    pitch_x, pair = PITCH_X * width_m, PAIR_PITCH * height_m
+    desk_w, desk_h = DESK_W, DESK_H
+    pitch_x, pair = PITCH_X, PAIR_PITCH
     centers = [(s["x"] * width_m, s["y"] * height_m) for s in seats]
     ox = min(c[0] for c in centers) - desk_w / 2
     oy = min(c[1] for c in centers) - desk_h / 2
@@ -268,7 +270,7 @@ def _fit_group(prefix: str, seats: list[dict[str, Any]], width_m: float, height_
 
 def _single_desks(prefix: str, seats: list[dict[str, Any]], width_m: float, height_m: float) -> list[dict[str, Any]]:
     """묶음으로 맞지 않는 좌석은 1인 책상으로 하나씩"""
-    desk_w, desk_h = desk_size(width_m, height_m)
+    desk_w, desk_h = DESK_W, DESK_H
     return [
         {
             "id": f"{prefix}-{i + 1}",
@@ -373,7 +375,7 @@ def problems(geometry: dict[str, Any], width_m: float, height_m: float) -> list[
         names.add(room["name"])
     for el in geometry["elements"]:
         if el["type"] == "desk_group":
-            w, h = group_size(el, width_m, height_m)
+            w, h = group_size(el)
         else:
             w, h = el["w"], el["h"]
         if el["x"] < -0.01 or el["y"] < -0.01 or el["x"] + w > width_m + 0.01 or el["y"] + h > height_m + 0.01:

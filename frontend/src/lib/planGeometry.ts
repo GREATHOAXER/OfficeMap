@@ -5,12 +5,15 @@ import type { DeskGroup, PlanElement, PlanGeometry, PlanRect, SpaceKind } from "
 
 export const GRID_M = 0.5;
 
-// 직원 화면의 좌석 크기(도면 대비 비율). 미터 = 비율 × 도면 폭(또는 높이)
-const SEAT_W = 0.0533;
-const SEAT_H = 0.0556;
-const PITCH_X = 0.055;
-const PAIR_PITCH = 0.145;
-const ONE_PITCH = 0.0906;
+// 책상 크기·간격 (m). 서버(server/app/plan_geometry.py)와 같아야 한다.
+// 직원 화면은 좌석을 "책상 크기 ÷ 도면 크기" 비율로 그린다 (seatRatio). 50 × 30 m 도면이면 0.0533 × 0.0556
+const DESK_W = 2.665;
+const DESK_H = 1.668;
+const PITCH_X = 2.75; // 옆 책상 중심 간격
+const PAIR_PITCH = 4.35; // 마주보기: 두 줄 묶음 사이 간격
+const ONE_PITCH = 2.718; // 한 방향: 줄 간격 (의자 자리 포함)
+export const MIN_SIZE = 10;
+export const MAX_SIZE = 300;
 
 export const SPACE_KINDS: { kind: SpaceKind; label: string }[] = [
   { kind: "core", label: "코어 · EV · 계단" },
@@ -36,35 +39,37 @@ export const TYPE_LABEL: Record<PlanElement["type"], string> = {
   desk_group: "책상 묶음",
 };
 
-export function deskSize(width: number, height: number) {
-  return { w: SEAT_W * width, h: SEAT_H * height };
+/** 책상 하나의 크기 (m) */
+export const DESK = { w: DESK_W, h: DESK_H } as const;
+
+/** 직원 화면·배치 화면이 그리는 좌석 크기 (도면 폭·높이 대비 비율). 도면이 없으면 50 × 30 m로 본다 */
+export function seatRatio(width_m = 50, height_m = 30) {
+  return { w: DESK_W / width_m, h: DESK_H / height_m };
 }
 
 /** 칸 하나의 중심(미터)과 의자 방향 (0 = 아래, 180 = 위) */
-export function cellCenter(group: DeskGroup, row: number, col: number, width: number, height: number) {
-  const desk = deskSize(width, height);
-  const x = group.x + desk.w / 2 + col * PITCH_X * width;
+export function cellCenter(group: DeskGroup, row: number, col: number) {
+  const x = group.x + DESK_W / 2 + col * PITCH_X;
   if (group.layout === "face") {
-    const y = group.y + desk.h / 2 + Math.floor(row / 2) * PAIR_PITCH * height + (row % 2) * desk.h;
+    const y = group.y + DESK_H / 2 + Math.floor(row / 2) * PAIR_PITCH + (row % 2) * DESK_H;
     return { x, y, rotation: row % 2 === 0 ? 180 : 0 };
   }
-  return { x, y: group.y + desk.h / 2 + row * ONE_PITCH * height, rotation: 0 };
+  return { x, y: group.y + DESK_H / 2 + row * ONE_PITCH, rotation: 0 };
 }
 
-export function groupSize(group: Pick<DeskGroup, "layout" | "rows" | "cols">, width: number, height: number) {
-  const desk = deskSize(width, height);
-  const w = desk.w + (group.cols - 1) * PITCH_X * width;
+export function groupSize(group: Pick<DeskGroup, "layout" | "rows" | "cols">) {
+  const w = DESK_W + (group.cols - 1) * PITCH_X;
   const last = group.rows - 1;
   const h =
     group.layout === "face"
-      ? Math.floor(last / 2) * PAIR_PITCH * height + (last % 2) * desk.h + desk.h
-      : desk.h + last * ONE_PITCH * height;
+      ? Math.floor(last / 2) * PAIR_PITCH + (last % 2) * DESK_H + DESK_H
+      : DESK_H + last * ONE_PITCH;
   return { w, h };
 }
 
 /** 요소가 차지하는 사각형 */
-export function boxOf(el: PlanElement, width: number, height: number): PlanRect {
-  if (el.type === "desk_group") return { x: el.x, y: el.y, ...groupSize(el, width, height) };
+export function boxOf(el: PlanElement): PlanRect {
+  if (el.type === "desk_group") return { x: el.x, y: el.y, ...groupSize(el) };
   return { x: el.x, y: el.y, w: el.w, h: el.h };
 }
 
@@ -124,6 +129,26 @@ export function makeDeskGroup(
   };
 }
 
+/** 이 도면에 넣을 복사본 (복제·다른 층에서 붙여넣기). 새 id, 좌석 번호가 이 도면과 겹치면 같은 머리글자로 새 번호 */
+export function copyElement(el: PlanElement, geometry: PlanGeometry, dx: number, dy: number): PlanElement {
+  if (el.type !== "desk_group") return { ...el, id: newId(el.type), x: el.x + dx, y: el.y + dy };
+  const id = newId("desks");
+  const used = usedCodes(geometry);
+  const clash = el.cells.some((c) => c.desk && used.has(c.code.trim()));
+  const next = codeMaker(el.cells.find((c) => c.desk && c.code)?.code.split("-")[0] || "N", used);
+  return {
+    ...el,
+    id,
+    x: el.x + dx,
+    y: el.y + dy,
+    cells: el.cells.map((c, i) => ({
+      id: `${id}.${i + 1}`,
+      desk: c.desk,
+      code: c.desk ? (clash ? next() : c.code) : "",
+    })),
+  };
+}
+
 /** 줄·칸 수 바꾸기: 남는 자리의 칸(좌석)은 그대로 두고, 새 칸은 책상으로 만든다 */
 export function resizeGroup(group: DeskGroup, rows: number, cols: number, geometry: PlanGeometry): DeskGroup {
   const prefix = group.cells.find((c) => c.desk && c.code)?.code.split("-")[0] || "N";
@@ -160,7 +185,7 @@ export function problemsOf(geometry: PlanGeometry, width: number, height: number
   const codes = new Map<string, string>();
   const names = new Set<string>();
   for (const el of geometry.elements) {
-    const box = boxOf(el, width, height);
+    const box = boxOf(el);
     if (box.x < -0.01 || box.y < -0.01 || box.x + box.w > width + 0.01 || box.y + box.h > height + 0.01) {
       out.push({ elementId: el.id, text: `${TYPE_LABEL[el.type]}이 도면 밖으로 나갔어요` });
     }

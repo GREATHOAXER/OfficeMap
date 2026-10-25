@@ -402,7 +402,7 @@ export type Admin = {
 };
 
 /** 도면 상태: 작성 완료 / 작성 완료 + 수정 중 / 초안만 / 없음 */
-export type PlanState = "PUBLISHED" | "EDITING" | "DRAFT" | "NONE";
+export type PlanState = "PUBLISHED" | "EDITING" | "SCHEDULED" | "DRAFT" | "NONE";
 
 export type AdminFloor = {
   id: number;
@@ -418,6 +418,7 @@ export type AdminFloor = {
   plan: PlanState;
   plan_updated_at: string | null;
   plan_updated_by: string | null;
+  plan_scheduled_at: string | null; // 게시 예약 시각
   in_scope: "ALL" | "ZONE" | null; // 내가 관리하는 층인가 (ZONE = 층 안 일부 구역만)
 };
 
@@ -542,6 +543,7 @@ export type ChangeRequestRow = {
   mine: boolean;
   item_count: number;
   zone_moves: boolean; // 구역 경계 변경이 들어 있다
+  team_move: boolean; // 팀 이사로 여러 층에 함께 만든 묶음 (예정 취소도 함께)
   summary: string[];
   can_review: boolean;
   can_cancel: boolean;
@@ -561,6 +563,7 @@ export type SeatingData = {
     floor_admins: string[];
   };
   plan: FloorMap["plan"];
+  plan_scheduled: { version: number; effective_at: string } | null; // 게시를 예약한 새 도면
   rooms: { id: number; name: string; shape: Rect | null }[];
   zones: SeatingZone[];
   departments: DepartmentChoice[]; // 구역에 고를 수 있는 부서 (층 관리자 이상만)
@@ -622,6 +625,15 @@ export type PlanEditorData = {
   published: PlanSummary | null;
   draft: {
     id: number;
+    status: "DRAFT" | "SCHEDULED"; // SCHEDULED: 게시 예약 (effective_at에 서버가 게시)
+    effective_at: string | null;
+    scheduled_by: string | null;
+    note: string | null;
+    // 게시 예약 때 정한 것: 사람 → 책상 칸, 없어지는 회의실 → 옮길 회의실 또는 취소
+    options: {
+      people: { emp_no: string; to_key: string }[];
+      rooms: { room_id: number; action: "MOVE" | "CANCEL"; to_key: string | null }[];
+    } | null;
     version: number;
     revision: number;
     geometry: PlanGeometry;
@@ -676,4 +688,24 @@ export function fetchPlanFloors(cookieHeader: string | null) {
 
 export function fetchPlanEditor(cookieHeader: string | null, floorId: number) {
   return apiGet<PlanEditorData>(`/api/admin/floors/${floorId}/plan`, cookieHeader);
+}
+
+// 팀 이사 도우미 -------------------------------------------------------------------
+
+export type MoveOptions = {
+  departments: (DepartmentChoice & { members: number })[]; // 옮길 수 있는 팀 (살아 있는 팀과 인원)
+  floors: { id: number; name: string; site: string }[]; // 목적지로 고를 수 있는 층 (층 관리자 이상)
+};
+
+export type TeamMember = {
+  emp_no: string;
+  name: string;
+  rank: string | null;
+  seat: SeatRef | null; // 지금 고정석
+  zone_code: string | null;
+  locked: boolean; // 날짜를 정해 둔 변경이 걸려 있어 그날까지 옮길 수 없다
+};
+
+export function fetchMoveOptions(cookieHeader: string | null) {
+  return apiGet<MoveOptions>("/api/admin/moves/options", cookieHeader);
 }
