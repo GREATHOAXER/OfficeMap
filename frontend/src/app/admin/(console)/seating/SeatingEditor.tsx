@@ -1288,6 +1288,12 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
                 max={addDays(todayKst(), MAX_SCHEDULE_DAYS)}
                 disabled={hasTypes}
                 aria-label="반영할 날짜"
+                // 날짜 칸에 들어가면 "날짜 지정"을 고른 것 (보이는 날짜 그대로 쓰려는 사람도 있다)
+                onFocus={() => {
+                  if (effective.on) return;
+                  setEffective((e) => ({ ...e, on: true }));
+                  markDirty();
+                }}
                 onChange={(event) => {
                   const date = event.target.value;
                   if (!date) return;

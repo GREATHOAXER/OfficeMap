@@ -445,6 +445,8 @@ export default function MoveWizard({ admin, options }: Props) {
                       min={addDays(todayKst(), 1)}
                       max={addDays(todayKst(), MAX_SCHEDULE_DAYS)}
                       onChange={(e) => setWhen({ later: true, date: e.target.value })}
+                      // 날짜 칸에 들어가면 "날짜 지정"을 고른 것 (보이는 날짜 그대로 쓰려는 사람도 있다)
+                      onFocus={() => !when.later && setWhen({ ...when, later: true })}
                     />
                     <span className={ui.muted}>그날 0시</span>
                   </label>
