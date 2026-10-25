@@ -120,6 +120,7 @@ export default function AttendeePicker(props: Props) {
     try {
       const params = new URLSearchParams();
       if (when) Object.entries(when).forEach(([k, v]) => params.set(k, String(v)));
+      if (exclude) params.set("exclude", String(exclude)); // 고치는 예약 자신은 "겹치는 회의"가 아니다
       const res = await fetch(`/api/employees/teams/${team.id}/members?${params}`);
       if (!res.ok) throw new Error(String(res.status));
       const data = (await res.json()) as { team: { id: number; name: string }; members: EmployeeHit[] };
@@ -189,6 +190,7 @@ export default function AttendeePicker(props: Props) {
       } else {
         const params = new URLSearchParams({ q, limit: "20" });
         if (when) Object.entries(when).forEach(([k, v]) => params.set(k, String(v)));
+        if (exclude) params.set("exclude", String(exclude));
         const [teamRes, personRes] = await Promise.all([
           q.length >= 2 ? fetch(`/api/employees/teams?${new URLSearchParams({ q })}`) : null,
           fetch(`/api/employees/search?${params}`),

@@ -9,7 +9,7 @@ import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from "@/components/icons"
 import ReservationDetail from "@/components/ReservationDetail";
 import type { ReservationDetail as Detail, RoomDay, RoomsDay } from "@/lib/api";
 import { addDays, daysBetween, formatShortDay, kstDate, minToHHMM } from "@/lib/dates";
-import { expiredLoginUrl } from "@/lib/loginRedirect";
+import { sessionEndUrl } from "@/lib/loginRedirect";
 import { hhmm } from "@/lib/rooms";
 import { ROOMS_FLOOR_COOKIE } from "@/lib/roomsFloor";
 import { useNow } from "@/lib/useNow";
@@ -308,7 +308,7 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
       if (res.status === 401) {
         // 로그인이 끊겼다: 쓰던 내용을 맡겨 두고, 다시 로그인하고 돌아오면 그대로 채운다
         saveDraft({ date: day.date, siteId: day.site.id, draft, edit: editing });
-        router.replace(expiredLoginUrl());
+        router.replace(await sessionEndUrl()); // 왜 끊겼는지(오래 안 씀·비밀번호 초기화 등) 붙여서
         return;
       }
       const data = await res.json().catch(() => null);
