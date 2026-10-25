@@ -1095,7 +1095,10 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
             )}
             <ZoomControls zoom={zoom} onZoom={setZoom} />
           </div>
-          <p className={ui.modeBar} data-tone={tool !== "select" && !readOnly ? "zone" : undefined}>
+          <p
+            className={`${ui.modeBar} ${styles.hintBar}`}
+            data-tone={tool !== "select" && !readOnly ? "zone" : undefined}
+          >
             {hint}
           </p>
           <div className={ui.canvasCard}>

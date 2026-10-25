@@ -97,10 +97,13 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
 
   const [draft, setDraft] = useState<SeatDraft>(() => draftFromChangeSet(initial.draft, initial.seats));
   const [history, setHistory] = useState<SeatDraft[]>([]);
+  const [future, setFuture] = useState<SeatDraft[]>([]); // 되돌린 것 (다시 하기)
   const [draftId, setDraftId] = useState<number | null>(initial.draft?.id ?? null);
   // 저장 직후(같은 클릭 안에서) 읽을 최신 초안 번호. 상태(draftId)는 다음 렌더에야 바뀐다
   const draftIdRef = useRef(draftId);
   const [effective, setEffective] = useState<Effective>(() => effectiveOf(initial.draft));
+  // 날짜 칸에 직접 친 날짜가 고를 수 있는 범위(내일 ~ 1년)를 벗어났을 때 알리는 글
+  const [dateNote, setDateNote] = useState<string | null>(null);
   const [note, setNote] = useState(initial.draft?.note ?? "");
   const [save, setSave] = useState<SaveState>({ state: initial.draft ? "saved" : "clean" });
   const [serverConflicts, setServerConflicts] = useState<Map<number, string>>(() => new Map());
@@ -318,6 +321,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
   function commit(next: SeatDraft) {
     if (next === draft) return;
     setHistory((h) => [...h.slice(-(HISTORY_MAX - 1)), draft]);
+    setFuture([]);
     setDraft(next);
     setServerConflicts(new Map());
     // 유형·구역 변경이 생기면 날짜 지정을 쓸 수 없다
@@ -331,16 +335,50 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
     const prev = history.at(-1);
     if (!prev) return;
     setHistory((h) => h.slice(0, -1));
+    setFuture((f) => [...f, draft]);
     setDraft(prev);
     setServerConflicts(new Map());
     markDirty();
     showToast("방금 바꾼 것을 되돌렸어요");
   }
 
+  function redo() {
+    const next = future.at(-1);
+    if (!next) return;
+    setFuture((f) => f.slice(0, -1));
+    setHistory((h) => [...h.slice(-(HISTORY_MAX - 1)), draft]);
+    setDraft(next);
+    setServerConflicts(new Map());
+    markDirty();
+    showToast("되돌린 것을 다시 했어요");
+  }
+
+  // 키보드: Ctrl(⌘)+Z 되돌리기, Ctrl(⌘)+Shift+Z·Ctrl+Y 다시 하기 (도면 편집과 같다). 되돌리기 단추를 쓸 수 있을 때만
+  const keysRef = useRef({ undo, redo, on: false });
+  useEffect(() => {
+    keysRef.current = { undo, redo, on: !review && !pending && !preview };
+  });
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey) || (event.target as Element).closest("input, textarea, select, dialog")) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      const keys = keysRef.current;
+      if (!keys.on || (key !== "z" && key !== "y")) return;
+      event.preventDefault();
+      if (key === "z" && !event.shiftKey) keys.undo();
+      else keys.redo();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   // 서버에서 다시 읽기 --------------------------------------------------------
   const resetFrom = useCallback((next: SeatingData) => {
     setDraft(draftFromChangeSet(next.draft, next.seats));
     setHistory([]);
+    setFuture([]);
     draftIdRef.current = next.draft?.id ?? null;
     setDraftId(draftIdRef.current);
     setEffective(effectiveOf(next.draft));
@@ -637,7 +675,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
 
   async function applyNow() {
     if (changeCount === 0) {
-      showToast("바꾼 것이 없어요. 사람을 끌어 자리에 놓아 보세요", "error");
+      showToast("바꾼 것이 없어요. 사람을 자리에 놓아 보세요", "error");
       return;
     }
     if (conflicts.size > 0) {
@@ -1140,6 +1178,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
       zoneName={zoneName(layout.zoneOf(selectedSeat))}
       editable={editable(selectedSeat)}
       zoneId={layout.zoneOf(selectedSeat)}
+      teamZone={data.zones.find((z) => z.id === layout.zoneOf(selectedSeat))?.department_id != null}
       zoneChoices={
         perms.mode === "FLOOR"
           ? [
@@ -1243,12 +1282,26 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
                 disabled={hasTypes}
                 aria-label="반영할 날짜"
                 onChange={(event) => {
-                  if (!event.target.value) return;
-                  setEffective({ on: true, date: event.target.value });
+                  const date = event.target.value;
+                  if (!date) return;
+                  // 달력은 범위 밖을 막지만, 직접 치면 지난 날짜도 들어온다: 받지 않고 알린다
+                  const first = addDays(todayKst(), 1);
+                  const last = addDays(todayKst(), MAX_SCHEDULE_DAYS);
+                  if (date < first || date > last) {
+                    setDateNote(`${shortDate(`${first}T00:00:00+09:00`)}부터 1년 안의 날짜만 고를 수 있어요`);
+                    return;
+                  }
+                  setDateNote(null);
+                  setEffective({ on: true, date });
                   markDirty();
                 }}
               />
             </label>
+            {dateNote && (
+              <p className={styles.conflictText} role="alert">
+                {dateNote}
+              </p>
+            )}
             <p className={styles.hint}>
               {hasTypes
                 ? "좌석 유형·구역 변경이 있으면 날짜를 정할 수 없어요 (바로 바뀌어요)."
@@ -1311,9 +1364,26 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
         </div>
         <div className={styles.headerActions}>
           {!review && !pending && (
-            <button type="button" className={styles.btn} onClick={undo} disabled={history.length === 0 || preview}>
-              되돌리기
-            </button>
+            <>
+              <button
+                type="button"
+                className={styles.btn}
+                title="Ctrl(⌘)+Z"
+                onClick={undo}
+                disabled={history.length === 0 || preview}
+              >
+                되돌리기
+              </button>
+              <button
+                type="button"
+                className={styles.btn}
+                title="Ctrl(⌘)+Shift+Z · Ctrl+Y"
+                onClick={redo}
+                disabled={future.length === 0 || preview}
+              >
+                다시 하기
+              </button>
+            </>
           )}
           {!review && (
             <button type="button" className={styles.btn} aria-pressed={preview} onClick={() => setPreview((p) => !p)}>
@@ -1354,7 +1424,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
                 ? "반영하기를 누르면 바로 직원 화면에 보여요."
                 : "바꾼 내용은 층 관리자가 승인하면 반영돼요."
             }`
-          : "사람을 끌어 자리에 놓고(사람 위에 놓으면 자리 교환), 모아서 한 번에 반영해요. 반영하기 전에는 직원 화면에 보이지 않아요."}
+          : "사람을 자리에 끌어 놓고(휴대폰은 사람을 누른 뒤 자리를 누르기 · 사람 위에 놓으면 자리 교환), 모아서 한 번에 반영해요. 반영하기 전에는 직원 화면에 보이지 않아요."}
       </p>
       {notice && <p className={styles.notice}>{notice}</p>}
       {data.plan_scheduled && (
@@ -1665,6 +1735,8 @@ type DetailsProps = {
   zoneName: string;
   editable: boolean;
   zoneId: number | null;
+  /** 팀 구역 안의 자리 (아니면 자율석은 "팀 내"가 아니라 누구나 쓰는 자율석) */
+  teamZone: boolean;
   /** 층 관리자 이상: 이 좌석의 구역 고르기 */
   zoneChoices: { id: number | null; label: string }[] | null;
   onZone: (zoneId: number | null) => void;
@@ -1771,7 +1843,7 @@ function SeatDetails(props: DetailsProps) {
               disabled={scheduled && m !== baseMode(seat)}
               onChange={() => props.onMode(m)}
             />
-            {MODE_LABEL[m]}
+            {m === "FLEX" && !props.teamZone ? "자율석 (누구나)" : MODE_LABEL[m]}
             {m === "OUT_OF_SERVICE" && " (고장·수리)"}
           </label>
         ))}
