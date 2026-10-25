@@ -111,7 +111,11 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
   const [dragging, setDragging] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<number | null>(null);
   const [panelOver, setPanelOver] = useState(false);
-  const [zoom, setZoom] = useState(1);
+  const [zoomSet, setZoom] = useState(1);
+  // 도면 전체가 들어오는 배율 (사람이 많아 책상이 작은 층은 100%에서 도면이 영역보다 크다)
+  const [fitZoom, setFitZoom] = useState(1);
+  const minZoom = Math.min(ZOOM_STEPS[0], fitZoom);
+  const zoom = Math.max(zoomSet, minZoom);
   const [preview, setPreview] = useState(false);
   const [focusMine, setFocusMine] = useState(true);
   const [review, setReview] = useState<ChangeSet | null>(null);
@@ -1392,26 +1396,36 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
               <button
                 type="button"
                 aria-label="축소"
-                disabled={zoom <= ZOOM_STEPS[0]}
-                onClick={() => setZoom([...ZOOM_STEPS].reverse().find((z) => z < zoom) ?? zoom)}
+                disabled={zoom <= minZoom + 0.001}
+                onClick={() => setZoom([...ZOOM_STEPS].reverse().find((z) => z < zoom - 0.001) ?? minZoom)}
               >
                 −
               </button>
               <button
                 type="button"
                 onClick={() => setZoom(1)}
-                aria-label={`화면 폭에 맞추기 (지금 ${Math.round(zoom * 100)}%)`}
+                aria-label={`기본 크기로 (지금 ${Math.round(zoom * 100)}%)`}
               >
-                {zoom === 1 ? "맞춤" : <span className="mono">{Math.round(zoom * 100)}%</span>}
+                {zoom === 1 && fitZoom >= 0.999 ? "맞춤" : <span className="mono">{Math.round(zoom * 100)}%</span>}
               </button>
               <button
                 type="button"
                 aria-label="확대"
                 disabled={zoom >= ZOOM_STEPS.at(-1)!}
-                onClick={() => setZoom(ZOOM_STEPS.find((z) => z > zoom) ?? zoom)}
+                onClick={() => setZoom(ZOOM_STEPS.find((z) => z > zoom + 0.001) ?? zoom)}
               >
                 +
               </button>
+              {fitZoom < 0.999 && (
+                <button
+                  type="button"
+                  aria-pressed={Math.abs(zoom - fitZoom) < 0.005}
+                  title="층 전체를 한 화면에 (이름은 작아지거나 숨겨져요)"
+                  onClick={() => setZoom(fitZoom)}
+                >
+                  전체 보기
+                </button>
+              )}
             </div>
           </div>
           {review && (
@@ -1450,6 +1464,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
               layout={layout}
               people={people}
               zoom={zoom}
+              onFitZoom={setFitZoom}
               readOnly={readOnly}
               plain={preview}
               viewOf={viewOf}

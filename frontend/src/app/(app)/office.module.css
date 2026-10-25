@@ -659,6 +659,12 @@
   cursor: default;
 }
 
+.zoom .zoomAll[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fff;
+}
+
 /* 재실 상태 필터를 걸었을 때 */
 .filterNotice {
   display: flex;
@@ -732,8 +738,9 @@
 /* 도면 안의 크기는 도면 폭(cqw) 기준이라, 메뉴를 접고 펴거나 확대해도 비율이 그대로다 */
 .plan {
   position: relative;
-  /* 기본 폭은 카드 폭(좁은 화면에서는 이름이 읽히는 720px)이고, 배율(--zoom)만큼 커진다 */
-  width: calc(max(100%, 720px) * var(--zoom, 1));
+  /* 기본 폭은 카드 폭(좁은 화면에서는 720px)이고, 배율(--zoom)만큼 커진다.
+     사람이 많아 책상이 작은 층은 좌석 이름이 읽히는 폭(--min-w, lib/seatLabel.ts)까지 넓혀 끌어서 본다 */
+  width: calc(max(100%, 720px, var(--min-w, 0px)) * var(--zoom, 1));
   container-type: inline-size;
   background: var(--surface);
   user-select: none; /* 끌어서 옮길 때 글자가 선택되지 않게 */
@@ -1041,6 +1048,15 @@
   text-overflow: ellipsis;
 }
 
+/* 크게 줄여 이름이 읽히지 않으면 이름은 숨기고 재실 표시만 (누르거나 올리면 정보 카드) */
+.plan[data-compact="true"] .seatName {
+  display: none;
+}
+
+.plan[data-compact="true"] .seatMark {
+  margin-right: 0;
+}
+
 /* 옆으로 돌린 책상(의자가 왼쪽·오른쪽): 좁고 길어서 이름을 세로로 쓴다 */
 .seat[data-vertical] {
   writing-mode: vertical-rl;
@@ -1109,11 +1125,12 @@
   pointer-events: none;
 }
 
+/* 의자 크기는 책상 깊이(--d)에 맞춘다 (작은 책상에 큰 의자가 붙지 않게) */
 .chairTop,
 .chairBottom {
   left: 30%;
   width: 40%;
-  height: max(4px, 0.55cqw);
+  height: max(3px, calc(var(--d, 3.3cqw) * 0.17));
 }
 
 .chairTop {
@@ -1130,7 +1147,7 @@
 .chairRight {
   top: 30%;
   height: 40%;
-  width: max(4px, 0.55cqw);
+  width: max(3px, calc(var(--d, 3.3cqw) * 0.17));
 }
 
 .chairLeft {

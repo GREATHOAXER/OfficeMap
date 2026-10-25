@@ -11,6 +11,7 @@ import { NO_STATUS_LABEL, PRESENCE_LABEL, type StatusFilter } from "@/lib/presen
 import { hhmm, roomStatusText } from "@/lib/rooms";
 import { useMediaQuery } from "@/lib/useMediaQuery";
 import { seatRatio } from "@/lib/planGeometry";
+import { baseSeatFont, compactAt, minPlanWidth, type SeatBox, seatBox, seatFont } from "@/lib/seatLabel";
 import { useNow } from "@/lib/useNow";
 import { zonePieces, zoneRects } from "@/lib/zoneShape";
 import styles from "./office.module.css";
@@ -21,7 +22,8 @@ const DRAG_THRESHOLD_PX = 5; // 이보다 적게 움직이면 끌기가 아니�
 
 export const ZOOM_MIN = 0.5;
 export const ZOOM_MAX = 3;
-export const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+/** min: 가장 작은 배율. 화면보다 큰 층(사람이 많은 층)은 "전체 보기" 배율까지 줄일 수 있다 */
+export const clampZoom = (z: number, min = ZOOM_MIN) => Math.min(ZOOM_MAX, Math.max(Math.min(ZOOM_MIN, min), z));
 // − / + 버튼이 멈추는 배율 (핀치·Ctrl+휠은 그 사이 어디든)
 export const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
 
@@ -36,6 +38,8 @@ type Props = {
   myEmpNo: string;
   zoom: number;
   onZoomChange: (zoom: number) => void;
+  /** 도면 전체가 영역에 들어오는 배율 (1보다 작으면 100%일 때 도면이 영역보다 크다) */
+  onFitZoom?: (zoom: number) => void;
   focusZoneId: number | null;
   visibleStatuses: Set<StatusFilter>;
   selectedSeatId: number | null;
@@ -47,7 +51,7 @@ type Props = {
 
 export default function FloorPlan(props: Props) {
   const { map, myEmpNo, zoom, onZoomChange, focusZoneId, visibleStatuses, selectedSeatId, onSelectSeat } = props;
-  const { pinnedSeatId, onUnpin } = props;
+  const { pinnedSeatId, onUnpin, onFitZoom } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
   const planRef = useRef<HTMLDivElement>(null);
   const [hoverSeatId, setHoverSeatId] = useState<number | null>(null);
@@ -57,10 +61,19 @@ export default function FloorPlan(props: Props) {
   const prevZoomRef = useRef(zoom);
   const anchorRef = useRef<{ x: number; y: number } | null>(null); // 확대 기준점 (스크롤 영역 안 좌표)
   const onZoomRef = useRef(onZoomChange);
+  const fitRef = useRef({ zoom: 1, report: onFitZoom });
   const hasPlan = map.plan !== null;
+  // 좌석 이름 글자 크기 (cqw): 층의 보통 책상에 "● 가나다"가 들어가는 크기. 도면은 이 글자가 읽히는 폭보다 작아지지 않는다
+  const aspect = map.plan ? map.plan.height_m / map.plan.width_m : 0.6;
+  const seatSize = map.plan ? seatRatio(map.plan.width_m, map.plan.height_m) : { w: 0, h: 0 };
+  const boxOf = (seat: Seat): SeatBox => seatBox(seat.w ?? seatSize.w, seat.h ?? seatSize.h, aspect);
+  const baseFont = baseSeatFont(map.seats.map(boxOf));
+  const baseFontRef = useRef(baseFont);
 
   useEffect(() => {
     onZoomRef.current = onZoomChange;
+    baseFontRef.current = baseFont;
+    fitRef.current.report = onFitZoom;
   });
 
   // 배율이 바뀌면 기준점(손가락·포인터 위치, 버튼이면 화면 가운데)이 제자리에 있도록 스크롤을 맞춘다
@@ -77,13 +90,24 @@ export default function FloorPlan(props: Props) {
     el.scrollTop = (el.scrollTop + anchor.y) * k - anchor.y;
   }, [zoom]);
 
-  // 도면이 영역보다 크면(확대 등) 손 모양 커서를 보여 준다
+  // 도면이 영역보다 크면(확대·사람이 많은 층) 손 모양 커서를 보여 준다.
+  // 도면 전체가 들어오는 배율을 알려 주고, 이름이 읽히지 않을 만큼 작으면 이름을 숨긴다(재실 표시만)
   useEffect(() => {
     const el = scrollRef.current;
     const plan = planRef.current;
     if (!el || !plan) return;
     const update = () => {
       el.dataset.pannable = String(el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1);
+      const width = plan.getBoundingClientRect().width;
+      plan.dataset.compact = String(compactAt(width, baseFontRef.current));
+      const baseW = width / zoomRef.current;
+      const baseH = (baseW * plan.offsetHeight) / Math.max(1, plan.offsetWidth);
+      const maxH = parseFloat(getComputedStyle(el).maxHeight) || el.clientHeight;
+      const fit = Math.min(1, el.clientWidth / baseW, maxH / baseH);
+      if (Math.abs(fit - fitRef.current.zoom) > 0.005) {
+        fitRef.current.zoom = fit;
+        fitRef.current.report?.(fit);
+      }
     };
     const observer = new ResizeObserver(update);
     observer.observe(el);
@@ -136,7 +160,7 @@ export default function FloorPlan(props: Props) {
     function zoomAt(next: number, clientX: number, clientY: number) {
       const rect = el!.getBoundingClientRect();
       anchorRef.current = { x: clientX - rect.left, y: clientY - rect.top };
-      zoomRef.current = clampZoom(next);
+      zoomRef.current = clampZoom(next, fitRef.current.zoom);
       onZoomRef.current(zoomRef.current);
     }
     function onWheel(event: WheelEvent) {
@@ -232,8 +256,6 @@ export default function FloorPlan(props: Props) {
   }
   const geometry = plan.geometry ?? {};
   const zones = new Map(map.zones.map((z) => [z.id, z]));
-  // 좌석 하나의 크기 (도면 너비·높이 대비). 책상 크기(m) ÷ 도면 크기라 큰 층일수록 작다. 좌석 좌표는 중심점이다
-  const seatSize = seatRatio(plan.width_m, plan.height_m);
   // 고정한 카드가 먼저. 마우스를 올려 띄운 카드는 그 자리가 고정 카드가 아닐 때만
   const cardSeatId = pinnedSeatId ?? hoverSeatId;
   const cardSeat = map.seats.find((s) => s.id === cardSeatId && s.occupant);
@@ -243,7 +265,13 @@ export default function FloorPlan(props: Props) {
       <div
         ref={planRef}
         className={styles.plan}
-        style={{ aspectRatio: `${plan.width_m} / ${plan.height_m}`, "--zoom": zoom } as CSSProperties}
+        style={
+          {
+            aspectRatio: `${plan.width_m} / ${plan.height_m}`,
+            "--zoom": zoom,
+            "--min-w": `${minPlanWidth(baseFont)}px`,
+          } as CSSProperties
+        }
         role="group"
         aria-label={`${map.floor.site.name} ${map.floor.name} 좌석 배치도`}
       >
@@ -280,6 +308,8 @@ export default function FloorPlan(props: Props) {
             key={seat.id}
             seat={seat}
             size={seatSize}
+            box={boxOf(seat)}
+            baseFont={baseFont}
             zone={seat.zone_id ? zones.get(seat.zone_id) : undefined}
             dimmed={
               (focusZoneId !== null && seat.zone_id !== focusZoneId) ||
@@ -335,6 +365,9 @@ type SeatSize = { w: number; h: number };
 type SeatProps = {
   seat: Seat;
   size: SeatSize;
+  /** 좌석 폭·높이 (cqw)와 층 기본 글자 크기 */
+  box: SeatBox;
+  baseFont: number;
   zone: Zone | undefined;
   dimmed: boolean;
   mine: boolean;
@@ -344,7 +377,8 @@ type SeatProps = {
   onHoverEnd: () => void;
 };
 
-function SeatButton({ seat, size: base, zone, dimmed, mine, selected, onSelect, onHoverStart, onHoverEnd }: SeatProps) {
+function SeatButton(props: SeatProps) {
+  const { seat, size: base, box, baseFont, zone, dimmed, mine, selected, onSelect, onHoverStart, onHoverEnd } = props;
   const { occupant } = seat;
   const size = { w: seat.w ?? base.w, h: seat.h ?? base.h };
   const presence = occupant?.presence?.status;
@@ -388,6 +422,9 @@ function SeatButton({ seat, size: base, zone, dimmed, mine, selected, onSelect, 
         top: pct(seat.y - size.h / 2),
         width: pct(size.w),
         height: pct(size.h),
+        // 이름이 좌석에 다 들어가는 크기 (재실 표시 자리 포함). 의자는 책상 깊이에 맞춘다
+        fontSize: `${seatFont(box, text, !!presence, baseFont).toFixed(3)}cqw`,
+        ...({ "--d": `${Math.min(box.w, box.h).toFixed(3)}cqw` } as CSSProperties),
       }}
       title={seat.code}
       aria-label={label}

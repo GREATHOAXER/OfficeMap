@@ -25,11 +25,11 @@ type Props = {
   map: FloorMap;
 };
 
-/** − / + 버튼: 지금 배율 다음(앞) 단계로 */
-const stepZoom = (zoom: number, dir: 1 | -1) =>
+/** − / + 버튼: 지금 배율 다음(앞) 단계로. min: 가장 작은 배율 ("전체 보기"가 0.5보다 작으면 그만큼) */
+const stepZoom = (zoom: number, dir: 1 | -1, min: number) =>
   dir > 0
     ? (ZOOM_STEPS.find((z) => z > zoom + 0.001) ?? ZOOM_MAX)
-    : ([...ZOOM_STEPS].reverse().find((z) => z < zoom - 0.001) ?? ZOOM_MIN);
+    : ([...ZOOM_STEPS].reverse().find((z) => z < zoom - 0.001 && z >= min - 0.001) ?? min);
 
 export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, myPresence, map: fetchedMap }: Props) {
   // 관리자가 자리 배치를 바꾸거나 도면을 게시하면 다시 읽고 알려 준다
@@ -42,12 +42,23 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
 
   const floorId = map.floor.id;
   const [aiOpen, setAiOpen] = useState(false);
-  const [zoom, setZoom] = useState(1);
+  // 배율은 층마다 100%에서 시작한다 (층마다 도면 크기가 달라 "전체 보기" 배율도 다르다)
+  const [zoomState, setZoomState] = useState({ floorId, zoom: 1 });
+  const setZoom = (zoom: number) => setZoomState({ floorId, zoom });
+  // 도면 전체가 들어오는 배율. 사람이 많아 책상이 작은 층은 100%에서도 이름이 읽히게 도면이 영역보다 크다
+  const [fitZoom, setFitZoom] = useState(1);
+  const minZoom = Math.min(ZOOM_MIN, fitZoom);
+  const zoom = clampZoom(zoomState.floorId === floorId ? zoomState.zoom : 1, minZoom);
   const [visible, setVisible] = useState<Set<StatusFilter>>(() => new Set(STATUS_FILTERS));
   const filtering = visible.size < STATUS_FILTERS.length;
   // 층을 바꾸면 고른 자리·강조한 팀은 의미가 없어서, 어느 층에서 고른 것인지 같이 기억한다.
   // pinned: 오른쪽 패널이 도면 아래로 내려간 좁은 화면에서는 자리 옆에 정보 카드를 고정해 띄운다
-  const [picked, setPicked] = useState<{ floorId: number; seatId: number | null; zoneId: number | null; pinned: boolean }>({
+  const [picked, setPicked] = useState<{
+    floorId: number;
+    seatId: number | null;
+    zoneId: number | null;
+    pinned: boolean;
+  }>({
     floorId,
     seatId: null,
     zoneId: null,
@@ -185,8 +196,7 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
 
       {seatless && (
         <p className={styles.seatless} role="status">
-          아직 배정된 자리가 없어요.{" "}
-          {teamFloorId === floorId ? "우리 팀 구역이 있는 층을 먼저 보여 드려요. " : ""}
+          아직 배정된 자리가 없어요. {teamFloorId === floorId ? "우리 팀 구역이 있는 층을 먼저 보여 드려요. " : ""}
           자리가 정해지면 이 화면이 내 자리가 있는 층으로 열립니다.
         </p>
       )}
@@ -209,7 +219,9 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
                     {floor.id === myFloorId && <span className={styles.mine}>내 자리</span>}
                     {seatless && floor.id === teamFloorId && <span className={styles.mine}>우리 팀</span>}
                   </strong>
-                  <span>{floor.description ?? (floor.teams.map((t) => t.replace(/팀$/, "")).join("·") || "공용 공간")}</span>
+                  <span>
+                    {floor.description ?? (floor.teams.map((t) => t.replace(/팀$/, "")).join("·") || "공용 공간")}
+                  </span>
                 </Link>
               );
             })}
@@ -245,27 +257,42 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
                 <button
                   type="button"
                   aria-label="축소"
-                  disabled={zoom <= ZOOM_MIN + 0.001}
-                  onClick={() => setZoom(clampZoom(stepZoom(zoom, -1)))}
+                  disabled={zoom <= minZoom + 0.001}
+                  onClick={() => setZoom(clampZoom(stepZoom(zoom, -1, minZoom), minZoom))}
                 >
                   −
                 </button>
                 <button
                   type="button"
-                  aria-label={`화면 폭에 맞추기 (지금 ${Math.round(zoom * 100)}%)`}
-                  title="화면 폭에 맞추기"
+                  aria-label={`기본 크기로 (지금 ${Math.round(zoom * 100)}%)`}
+                  title={fitZoom < 0.999 ? "기본 크기 (이름이 읽히는 크기)" : "화면 폭에 맞추기"}
                   onClick={() => setZoom(1)}
                 >
-                  {Math.abs(zoom - 1) < 0.001 ? "맞춤" : <span className="mono">{Math.round(zoom * 100)}%</span>}
+                  {Math.abs(zoom - 1) < 0.001 && fitZoom >= 0.999 ? (
+                    "맞춤"
+                  ) : (
+                    <span className="mono">{Math.round(zoom * 100)}%</span>
+                  )}
                 </button>
                 <button
                   type="button"
                   aria-label="확대"
                   disabled={zoom >= ZOOM_MAX - 0.001}
-                  onClick={() => setZoom(clampZoom(stepZoom(zoom, 1)))}
+                  onClick={() => setZoom(clampZoom(stepZoom(zoom, 1, minZoom), minZoom))}
                 >
                   +
                 </button>
+                {fitZoom < 0.999 && (
+                  <button
+                    type="button"
+                    className={styles.zoomAll}
+                    aria-pressed={Math.abs(zoom - fitZoom) < 0.005}
+                    title="층 전체를 한 화면에 (이름은 작아지거나 숨겨져요)"
+                    onClick={() => setZoom(fitZoom)}
+                  >
+                    전체 보기
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -290,6 +317,7 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
               myEmpNo={myEmpNo}
               zoom={zoom}
               onZoomChange={setZoom}
+              onFitZoom={setFitZoom}
               focusZoneId={focusZoneId}
               visibleStatuses={visible}
               selectedSeatId={selectedSeatId}

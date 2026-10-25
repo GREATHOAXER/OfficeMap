@@ -538,6 +538,15 @@
   cursor: not-allowed;
 }
 
+.zoom button[aria-pressed] {
+  padding: 0 10px;
+}
+
+.zoom button[aria-pressed="true"] {
+  background: var(--ink);
+  color: #fff;
+}
+
 .modeBar {
   margin: 0;
   padding: 8px 12px;
@@ -569,8 +578,9 @@
 /* 도면 안의 크기는 도면 폭(cqw) 기준. 직원 화면과 같은 좌표·비율 */
 .canvas {
   position: relative;
-  /* 기본은 카드 폭에 맞춘다. 좁은 화면에서는 이름이 읽히는 560px까지만 줄이고 옆으로 민다 */
-  width: calc(max(100%, 560px) * var(--zoom, 1));
+  /* 기본은 카드 폭에 맞춘다. 좁은 화면에서는 560px까지만 줄이고 옆으로 민다.
+     사람이 많아 책상이 작은 층은 좌석 이름이 읽히는 폭(--min-w, lib/seatLabel.ts)까지 넓힌다 */
+  width: calc(max(100%, 560px, var(--min-w, 0px)) * var(--zoom, 1));
   container-type: inline-size;
   background: var(--surface);
   user-select: none;
@@ -688,6 +698,11 @@
 .seatName {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 크게 줄여 이름이 읽히지 않으면 이름은 숨긴다 (색·테두리로 상태는 보인다) */
+.canvas[data-compact="true"] .seatName {
+  display: none;
 }
 
 .seatTag,

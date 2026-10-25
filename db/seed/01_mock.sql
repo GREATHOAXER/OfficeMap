@@ -1,6 +1,7 @@
 -- 01_mock.sql
 -- 화면 흐름 순서대로 넣는 목업 데이터: 서울 본사 1F~10F, 11개 팀
 --   1F 로비 · 2F 대강당 · 3F 식당 · 4F~9F 사무실(11개 팀) · 10F 임원실
+--   8F(사람이 많은 층, 도면 편집기 도면)의 도면·구역·좌석·회의실과 새 팀 둘은 03_dense_floor.sql이 만든다
 -- 이름·사번·연락처는 모두 가짜다
 -- 목업 계정의 비밀번호는 모두 officemap1234 (개발용. 운영 DB에 넣지 말 것)
 -- 실행 순서: db/schema/01~08 → 이 파일
@@ -188,9 +189,6 @@ WITH extra(floor_name, kind, label, shape) AS (
     ('6F',  'restricted', '서버실 (출입 제한)',        pg_temp.cell(2, 'full', 2)),
     ('7F',  'lounge',     '휴게 공간',                 pg_temp.cell(2, 'full')),
     ('7F',  'storage',    '포커스룸',                  pg_temp.cell(3, 'top')),
-    ('8F',  'lounge',     '프로젝트룸',                pg_temp.cell(1, 'full')),
-    ('8F',  'storage',    '포커스룸',                  pg_temp.cell(2, 'bottom')),
-    ('8F',  'storage',    '교육장',                    pg_temp.cell(3, 'full')),
     ('9F',  'storage',    '분석 랩',                   pg_temp.cell(1, 'bottom')),
     ('9F',  'restricted', '데이터 운영실 (출입 제한)', pg_temp.cell(2, 'full', 2)),
     ('10F', 'restricted', '사장실',                    pg_temp.cell(0, 'full')),
@@ -221,7 +219,8 @@ FROM floors f
 CROSS JOIN LATERAL (SELECT timestamptz '2026-09-01 17:00+09' + f.sort_order * interval '2 days' AS published) p
 JOIN files fi ON fi.stored_path = 'plans/seoul/' || lower(f.name) || '-v1.pdf'
 LEFT JOIN per_floor pf ON pf.floor_name = f.name
-JOIN employees e ON e.emp_no = '20120002';
+JOIN employees e ON e.emp_no = '20120002'
+WHERE f.name <> '8F';  -- 8F는 03_dense_floor.sql
 
 -- 7F는 도면을 고치는 중 (사업장 화면의 "수정 중")
 INSERT INTO floor_plans (floor_id, version, status, background_file_id, width_m, height_m, geometry,
@@ -248,8 +247,6 @@ FROM (VALUES
     ('7F',  'B', '재무팀',       'D120', 't2', 1, 'full',   2),
     ('7F',  'C', '인사팀',       'D140', 't3', 0, 'bottom', 3),
     ('7F',  'Z', '공용 자율석',  NULL,   't0', 3, 'bottom', 4),
-    ('8F',  'A', '디지털혁신팀', 'D230', 't1', 0, 'full',   1),
-    ('8F',  'Z', '공용 자율석',  NULL,   't0', 2, 'top',    2),
     ('9F',  'A', '데이터팀',     'D240', 't3', 0, 'full',   1),
     ('9F',  'Z', '공용 자율석',  NULL,   't0', 1, 'top',    2),
     ('10F', 'S', '비서석',       'D110', 't2', 2, 'top',    1)
@@ -286,8 +283,6 @@ FROM (VALUES
     ('6F',  '회의실 602',       6, '{TV}',              pg_temp.slot(2),            2),
     ('7F',  '대회의실 701',    12, '{VIDEO}',           pg_temp.slot(1),            1),
     ('7F',  '소회의실 702',     6, '{TV}',              pg_temp.slot(2),            2),
-    ('8F',  '회의실 801',       8, '{VIDEO}',           pg_temp.slot(1),            1),
-    ('8F',  '회의실 802',       6, '{TV}',              pg_temp.slot(2),            2),
     ('9F',  '회의실 901',       8, '{VIDEO}',           pg_temp.slot(1),            1),
     ('9F',  '회의실 902',       6, '{TV}',              pg_temp.slot(2),            2),
     ('10F', '임원 회의실 1001', 10, '{VIDEO}',          pg_temp.slot(1),            1),

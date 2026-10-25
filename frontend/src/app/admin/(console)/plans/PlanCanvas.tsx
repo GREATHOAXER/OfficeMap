@@ -25,6 +25,7 @@ import {
   snapTo,
   SPACE_KINDS,
 } from "@/lib/planGeometry";
+import { baseSeatFont, minPlanWidth, type SeatBox, seatFont } from "@/lib/seatLabel";
 import { joinedEnds, setEnd, type Snapped, snapMove, snapPoint, type SnapTargets, snapTargets } from "@/lib/wallSnap";
 import ui from "../seating/seating.module.css";
 import styles from "./plans.module.css";
@@ -50,6 +51,7 @@ const SNAP_PX = 10; // 선 벽 끝이 이음 자리에 붙는 거리 (화면 px)
 const MIN_SIZE_M = 0.3;
 const RULER_PX = 22; // 눈금자 두께
 const MIN_CANVAS_PX = 620; // 100%일 때 도면 폭의 하한 (좁은 화면에서는 옆으로 밀어서 본다)
+const DESK_READABLE_PX = 7; // 100%일 때 책상 번호 글자의 하한 (작은 책상이 많은 층은 도면을 넓힌다)
 const RULER_STEPS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100];
 const CHAIR_SIDE = { 0: "bottom", 90: "right", 180: "top", 270: "left" } as Record<number, string>;
 const ORDER: Record<PlanElement["type"], number> = {
@@ -170,12 +172,25 @@ export default function PlanCanvas(props: Props) {
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  const canvasW = Math.round(Math.max(availPx, MIN_CANVAS_PX) * zoom);
+  // 책상 번호 글자 크기는 직원 화면과 같은 규칙 (lib/seatLabel.ts, 보통 글자는 "A-01"). 작은 책상이 많은 층은 100%에서도
+  // 번호가 DESK_READABLE_PX 이상이 되게 도면을 넓힌다 (줄여서 전체를 보려면 − 단추). 보통 층은 지금처럼 화면 폭에 맞는다
+  const deskBox = (el: DeskGroup): SeatBox => {
+    const d = seatDims(el);
+    return { w: (d.w / width) * 100, h: (d.h / width) * 100 };
+  };
+  const deskFont = baseSeatFont(
+    geometry.elements.flatMap((el) => (el.type === "desk_group" ? el.cells.map(() => deskBox(el)) : [])),
+    2.5,
+  );
+  const minW = minPlanWidth(deskFont, DESK_READABLE_PX);
+  const canvasW = Math.round(Math.max(availPx, MIN_CANVAS_PX, minW) * zoom);
   const canvasH = Math.round((canvasW * height) / width);
   const pxPerM = canvasW / width;
   // 보이는 높이는 100%일 때의 도면 높이로 둔다: 확대하면 영역이 길어지는 대신 스크롤돼서 포인터 자리가 그대로 남는다
-  const baseW = Math.max(availPx, MIN_CANVAS_PX);
-  const viewH = Math.round((baseW * height) / width) + RULER_PX + (baseW > availPx ? 16 : 0);
+  const baseW = Math.max(availPx, MIN_CANVAS_PX, minW);
+  // (작은 책상이 많아 100%가 화면보다 넓은 층도 보이는 높이는 화면 폭에 맞춘 도면 높이까지)
+  const fitW = Math.max(availPx, MIN_CANVAS_PX);
+  const viewH = Math.round((fitW * height) / width) + RULER_PX + (baseW > availPx ? 16 : 0);
 
   // 배율이 바뀌면 기준점(포인터 자리, 버튼이면 화면 가운데)이 제자리에 있도록 스크롤을 맞춘다
   const zoomRef = useRef(zoom);
@@ -595,6 +610,7 @@ export default function PlanCanvas(props: Props) {
                 );
               }
               const size = seatDims(el);
+              const cellBox = deskBox(el);
               return (
                 <div key={el.id} {...common} className={`${styles.desks} ${styles.el}`} style={rectStyle(box)}>
                   {el.cells.map((cell, i) => {
@@ -605,6 +621,7 @@ export default function PlanCanvas(props: Props) {
                       top: `${(((c.y - size.h / 2 - box.y) / box.h) * 100).toFixed(3)}%`,
                       width: `${((size.w / box.w) * 100).toFixed(3)}%`,
                       height: `${((size.h / box.h) * 100).toFixed(3)}%`,
+                      fontSize: `${seatFont(cellBox, cell.desk ? cell.code : "빈칸", !!seat?.occupant, deskFont).toFixed(3)}cqw`,
                     };
                     return (
                       <span
