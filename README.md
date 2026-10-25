@@ -10,6 +10,7 @@ Vibe Coding Project @ KFTC
 | `db/` | 테이블 정의(`schema/`)와 목업 데이터(`seed/`) — PostgreSQL 16 |
 | `server/` | API 서버 — Python FastAPI, uvicorn으로 실행 |
 | `frontend/` | 화면 — Next.js 16 |
+| `docs/design/` | 설계 문서 — [도면 편집 · 좌석 배치 편집](docs/design/floor-plan-and-seating.md) |
 
 브라우저는 Next.js(3000번)에만 접속하고, Next.js가 `/api/...` 요청을 FastAPI(8000번)로 넘겨줍니다.
 
