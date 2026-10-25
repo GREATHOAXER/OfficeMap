@@ -699,7 +699,7 @@ def reset_password(emp_no: str, admin: CurrentAdmin, request: Request) -> dict[s
         )
         conn.execute(
             """
-            UPDATE user_sessions SET revoked_at = now()
+            UPDATE user_sessions SET revoked_at = now(), revoked_reason = 'PASSWORD_RESET'
             WHERE employee_id = %s AND kind = 'USER' AND revoked_at IS NULL
             """,
             (emp["id"],),

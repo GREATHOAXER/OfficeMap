@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -7,6 +8,8 @@ import FloorIllustration from "./FloorIllustration";
 import LoginForm from "./LoginForm";
 import styles from "./login.module.css";
 
+export const metadata: Metadata = { title: "로그인 · 오피스 안내" };
+
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const cookieHeader = (await headers()).get("cookie");
   const [user, info, params] = await Promise.all([fetchMe(cookieHeader), fetchLoginInfo(), searchParams]);
@@ -14,14 +17,19 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   if (user) redirect(next);
 
   const contact = info.support_contact ?? "정보보호팀";
-  const notice =
-    params.reason === "expired"
-      ? `${info.idle_minutes}분 넘게 사용하지 않아 로그아웃되었습니다. 다시 로그인하면 보던 화면으로 돌아갑니다.`
-      : params.reason === "logout"
-        ? "로그아웃했습니다. 이 브라우저의 직원 화면과 관리자 페이지 로그인이 모두 끝났습니다."
-        : next !== "/"
-          ? "로그인하면 요청한 화면으로 이동합니다."
-          : null;
+  const back = "다시 로그인하면 보던 화면으로 돌아갑니다.";
+  // 왜 로그인 화면으로 왔는지 (lib/loginRedirect.ts LOGOUT_REASONS, 서버 session_end_reason)
+  const notices: Record<string, string> = {
+    expired: `${info.idle_minutes}분 넘게 사용하지 않아 로그아웃되었습니다. ${back}`,
+    max: `로그인한 지 오래되어 로그아웃되었습니다. ${back}`,
+    reset: "관리자가 비밀번호를 초기화해서 로그아웃되었습니다. 관리자에게 받은 임시 비밀번호로 로그인하세요.",
+    changed: "다른 곳에서 비밀번호를 바꿔서 로그아웃되었습니다. 새 비밀번호로 로그인하세요.",
+    locked: `비밀번호를 ${info.max_failed_count}회 잘못 입력해 계정이 잠겼습니다. 잠금 해제 문의: ${contact}`,
+    inactive: `로그인할 수 없는 계정이 되어 로그아웃되었습니다. 문의: ${contact}`,
+    logout: "로그아웃했습니다. 이 브라우저의 직원 화면과 관리자 페이지 로그인이 모두 끝났습니다.",
+  };
+  const reason = typeof params.reason === "string" ? params.reason : "";
+  const notice = notices[reason] ?? (next !== "/" ? "로그인하면 요청한 화면으로 이동합니다." : null);
 
   return (
     <div className={styles.page}>

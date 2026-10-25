@@ -2,7 +2,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { FloorEvent, FloorMap, MyPresence, PresenceEvent } from "./api";
 import { openEventStream } from "./eventStream";
-import { expiredLoginUrl } from "./loginRedirect";
+import { expiredLoginUrl, toLogoutReason } from "./loginRedirect";
 
 /** 사번 → 그 사람의 가장 최근 상태 변경 알림 */
 export type LiveChanges = ReadonlyMap<string, PresenceEvent>;
@@ -41,7 +41,8 @@ export function useLivePresence(onFloor?: (change: FloorEvent) => void): LiveCha
         onRejected: async () => {
           const res = await fetch("/api/auth/me").catch(() => null);
           if (res?.status === 401) {
-            router.replace(expiredLoginUrl());
+            const body = await res.json().catch(() => null);
+            router.replace(expiredLoginUrl(toLogoutReason(body?.reason)));
             return false;
           }
           return true;
