@@ -34,9 +34,9 @@ scripts/
 |---|---|
 | `GET /api/auth/login-info` | 로그인 화면의 공지, 문의처, 자동 로그아웃 시간(직원·관리자), 실패 허용 횟수 |
 | `POST /api/auth/login` | 사번·비밀번호 로그인. 성공하면 HttpOnly 쿠키로 세션 발급 |
-| `GET /api/auth/me` | 쿠키로 로그인한 사람 확인. 30분 미사용, 퇴사·잠금이면 401 |
+| `GET /api/auth/me` | 쿠키로 로그인한 사람 확인. 30분 미사용, 퇴사·잠금이면 401. 401에는 끊긴 이유 `reason`(`expired`·`max`·`reset`·`changed`·`locked`·`inactive`·`logout`, `user_sessions.revoked_reason`에서) |
 | `GET /api/auth/session` | 자동 로그아웃까지 남은 초(`idle_left`). 확인만 하고 사용 시각은 늘리지 않음 (화면의 1분 전 알림용) |
-| `POST /api/auth/password` | 비밀번호 변경 `{"current_password", "new_password"}`. 다른 곳의 직원 세션은 끝냄 |
+| `POST /api/auth/password` | 비밀번호 변경 `{"current_password", "new_password"}`. 다른 곳의 직원 세션은 끝냄. 현재 비밀번호를 틀리면 로그인 실패 횟수에 더하고 허용 횟수에 닿으면 잠금(423) |
 | `POST /api/auth/logout` | 로그아웃. 같은 브라우저의 관리자 로그인도 같이 끝내고 두 쿠키를 지움 |
 
 로그인 실패 응답은 `code`로 구분합니다. 화면 문구는 프론트엔드가 정합니다.
@@ -77,6 +77,9 @@ scripts/
 | `GET /api/employees/teams?q=총무` | 팀·본부 찾기 (참석자 칸의 `$총무팀`). `q`가 비면 전부. `member_count`는 아래 팀 사람까지 |
 | `GET /api/employees/teams/{id}/members` | 팀 전체 (재직자만). 본부면 아래 팀 사람까지 |
 
+- 검색·팀원 목록에 시간(`start_date`·`start_min`·`end_date`·`end_min`)을 주면 그 시간의 다른 회의 `busy`가 붙고, `exclude`(예약 ID)는
+  고치고 있는 그 예약을 빼고 봅니다. 결과에는 `email`도 있습니다(자리 없는 사람의 연락처 카드).
+
 - 결과마다 직급·팀·위 부서(`division`, 본부)·지금 자리(사업장·층·좌석)·재실 상태가 붙습니다. 자리가 없으면 `seat: null`.
 - 팀·본부 이름으로도 걸립니다: `IT본부`로 찾으면 IT운영팀·보안팀·디지털혁신팀·데이터팀 사람이 나옵니다.
 - `date`, `start_min`, `end_min`(서울 기준 그날 0시부터 분)을 같이 주면 그 시간에 겹치는 다른 회의(`busy`)와
@@ -107,7 +110,8 @@ scripts/
 |---|---|
 | `GET /api/rooms/day?date=2026-10-23&site_id=1` | 한 사업장 회의실들의 하루 예약 현황. 날짜·사업장을 빼면 오늘, 내 자리가 있는 사업장 |
 | `POST /api/reservations` | 예약 만들기 (아래) |
-| `PUT /api/reservations/{id}` | 예약 고치기: 회의실·일시·제목·참석자 (만든 사람만, 끝나기 전에만, 반복은 그 회차만). 본문은 만들기와 같고 `repeat`는 `NONE` |
+| `PUT /api/reservations/{id}` | 예약 고치기: 회의실·일시·제목·참석자 (만든 사람만, 끝나기 전에만, 반복은 그 회차만). 본문은 만들기와 같고 `repeat`는 `NONE`. `expected_updated_at`(자세히 보기의 `updated_at`)을 보내면 그 뒤 다른 곳에서 고친 예약은 409 `CHANGED_ELSEWHERE`로 거절 |
+| `GET /api/reservations/mine/clash?start_date&start_min&end_date&end_min&exclude` | 그 시간에 내가 들어가는 다른 회의(`busy`)나 휴가·출장·재택(`absence`). 예약 폼의 "나" 칩 |
 | `GET /api/reservations/mine?scope=upcoming` | 내가 예약했거나 참석하는 예약 (`is_organizer`, `attending`: 내가 실제로 들어가는지). `upcoming`: 아직 안 끝난 것 (최근 7일 안에 취소된 것도 `CANCELLED`로 남김), `past`: 최근 30일 지난·취소된 것 |
 | `GET /api/rooms/{id}/conflicts?start_date&start_min&end_date&end_min&exclude` | 그 기간에 이 회의실에 이미 잡힌 예약 (여러 날 예약을 고를 때 미리 확인). `exclude`: 고치는 예약 |
 | `GET /api/reservations/{id}` | 예약 자세히: 회의실, 일시, 예약한 사람(내선, 회의 참석 여부 `attends`), 참석자(재실 상태, 예약한 사람이면 `is_organizer`), 반복 규칙(남은 회차 `left`), 취소 시각, 내가 취소·수정할 수 있는지 |
@@ -125,7 +129,7 @@ scripts/
     (예약한 사람도 참석하면 거기에 들어감), "그 시간에 다른 회의" 확인도 참석자 기준입니다. 아무도 없으면 422 `NO_ATTENDEES`.
   - 승인 절차는 없습니다. 임원 회의실·대강당도 바로 확정(`CONFIRMED`)됩니다.
   - 반복 예약은 회차마다 한 행씩 만듭니다(`reservation_series`가 규칙). 석 달(92일), 60회까지.
-    한 회차라도 겹치면 아무것도 만들지 않고 겹치는 날짜를 돌려줍니다. `"skip_conflicts": true`면 겹치는 날만 빼고
+    한 회차라도 겹치면 아무것도 만들지 않고 겹치는 날짜(그 회차의 날, 여러 날 예약과 겹쳐도)를 돌려줍니다. `"skip_conflicts": true`면 겹치는 날만 빼고
     만들고, 뺀 날짜를 `skipped`로 돌려줍니다.
   - `notify`면 참석자에게 화면 알림(`notifications`)을 쌓아 둡니다 (메신저 연동 전). 고치기·취소도 알림을 쌓습니다.
 - 같은 회의실·겹치는 시간은 DB 제약(EXCLUDE)이 마지막으로 막습니다. 검사와 저장 사이에 누가 먼저 잡아도 409.
@@ -177,7 +181,7 @@ scripts/
 
 | 요청 | 하는 일 |
 |---|---|
-| `POST /api/admin/sites` | 사업장 추가 `{name, kind: HQ\|CENTER, address?}`. 같은 이름 409 `SITE_NAME_TAKEN` |
+| `POST /api/admin/sites` | 사업장 추가 `{name, kind: HQ\|CENTER, address?}`. 같은 이름 409 `SITE_NAME_TAKEN`. 닫은 사업장 이름이면 그 사업장을 다시 엶(`reopened: true`) |
 | `PUT /api/admin/sites/{ID}` | 사업장 고치기 |
 | `DELETE /api/admin/sites/{ID}` | 사업장 닫기. 층이 남아 있으면 409 `SITE_HAS_FLOORS`. 그 사업장 관리자 권한 회수 |
 | `POST /api/admin/sites/{ID}/floors` | 층 추가 `{name, description?, under_floor_id?}` (그 층 바로 아래, 없으면 맨 위). 같은 이름 409 `FLOOR_NAME_TAKEN` |
@@ -185,15 +189,17 @@ scripts/
 | `DELETE /api/admin/floors/{ID}` | 층 없애기. 좌석·회의실이 있으면 409 `FLOOR_IN_USE {seats, rooms}`. 빈 구역·초안·이 층 권한 정리 |
 | `GET /api/admin/org?inactive=` | 부서 목록 (`parent_id`, 인원 `members`, 이 부서 구역 `zones`), `can_edit` |
 | `GET /api/admin/org/departments/{ID}/members` | 부서 사람 (재직·휴직, 자리·관리자·임시 비밀번호 여부) |
-| `POST /api/admin/org/departments` | 부서 추가 `{name, parent_id?, code?}` (코드가 없으면 `NEW001`…) |
+| `POST /api/admin/org/departments` | 부서 추가 `{name, parent_id?, code?}` (코드가 없으면 `NEW001`…). 쓰는 부서와 이름이 같으면(대소문자 무시) 409 `DEPT_NAME_TAKEN` |
 | `PUT /api/admin/org/departments/{ID}` | 이름·위 부서·코드. 자기 아래로 옮기면 422 `PARENT_CYCLE` |
 | `DELETE /api/admin/org/departments/{ID}` | 부서 없애기. 사람·아래 부서가 있으면 409 `DEPT_NOT_EMPTY {members, children}` |
 | `POST /api/admin/org/departments/{ID}/members` | 데려오기 `{emp_nos}` → `{moved, released}` (고정석 배정이 끝난 사람 이름) |
 | `GET /api/admin/org/people?q=` | 이름·사번으로 사람 찾기 (재직·휴직, 지금 부서) |
 | `POST /api/admin/org/employees` | 새 직원 등록 → `{employee, temporary_password}` (직원 화면 계정, 첫 로그인 때 비밀번호 변경). 같은 사번 409 `EMP_NO_TAKEN` |
 | `PUT /api/admin/org/employees/{사번}` | 보낸 칸만: 이름·직급·직책·이메일·내선·`department_id`·`status`(`ACTIVE`/`LEAVE`/`RETIRED`) → `{released}`. 나를 퇴사 422 `CANNOT_RETIRE_SELF` |
-| `POST /api/admin/org/employees/{사번}/reset-password` | 직원 화면 임시 비밀번호(잠금 해제, 로그인 끊음) → `{temporary_password}` |
+| `POST /api/admin/org/employees/{사번}/reset-password` | 직원 화면 임시 비밀번호(잠금 해제, 로그인 끊음 — 끊긴 이유 `reset`) → `{temporary_password}` |
 
+- 이름 겹침은 쓰고 있는 사업장·층·부서끼리만 대소문자 없이 봅니다. 없앤 층·사업장 이름으로 바꾸거나 새로 만들면 없앤 쪽 이름을
+  `이름~ID`로 비켜 줍니다. 이메일은 형식을 확인합니다(형식이 아니면 422, 본문 검증 오류).
 - 부서를 옮기거나 퇴사하면 고정석 배정은 DB 트리거(`release_seat_on_org_change`)가 끝내고 새 팀의 미배치 인원이 됩니다.
   휴직(`LEAVE`)은 자리를 그대로 두고 로그인만 막힙니다. 퇴사하면 관리자 권한도 회수하고 세션을 끊습니다.
 
