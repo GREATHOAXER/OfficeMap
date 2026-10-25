@@ -221,6 +221,11 @@ def change_password(body: PasswordChange, user: CurrentUserAllowTemporary) -> Re
     return Response(status_code=204)
 
 
+def photo_url(emp_no: str, photo_at: Any) -> str | None:
+    """사진 주소 (profile.photo_url과 같은 규칙). 바꾼 시각을 붙여 새 사진이면 브라우저가 다시 받는다"""
+    return f"/api/employees/{emp_no}/photo?v={int(photo_at.timestamp())}" if photo_at else None
+
+
 def _user_out(user: dict[str, Any]) -> dict[str, Any]:
     return {
         "emp_no": user["emp_no"],
@@ -229,6 +234,8 @@ def _user_out(user: dict[str, Any]) -> dict[str, Any]:
         "department": user["department"],
         "role": "ADMIN" if user["is_admin"] else "USER",
         "must_change_password": user["must_change_password"],
+        "display_name": user.get("display_name"),
+        "photo": photo_url(user["emp_no"], user.get("photo_at")),
     }
 
 

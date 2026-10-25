@@ -1686,3 +1686,99 @@
     margin-left: 0;
   }
 }
+
+/* 내 정보: 사진·부르는 이름·한 줄 소개·하는 일 ------------------------------------- */
+
+.personAvatar {
+  overflow: hidden;
+}
+
+.personAlias {
+  margin-left: 6px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.personHeadline {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.duties {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.duties h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.duties p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.duties ul,
+.popoverSkills {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.duties li,
+.popoverSkills span {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--divider);
+  font-size: 11.5px;
+  color: var(--ink);
+}
+
+.popoverAvatar {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin-right: 2px;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.popoverHeadline {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.popoverHead strong {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 검색: 내 정보로 찾은 사람의 걸린 부분 (하는 일·키워드) */
+.searchAlias {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.searchMatched {
+  font-size: 12px;
+  color: var(--link);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

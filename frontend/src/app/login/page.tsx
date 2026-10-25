@@ -1,8 +1,6 @@
 import Image from "next/image";
-import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { ShieldIcon } from "@/components/icons";
 import { fetchLoginInfo, fetchMe } from "@/lib/api";
 import { safeNext } from "@/lib/loginRedirect";
 import FloorIllustration from "./FloorIllustration";
@@ -43,14 +41,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
 
       <main className={styles.formSide}>
         <div className={styles.formBox}>
-          <Image
-            src="/kftc-logo.jpg"
-            alt="금융결제원"
-            width={152}
-            height={48}
-            priority
-            className={styles.logo}
-          />
+          <Image src="/kftc-logo.jpg" alt="금융결제원" width={152} height={48} priority className={styles.logo} />
           <div>
             <h2 className={styles.title}>로그인</h2>
             <p className={styles.subtitle}>사내 계정으로 로그인하세요</p>
@@ -82,19 +73,8 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
             ) : (
               <p className={styles.noticeEmpty}>지금 올라온 공지가 없습니다.</p>
             )}
-            <p className={styles.noticeEmpty}>
-              로그인 후 {info.idle_minutes}분간 사용하지 않으면 자동 로그아웃됩니다.
-            </p>
+            <p className={styles.noticeEmpty}>로그인 후 {info.idle_minutes}분간 사용하지 않으면 자동 로그아웃됩니다.</p>
           </aside>
-
-          <Link href="/admin/login" className={styles.adminLink}>
-            <ShieldIcon size={18} />
-            <span>
-              <strong>관리자 페이지</strong>
-              <span>관리자 권한이 있는 직원 · 관리자 비밀번호로 따로 로그인</span>
-            </span>
-            <span aria-hidden="true">→</span>
-          </Link>
         </div>
       </main>
     </div>

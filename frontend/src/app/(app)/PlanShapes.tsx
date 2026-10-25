@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import type { FloorMap, Rect, ShapeStyle } from "@/lib/api";
+import { DEFAULT_LINE } from "@/lib/planGeometry";
 import styles from "./office.module.css";
 
 // 직원 화면 도면(FloorPlan)과 관리자 배치 화면(SeatingCanvas)이 같이 그리는 도면 바탕:
@@ -14,6 +15,28 @@ const cqw = (ratio: number) => `${(ratio * 100).toFixed(4)}cqw`;
 
 /** 선 굵기를 정한 요소의 테두리 굵기 (없으면 CSS 기본) */
 export const lineStyle = (s: ShapeStyle): CSSProperties => (s.line ? { borderWidth: `max(1px, ${cqw(s.line)})` } : {});
+
+/** 벽(사각형) 테두리 굵기. line은 도면 폭 대비 비율, 없으면 기본 굵기(m)를 도면 폭에 맞춰 그린다 (선 벽과 같은 기준) */
+export const wallBorder = (line: number | undefined, width_m: number): CSSProperties => ({
+  borderWidth: `max(2px, ${cqw(line ?? (DEFAULT_LINE.wall ?? 0.3) / width_m)})`,
+});
+
+/**
+ * 선 벽 막대 (돌린 div). 양 끝을 굵기 절반씩 늘려(네모 끝) 모서리에서 다른 벽과 빈틈 없이 만난다.
+ * left·top은 시작점, length는 길이(도면 폭 대비 %), thick은 화면 굵기
+ */
+export function wallLineStyle(left: string, top: string, length: string, thick: string, angle: number): CSSProperties {
+  const half = `(${thick} / 2)`;
+  return {
+    left: `calc(${left} - ${half})`,
+    top,
+    width: `calc(${length} + ${thick})`,
+    height: thick,
+    marginTop: `calc(${thick} / -2)`,
+    transformOrigin: `calc(${half}) 50%`,
+    transform: `rotate(${angle.toFixed(5)}rad)`,
+  };
+}
 
 /** 이름표 글자 크기(%)·굵게. 기본 글자 크기는 max(9px, 1cqw) */
 export function labelStyle(s: ShapeStyle): CSSProperties {
@@ -30,7 +53,11 @@ export default function PlanShapes({ geometry, width_m, height_m }: Props) {
   return (
     <>
       {geometry.walls?.map((wall, i) => (
-        <div key={`wall-${i}`} className={styles.wall} style={{ ...rectStyle(wall), ...lineStyle(wall) }} />
+        <div
+          key={`wall-${i}`}
+          className={styles.wall}
+          style={{ ...rectStyle(wall), ...wallBorder(wall.line, width_m) }}
+        />
       ))}
       {geometry.lines?.map((l, i) => {
         // 도면 비율이 실제 비율과 같아서, 미터로 바꿔 길이·각도를 구하면 화면에서도 맞는다
@@ -41,14 +68,7 @@ export default function PlanShapes({ geometry, width_m, height_m }: Props) {
           <div
             key={`line-${i}`}
             className={styles.wallLine}
-            style={{
-              left: pct(l.x1),
-              top: pct(l.y1),
-              width: pct(Math.hypot(dx, dy) / width_m),
-              height: thick,
-              marginTop: `calc(${thick} / -2)`,
-              transform: `rotate(${Math.atan2(dy, dx).toFixed(5)}rad)`,
-            }}
+            style={wallLineStyle(pct(l.x1), pct(l.y1), pct(Math.hypot(dx, dy) / width_m), thick, Math.atan2(dy, dx))}
           />
         );
       })}

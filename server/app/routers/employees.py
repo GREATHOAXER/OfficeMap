@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from psycopg import Connection
 
 from app.db import pool
+from app.routers.profile import PROFILE_COLUMNS, PROFILE_JOIN, profile_out
 from app.session import CurrentUser
 
 router = APIRouter(prefix="/api/employees", tags=["employees"])
@@ -75,7 +76,7 @@ def find_employees(conn: Connection, where: str, order: str, params: dict[str, A
                CASE WHEN p.expires_at IS NULL OR p.expires_at > now() THEN p.status END AS presence_status,
                CASE WHEN p.expires_at IS NULL OR p.expires_at > now() THEN p.message END AS presence_message,
                busy.title AS busy_title, busy.starts_at AS busy_starts_at, busy.ends_at AS busy_ends_at,
-               absence.kind AS absence_kind
+               absence.kind AS absence_kind, dp.path AS dept_path, {PROFILE_COLUMNS}
         FROM employees e
         JOIN departments d ON d.id = e.department_id
         LEFT JOIN departments pd ON pd.id = d.parent_id
@@ -90,6 +91,7 @@ def find_employees(conn: Connection, where: str, order: str, params: dict[str, A
         LEFT JOIN sites si ON si.id = f.site_id
         LEFT JOIN zones z ON z.id = s.zone_id
         LEFT JOIN presence_status p ON p.employee_id = e.id
+        {PROFILE_JOIN}
         LEFT JOIN LATERAL (
             SELECT r.title, r.starts_at, r.ends_at
             FROM reservations r
@@ -137,19 +139,47 @@ def search(
     for i, token in enumerate(tokens):
         params[f"t{i}"] = f"%{_like(token)}%"
         params[f"p{i}"] = f"{_like(token)}%"
-        conditions.append(f"(e.name ILIKE %(t{i})s OR dp.path ILIKE %(t{i})s OR e.emp_no LIKE %(p{i})s)")
+        # 이름·부서·사번, 그리고 내 정보의 부르는 이름·한 줄 소개·하는 일·업무 키워드 ("법인카드 누가 해요?")
+        conditions.append(
+            f"(e.name ILIKE %(t{i})s OR dp.path ILIKE %(t{i})s OR e.emp_no LIKE %(p{i})s"
+            f" OR pr.display_name ILIKE %(t{i})s OR pr.headline ILIKE %(t{i})s OR pr.duties ILIKE %(t{i})s"
+            f" OR array_to_string(pr.skills, ' ') ILIKE %(t{i})s)"
+        )
 
     with pool.connection() as conn:
         results = find_employees(
             conn,
             " AND ".join(conditions),
-            # 이름이 정확히·앞부분이·어디든 맞는 순서, 같은 단계에서는 우리 팀 사람 먼저, 그다음 이름 가나다순
-            "e.name = %(q)s DESC, e.name LIKE %(p0)s DESC, e.name ILIKE %(t0)s DESC,"
+            # 이름이 정확히·앞부분이·어디든 맞는 순서, 그다음 부서로 걸린 사람, 하는 일로 걸린 사람.
+            # 같은 단계에서는 우리 팀 사람 먼저, 그다음 이름 가나다순
+            "e.name = %(q)s DESC, e.name LIKE %(p0)s DESC, e.name ILIKE %(t0)s DESC, dp.path ILIKE %(t0)s DESC,"
             " e.department_id = (SELECT department_id FROM employees WHERE id = %(me)s) DESC,"
             " e.name, d.sort_order, e.emp_no",
             params,
         )
+    for hit in results:
+        hit["matched"] = _matched(hit, tokens)
     return {"results": results}
+
+
+def _matched(hit: dict[str, Any], tokens: list[str]) -> str | None:
+    """이름·부서가 아니라 내 정보(하는 일·키워드 등)로 찾은 사람이면 걸린 부분을 짧게 보여 준다"""
+    plain = f"{hit['name']} {hit['emp_no']} {hit['dept_path'] or ''}".lower()
+    if all(t.lower() in plain for t in tokens):
+        return None
+    for skill in hit["skills"]:
+        if any(t.lower() in skill.lower() for t in tokens):
+            return f"#{skill}"
+    for text in (hit["headline"], hit["duties"], hit["display_name"]):
+        if not text:
+            continue
+        low = text.lower()
+        at = min((low.find(t.lower()) for t in tokens if t.lower() in low), default=-1)
+        if at >= 0:
+            start = max(0, at - 12)
+            snippet = text[start : start + 48].replace("\n", " ")
+            return ("…" if start else "") + snippet + ("…" if start + 48 < len(text) else "")
+    return None
 
 
 # 부서와 그 아래 부서 전부 (본부를 고르면 본부 아래 팀 사람까지)
@@ -239,4 +269,6 @@ def _hit(row: dict[str, Any]) -> dict[str, Any]:
             else None
         ),
         "absence": row["absence_kind"],
+        "dept_path": row["dept_path"],
+        **profile_out(row),
     }

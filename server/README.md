@@ -82,6 +82,23 @@ scripts/
   휴가·출장·재택(`absence`)도 알려 줍니다. 참석자를 고를 때 "이 시간 다른 회의" 표시에 씁니다.
 - 이름이 같은 사람이 먼저, 그다음 이름이 그 글자로 시작하는 사람, 이름에 들어간 사람, 팀·본부로 걸린 사람 순서입니다.
 - `members`에도 같은 `date`, `start_min`, `end_min`을 줄 수 있습니다.
+- 검색은 "내 정보"의 부르는 이름·한 줄 소개·하는 일·업무 키워드도 봅니다. 이름·부서가 아니라 이것으로 찾은 사람에게는
+  `matched`(걸린 부분, 키워드면 `#법인카드`)가 붙습니다. 결과마다 `photo`·`display_name`·`headline`·`duties`·`skills`.
+
+## 내 정보 API (로그인 필요)
+
+이름·부서·직급·내선·이메일은 인사 정보(조직도)라 여기서 바꾸지 않습니다. 직원이 고치는 것은 `employee_profiles`·
+`employee_photos`(`db/schema/10_profile.sql`)에 따로 두어 조직도를 다시 가져와도 남습니다.
+
+| 요청 | 하는 일 |
+|---|---|
+| `GET /api/profile` | 내 인사 정보 + `display_name`(부르는 이름, 30자), `headline`(한 줄 소개, 80자), `duties`(하는 일, 1000자), `skills`(키워드 15개·20자), `photo` |
+| `PUT /api/profile` | 위 네 가지를 통째로 저장 (키워드는 앞뒤 공백·#·쉼표를 떼고 같은 것은 하나로). 감사 기록 `PROFILE_UPDATE`(바꾼 칸 이름만) |
+| `PUT /api/profile/photo` | 본문이 그림 파일 그대로 (`image/jpeg`·`png`·`webp`, 400KB까지, 파일 앞부분으로 형식 확인). 413 `PHOTO_TOO_BIG`, 415 `PHOTO_TYPE` |
+| `DELETE /api/profile/photo` | 사진 지우기 |
+| `GET /api/employees/{사번}/photo` | 사진 (로그인한 사람만). 주소의 `?v=`(바꾼 시각)가 있으면 하루 캐시, `ETag`로 304 |
+
+- 자리·재실 현황의 좌석 `occupant`와 `/api/auth/me`의 사용자에도 `photo`·`display_name`(좌석은 `headline`·`duties`·`skills`까지)이 붙습니다.
 
 ## 회의실 확인·예약 API (로그인 필요)
 

@@ -324,6 +324,11 @@ div.body[data-cols="3"] {
   cursor: move;
 }
 
+/* 공간·회의실·출입구 이름표는 선 벽보다 위에 그려지지만 누르는 것은 막지 않는다 (아래 벽을 고를 수 있게) */
+.el > span:not(.desk) {
+  pointer-events: none;
+}
+
 .el[data-problem] {
   outline: 2px solid var(--danger);
   outline-offset: 2px;
@@ -962,4 +967,156 @@ div.body[data-cols="3"] {
 /* 좌석 번호 칸(고정폭 글꼴)이 기본 폭 때문에 속성 칸 밖으로 밀리지 않게 */
 .cellEdit input:not([type="checkbox"]) {
   width: 100%;
+}
+
+/* 선 벽 잇기 ---------------------------------------------------------------------- */
+
+/* 이음 자리 (다른 선 벽 끝·벽 모서리). 선 벽을 그리거나 끝을 끌 때 보인다 */
+.connDot {
+  position: absolute;
+  z-index: 9;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border: 1.5px solid var(--link);
+  border-radius: 50%;
+  background: var(--surface);
+  pointer-events: none;
+}
+
+/* 지금 붙을 자리: 점은 동그라미, 선 위는 네모 */
+.snapRing {
+  position: absolute;
+  z-index: 10;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border: 2.5px solid #16a34a;
+  border-radius: 50%;
+  background: rgba(22, 163, 74, 0.15);
+  pointer-events: none;
+}
+
+.snapRing[data-kind="edge"] {
+  border-radius: 3px;
+  transform: rotate(45deg);
+}
+
+/* 다른 점과 가로·세로 줄이 맞을 때의 안내선 */
+.snapGuide {
+  position: absolute;
+  z-index: 9;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px dashed #16a34a;
+  border-top: 1px dashed #16a34a;
+  pointer-events: none;
+}
+
+/* 고른 요소 위에 뜨는 도구 막대 ---------------------------------------------------- */
+
+.floatBar {
+  position: absolute;
+  z-index: 13;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+  transform: translate(-50%, calc(-100% - 12px));
+  white-space: nowrap;
+  cursor: default;
+  pointer-events: none; /* 단추 사이 빈 곳은 아래 도면을 누를 수 있게 */
+}
+
+.floatBar[data-below] {
+  transform: translate(-50%, 32px);
+}
+
+.floatBar button {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.floatBar button:hover:not(:disabled) {
+  background: var(--bg);
+}
+
+.floatBar button:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: -2px;
+}
+
+.floatBar button:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.floatBar button[data-tone="danger"] {
+  color: var(--danger-text);
+}
+
+.floatBar hr {
+  width: 1px;
+  height: 20px;
+  margin: 0 3px;
+  border: 0;
+  background: var(--divider);
+}
+
+/* 선 정리 대화상자의 선택 줄 */
+.tidyRows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.tidyRows label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.tidyRows label[data-sub] {
+  padding-left: 24px;
+}
+
+.tidyRows span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.tidyRows input[type="number"] {
+  width: 64px;
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.tidyRows input[aria-invalid="true"] {
+  border-color: var(--danger);
 }

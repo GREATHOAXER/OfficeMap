@@ -15,6 +15,30 @@ export type User = {
   department: string;
   role: "USER" | "ADMIN";
   must_change_password: boolean;
+  display_name: string | null; // 내 정보의 부르는 이름
+  photo: string | null; // 내 정보의 사진 주소
+};
+
+/** 내 정보에서 고치는 것: 사진·부르는 이름(영문·별칭)·한 줄 소개·하는 일·업무 키워드. 다른 사람에게도 보인다 */
+export type PublicProfile = {
+  photo: string | null;
+  display_name: string | null;
+  headline: string | null;
+  duties: string | null;
+  skills: string[];
+};
+
+/** 내 정보 화면: 인사 정보(바꾸지 않음) + 내가 고치는 것 */
+export type MyProfile = PublicProfile & {
+  emp_no: string;
+  name: string;
+  rank: string | null;
+  position: string | null;
+  department: string;
+  division: string | null;
+  email: string | null;
+  extension: string | null;
+  updated_at: string | null;
 };
 
 export type LoginInfo = {
@@ -115,6 +139,11 @@ export type Occupant = {
   extension: string | null;
   email: string | null;
   kind: "FIXED" | "DAILY";
+  photo: string | null;
+  display_name: string | null;
+  headline: string | null;
+  duties: string | null;
+  skills: string[];
   presence: {
     status: PresenceStatus;
     message: string | null;
@@ -244,7 +273,13 @@ export type EmployeeHit = {
   /** 시간을 같이 넘겨 검색했을 때만: 그 시간에 겹치는 다른 회의 / 휴가·외근 */
   busy: { title: string; starts_at: string; ends_at: string } | null;
   absence: "LEAVE" | "BUSINESS_TRIP" | "REMOTE" | null;
-};
+  /** 이름·부서가 아니라 내 정보(하는 일·키워드 등)로 찾았을 때 걸린 부분 (검색만) */
+  matched?: string | null;
+} & PublicProfile;
+
+export function fetchProfile(cookieHeader: string | null): Promise<MyProfile> {
+  return apiGet<MyProfile>("/api/profile", cookieHeader);
+}
 
 // 회의실 확인·예약 -----------------------------------------------------------------
 

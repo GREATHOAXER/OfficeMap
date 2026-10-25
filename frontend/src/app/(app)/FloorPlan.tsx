@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { type CSSProperties, type FocusEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import Avatar from "@/components/Avatar";
 import { CloseIcon } from "@/components/icons";
 import type { FloorMap, Occupant, Rect, Room, Seat, ShapeStyle, Zone } from "@/lib/api";
 import { agoText } from "@/lib/dates";
@@ -158,14 +159,20 @@ export default function FloorPlan(props: Props) {
       gestureBase = null;
     }
 
-
     // 마우스로 도면을 잡고 끌어서 옮기기. 터치는 브라우저가 원래 손가락으로 밀어 스크롤한다.
     // 조금(5px) 움직여야 끌기로 보고, 그 전에 떼면 자리 누르기 그대로 동작한다
     function onPointerDown(event: PointerEvent) {
       suppressClick = false;
       if (event.pointerType !== "mouse" || event.button !== 0 || el!.dataset.pannable !== "true") return;
       if ((event.target as Element).closest(`.${styles.popover}`)) return;
-      drag = { id: event.pointerId, x: event.clientX, y: event.clientY, left: el!.scrollLeft, top: el!.scrollTop, moved: false };
+      drag = {
+        id: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        left: el!.scrollLeft,
+        top: el!.scrollTop,
+        moved: false,
+      };
     }
     function onPointerMove(event: PointerEvent) {
       if (!drag || event.pointerId !== drag.id) return;
@@ -358,7 +365,9 @@ function SeatButton({ seat, size: base, zone, dimmed, mine, selected, onSelect, 
     label = `${text} ${seat.code}${zone ? `, ${zone.name}` : ""}`;
   }
 
-  const chair = { 0: styles.chairBottom, 90: styles.chairRight, 180: styles.chairTop, 270: styles.chairLeft }[seat.rotation];
+  const chair = { 0: styles.chairBottom, 90: styles.chairRight, 180: styles.chairTop, 270: styles.chairLeft }[
+    seat.rotation
+  ];
   const className = [
     styles.seat,
     occupant ? "" : styles.seatEmpty,
@@ -426,8 +435,14 @@ function SeatCard({ seat, size: base, zone, floorName, pinned, onClose }: CardPr
   const body = (
     <>
       <div className={styles.popoverHead}>
+        {occupant.photo && (
+          <span className={styles.popoverAvatar} aria-hidden="true">
+            <Avatar name={occupant.name} photo={occupant.photo} size={32} />
+          </span>
+        )}
         <strong>
           {occupant.name} <span>{occupant.rank}</span>
+          {occupant.display_name && <span className={styles.popoverMuted}> · {occupant.display_name}</span>}
         </strong>
         {pinned && (
           <button type="button" className={styles.popoverClose} aria-label="닫기" onClick={onClose}>
@@ -439,7 +454,15 @@ function SeatCard({ seat, size: base, zone, floorName, pinned, onClose }: CardPr
         <span className={styles.swatch} aria-hidden="true" />
         {occupant.department}
       </span>
+      {occupant.headline && <span className={styles.popoverHeadline}>{occupant.headline}</span>}
       <PresenceLine occupant={occupant} />
+      {occupant.skills.length > 0 && (
+        <span className={styles.popoverSkills}>
+          {occupant.skills.slice(0, 4).map((s) => (
+            <span key={s}>#{s}</span>
+          ))}
+        </span>
+      )}
       <span className={`mono ${styles.popoverMuted}`}>
         {floorName} {seat.code}
         {occupant.extension && ` · 내선 ${occupant.extension}`}
