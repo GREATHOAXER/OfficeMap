@@ -162,7 +162,14 @@ scripts/
 | `POST /api/admin/change-sets/{ID}/reopen` | 반려된 내 요청을 새 작성 중 묶음으로 복사 |
 | `POST /api/admin/change-sets/{ID}/cancel` | 날짜를 정해 반영한 묶음을 그날 전에 취소 (새 배정은 지우고, 끝내기로 한 배정은 되살림) |
 | `GET /api/admin/stream` | 배치 화면용 SSE (`event: floor`, `resync`). 다른 관리자가 이 층에 반영하면 다시 읽음 |
+| `POST /api/admin/floors/{층 ID}/zones` | 빈 팀 구역 만들기 `{code, department_id\|null, color_key, name\|null}` (층 관리자 이상). 이름을 비우면 부서 이름을 따라감 |
+| `PATCH /api/admin/zones/{구역 ID}` | 구역의 부서·이름·코드·색 고치기 (바로 반영, 앉은 사람 영향 없음) |
+| `POST /api/admin/zones/{구역 ID}/delete` | 구역 없애기 `{merge_into: 구역 ID\|null, unassign}`: 좌석은 다른 구역에 합치거나 구역 없음, 앉은 사람은 그대로 또는 미배치. 구역 관리자 권한 회수 |
 
+- 저장 본문의 `zones: [{seat_id, zone_id|null}]`는 구역 경계(좌석을 다른 구역으로, null이면 구역 없음). 좌석 유형처럼 날짜를
+  정할 수 없습니다. 구역 관리자는 내 구역으로 넣거나 내 구역에서 빼는 것만, 그리고 경계가 든 묶음은 언제나 승인 요청으로 반영합니다.
+- 구역 모양(`zones.shape`)은 좌석에서 자동으로 계산해 저장합니다(DB 트리거). 좌석 덩어리가 여럿이면 `{"type": "rects", "rects": [...]}`,
+  좌석이 없으면 `null`. 부서 이름이 바뀌면 구역 이름도 따라 바뀝니다(별칭을 정한 구역 제외).
 - 항목은 좌석마다 "반영하면 앉을 사람"과 "바꾸기 전에 앉아 있던 사람(`expected_emp_no`)"입니다. 자리 교환은 2건,
   다른 자리로 옮기기는 새 자리 + 옛 자리 비우기. 사람이 다른 고정석에 있으면 반영할 때 그 자리를 끝냅니다.
 - **반영은 한 트랜잭션**이고 층마다 한 번에 하나씩 합니다(`pg_advisory_xact_lock`). 하나라도 충돌하면 아무것도 바꾸지

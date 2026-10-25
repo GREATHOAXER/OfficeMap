@@ -178,7 +178,8 @@ def _seating(conn: Connection, admin: dict[str, Any], floor: dict[str, Any], acc
     grants = grants_of(conn)
     zones = conn.execute(
         """
-        SELECT z.id, z.code, z.name, z.department_id, d.name AS department, z.color_key, z.shape
+        SELECT z.id, z.code, z.name, z.name_custom, z.department_id, d.name AS department,
+               coalesce(d.is_active, true) AS department_active, z.color_key, z.shape
         FROM zones z LEFT JOIN departments d ON d.id = z.department_id
         WHERE z.floor_id = %s AND z.is_active
         ORDER BY z.sort_order, z.code
@@ -276,11 +277,25 @@ def _seating(conn: Connection, admin: dict[str, Any], floor: dict[str, Any], acc
         "plan": plan,
         "rooms": rooms,
         "zones": zones,
+        # 구역에 고를 수 있는 부서 (구역을 만들고 고치는 층 관리자 이상만)
+        "departments": _department_choices(conn) if access["mode"] == "FLOOR" else [],
         "seats": [_seat_out(s, access) for s in seats],
         "unassigned": [_person_out(p) for p in people],
         "draft": _change_set(conn, mine["id"]) if mine else None,
         "requests": _requests(conn, admin, floor_id, access),
     }
+
+
+def _department_choices(conn: Connection) -> list[dict[str, Any]]:
+    """살아 있는 팀(아래 부서가 없는 부서)과 위 부서 이름"""
+    return conn.execute(
+        """
+        SELECT d.id, d.name, p.name AS parent
+        FROM departments d LEFT JOIN departments p ON p.id = d.parent_id
+        WHERE d.is_active AND NOT EXISTS (SELECT 1 FROM departments c WHERE c.parent_id = d.id AND c.is_active)
+        ORDER BY p.sort_order NULLS FIRST, d.sort_order, d.name
+        """
+    ).fetchall()
 
 
 def _seat_out(row: dict[str, Any], access: dict[str, Any]) -> dict[str, Any]:
@@ -433,7 +448,9 @@ def _requests(conn: Connection, admin: dict[str, Any], floor_id: int, access: di
                c.review_comment, c.updated_at, c.requested_by = %(me)s AS mine,
                rq.name AS requester_name, rq.rank_name AS requester_rank, rv.name AS reviewer_name,
                c.status = 'APPROVED' AND c.effective_at > now() AS scheduled,
-               (SELECT count(*) FROM change_request_items i WHERE i.request_id = c.id)::int AS item_count
+               (SELECT count(*) FROM change_request_items i WHERE i.request_id = c.id)::int AS item_count,
+               EXISTS (SELECT 1 FROM change_request_items i
+                       WHERE i.request_id = c.id AND i.action = 'MOVE_ZONE') AS zone_moves
         FROM change_requests c
         JOIN employees rq ON rq.id = c.requested_by
         LEFT JOIN employees rv ON rv.id = c.reviewed_by
@@ -464,6 +481,7 @@ def _requests(conn: Connection, admin: dict[str, Any], floor_id: int, access: di
             "requester": f"{r['requester_name']} {r['requester_rank'] or ''}".strip(),
             "mine": r["mine"],
             "item_count": r["item_count"],
+            "zone_moves": r["zone_moves"],  # 구역 경계 변경이 들어 있다
             "summary": summaries.get(r["id"], []),
             "can_review": r["status"] == "PENDING" and access["mode"] == "FLOOR",
             "can_cancel": r["scheduled"] and (r["mine"] or access["mode"] == "FLOOR"),
@@ -496,6 +514,8 @@ def _summaries(conn: Connection, request_ids: list[int]) -> dict[int, list[str]]
             text = f"{r['code']} 비우기" + (f" ({r['expected_name']})" if r["expected_name"] else "")
         elif r["action"] == "SET_TYPE":
             text = f"{r['code']} {MODE_LABEL[r['seat_mode']]}"
+        elif r["zone_name"] is None:
+            text = f"{r['code']} → 구역 없음"
         else:
             text = f"{r['code']} → {r['zone_name']} · {r['zone_code']}구역"
         out.setdefault(r["request_id"], []).append(text)
@@ -578,9 +598,17 @@ class SeatTypeIn(BaseModel):
     mode: SeatMode
 
 
+class ZoneMoveIn(BaseModel):
+    """좌석을 다른 구역으로 (zone_id가 None이면 구역 없음으로 빼기)"""
+
+    seat_id: int
+    zone_id: int | None = None
+
+
 class ChangeSetIn(BaseModel):
     assignments: list[AssignmentIn] = Field(default_factory=list, max_length=500)
     types: list[SeatTypeIn] = Field(default_factory=list, max_length=500)
+    zones: list[ZoneMoveIn] = Field(default_factory=list, max_length=500)
     effective_date: dt.date | None = None  # 이날 0시(서울)부터. 없으면 반영하는 즉시
     note: str | None = Field(default=None, max_length=200)
 
@@ -600,9 +628,12 @@ def save_change_set(floor_id: int, body: ChangeSetIn, admin: CurrentAdmin) -> di
 
     여기서는 모양(내 범위의 좌석·사람인지, 같은 사람이 두 번 나오지 않는지)만 본다.
     그사이 바뀐 것과의 충돌은 반영할 때 본다.
+
+    구역 관리자의 구역 경계 변경: 다른 구역 좌석을 내 구역으로 넣거나(확장), 내 구역 좌석을 빼는 것만 된다.
+    배정·유형은 반영한 뒤 내 구역이 되는 좌석에만 할 수 있다.
     """
     effective_at = _effective_at(body.effective_date)
-    if effective_at is not None and body.types:
+    if effective_at is not None and (body.types or body.zones):
         raise HTTPException(status_code=422, detail={"code": "SCHEDULE_WITH_TYPES"})
     with pool.connection() as conn:
         floor = _floor(conn, floor_id)
@@ -621,19 +652,33 @@ def save_change_set(floor_id: int, body: ChangeSetIn, admin: CurrentAdmin) -> di
 
         seat_ids = [a.seat_id for a in body.assignments]
         type_ids = [t.seat_id for t in body.types]
-        if len(set(seat_ids)) != len(seat_ids) or len(set(type_ids)) != len(type_ids):
+        move_ids = [z.seat_id for z in body.zones]
+        if any(len(set(ids)) != len(ids) for ids in (seat_ids, type_ids, move_ids)):
             raise HTTPException(status_code=422, detail={"code": "DUPLICATE_SEAT"})
         seats = {
             s["id"]: s
             for s in conn.execute(
                 "SELECT id, zone_id FROM seats WHERE id = ANY(%s) AND floor_id = %s AND status <> 'REMOVED'",
-                (seat_ids + type_ids, floor_id),
+                (seat_ids + type_ids + move_ids, floor_id),
             ).fetchall()
         }
-        for seat_id in seat_ids + type_ids:
+        floor_zones = {
+            z["id"]
+            for z in conn.execute("SELECT id FROM zones WHERE floor_id = %s AND is_active", (floor_id,)).fetchall()
+        }
+        moves = {z.seat_id: z.zone_id for z in body.zones}
+        for seat_id in seat_ids + type_ids + move_ids:
             if seat_id not in seats:
                 raise HTTPException(status_code=422, detail={"code": "SEAT_NOT_FOUND", "seat_id": seat_id})
-            if not _seat_editable(access, seats[seat_id]["zone_id"]):
+        for move in body.zones:
+            if move.zone_id is not None and move.zone_id not in floor_zones:
+                raise HTTPException(status_code=422, detail={"code": "ZONE_NOT_FOUND", "zone_id": move.zone_id})
+            current = seats[move.seat_id]["zone_id"]
+            if not (_seat_editable(access, current) or _seat_editable(access, move.zone_id)):
+                raise HTTPException(status_code=403, detail={"code": "SEAT_LOCKED", "seat_id": move.seat_id})
+        for seat_id in seat_ids + type_ids:
+            # 반영한 뒤의 구역 기준 (내 구역으로 넣는 좌석에는 바로 사람을 앉힐 수 있다)
+            if not _seat_editable(access, moves.get(seat_id, seats[seat_id]["zone_id"])):
                 raise HTTPException(status_code=403, detail={"code": "SEAT_LOCKED", "seat_id": seat_id})
 
         assignees = [a.emp_no for a in body.assignments if a.emp_no]
@@ -658,7 +703,7 @@ def save_change_set(floor_id: int, body: ChangeSetIn, admin: CurrentAdmin) -> di
             if depts is not None and person["department_id"] not in depts:
                 raise HTTPException(status_code=403, detail={"code": "PERSON_OUT_OF_SCOPE", "emp_no": emp_no})
 
-        if not body.assignments and not body.types:
+        if not body.assignments and not body.types and not body.zones:
             if open_set is not None:
                 conn.execute("DELETE FROM change_requests WHERE id = %s", (open_set["id"],))
             return {"draft": None}
@@ -713,6 +758,13 @@ def save_change_set(floor_id: int, body: ChangeSetIn, admin: CurrentAdmin) -> di
                 """,
                 [(request_id, t.seat_id, t.mode) for t in body.types],
             )
+            cur.executemany(
+                """
+                INSERT INTO change_request_items (request_id, seat_id, action, to_zone_id)
+                VALUES (%s, %s, 'MOVE_ZONE', %s)
+                """,
+                [(request_id, z.seat_id, z.zone_id) for z in body.zones],
+            )
         saved = conn.execute("SELECT updated_at FROM change_requests WHERE id = %s", (request_id,)).fetchone()
     return {"draft": {"id": request_id, "updated_at": saved["updated_at"], "effective_at": effective_at}}
 
@@ -728,6 +780,218 @@ def discard_change_set(floor_id: int, admin: CurrentAdmin) -> None:
             """,
             (floor_id, admin["employee_id"]),
         )
+
+
+# 팀 구역 ----------------------------------------------------------------------
+# 구역 속성(부서·이름·코드·색)과 빈 구역 만들기는 자리에 영향이 없어 바로 반영한다.
+# 좌석을 구역에 넣고 빼는 것(경계)은 작업 묶음의 MOVE_ZONE 항목으로 한다. 구역 없애기는 점검을 거쳐 한 번에
+
+
+ColorKey = Literal["t0", "t1", "t2", "t3", "t4"]
+
+
+class ZoneIn(BaseModel):
+    code: str = Field(pattern=r"^[A-Z][A-Z0-9]?$")  # 층 안에서 겹치지 않는 짧은 이름 (A, B, Z, S1 …)
+    department_id: int | None = None  # 공용 구역이면 없음
+    color_key: ColorKey
+    name: str | None = Field(default=None, max_length=100)  # 비우면 부서 이름을 따라간다
+
+
+def _floor_access_only(admin: dict[str, Any], floor: dict[str, Any]) -> dict[str, Any]:
+    access = _require_access(admin, floor)
+    if access["mode"] != "FLOOR":
+        raise HTTPException(status_code=403, detail={"code": "FLOOR_ADMIN_ONLY"})
+    return access
+
+
+def _zone_fields(conn: Connection, body: ZoneIn) -> dict[str, Any]:
+    """구역 이름: 적은 이름이 부서 이름과 다르면 별칭, 아니면 부서 이름을 따라간다"""
+    department = None
+    if body.department_id is not None:
+        department = conn.execute(
+            "SELECT id, name FROM departments WHERE id = %s AND is_active", (body.department_id,)
+        ).fetchone()
+        if department is None:
+            raise HTTPException(status_code=422, detail={"code": "DEPARTMENT_NOT_FOUND"})
+    name = (body.name or "").strip()
+    if department is not None and (not name or name == department["name"]):
+        return {"name": department["name"], "name_custom": False}
+    if not name:
+        return {"name": "공용 구역", "name_custom": True}
+    return {"name": name, "name_custom": True}
+
+
+def _zone_row(conn: Connection, zone_id: int) -> dict[str, Any]:
+    zone = conn.execute(
+        """
+        SELECT z.id, z.floor_id, z.code, z.name, z.name_custom, z.department_id, z.color_key, z.is_active,
+               f.site_id, f.name AS floor_name
+        FROM zones z JOIN floors f ON f.id = z.floor_id
+        WHERE z.id = %s
+        """,
+        (zone_id,),
+    ).fetchone()
+    if zone is None or not zone["is_active"]:
+        raise HTTPException(status_code=404, detail={"code": "ZONE_NOT_FOUND"})
+    return zone
+
+
+def _zone_audit(
+    conn: Connection, actor_id: int, action: str, zone_id: int, before: Any, after: Any, request: Request
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO audit_logs (actor_id, action, target_type, target_id, before_data, after_data, ip_address)
+        VALUES (%s, %s, 'zone', %s, %s, %s, %s)
+        """,
+        (
+            actor_id,
+            action,
+            zone_id,
+            _json(before) if before else None,
+            _json(after) if after else None,
+            client_info(request)[0],
+        ),
+    )
+
+
+@router.post("/floors/{floor_id}/zones", status_code=201)
+def create_zone(floor_id: int, body: ZoneIn, admin: CurrentAdmin, request: Request) -> dict[str, Any]:
+    """빈 팀 구역을 만든다 (층 관리자 이상). 좌석은 배치 화면에서 구역으로 묶어 반영한다"""
+    with pool.connection() as conn:
+        _floor_access_only(admin, _floor(conn, floor_id))
+        fields = _zone_fields(conn, body)
+        try:
+            zone = conn.execute(
+                """
+                INSERT INTO zones (floor_id, code, name, name_custom, department_id, color_key, sort_order)
+                VALUES (%s, %s, %s, %s, %s, %s,
+                        (SELECT coalesce(max(sort_order), 0) + 1 FROM zones WHERE floor_id = %s AND is_active))
+                RETURNING id, code, name
+                """,
+                (
+                    floor_id,
+                    body.code,
+                    fields["name"],
+                    fields["name_custom"],
+                    body.department_id,
+                    body.color_key,
+                    floor_id,
+                ),
+            ).fetchone()
+        except errors.UniqueViolation:
+            raise HTTPException(status_code=409, detail={"code": "CODE_TAKEN"}) from None
+        _zone_audit(conn, admin["employee_id"], "ZONE_CREATE", zone["id"], None, body.model_dump(), request)
+    return {"zone": zone}
+
+
+@router.patch("/zones/{zone_id}")
+def update_zone(zone_id: int, body: ZoneIn, admin: CurrentAdmin, request: Request) -> dict[str, Any]:
+    """구역의 부서·이름·코드·색 (층 관리자 이상). 앉아 있는 사람에게는 영향이 없다"""
+    with pool.connection() as conn:
+        zone = _zone_row(conn, zone_id)
+        _floor_access_only(admin, {"id": zone["floor_id"], "site_id": zone["site_id"]})
+        fields = _zone_fields(conn, body)
+        try:
+            conn.execute(
+                """
+                UPDATE zones SET code = %s, name = %s, name_custom = %s, department_id = %s, color_key = %s,
+                       updated_at = now()
+                WHERE id = %s
+                """,
+                (body.code, fields["name"], fields["name_custom"], body.department_id, body.color_key, zone_id),
+            )
+        except errors.UniqueViolation:
+            raise HTTPException(status_code=409, detail={"code": "CODE_TAKEN"}) from None
+        before = {k: zone[k] for k in ("code", "name", "department_id", "color_key")}
+        _zone_audit(
+            conn, admin["employee_id"], "ZONE_UPDATE", zone_id, before, {**body.model_dump(), **fields}, request
+        )
+    return {"zone": {"id": zone_id, "code": body.code, "name": fields["name"]}}
+
+
+class ZoneDeleteIn(BaseModel):
+    merge_into: int | None = None  # 좌석을 이 구역에 합친다. 없으면 구역 없는 좌석이 된다
+    unassign: bool = False  # 앉아 있는 사람을 미배치로 (아니면 그 자리 그대로)
+
+
+@router.post("/zones/{zone_id}/delete")
+def delete_zone(zone_id: int, body: ZoneDeleteIn, admin: CurrentAdmin, request: Request) -> dict[str, Any]:
+    """팀 구역 없애기 (층 관리자 이상). 좌석은 다른 구역에 합치거나 구역 없음으로, 앉은 사람은 그대로 또는 미배치로.
+    그 구역의 구역 관리자 권한은 회수하고 알린다. 날짜를 정한 변경이 걸린 좌석이 있으면 먼저 취소해야 한다"""
+    with pool.connection() as conn:
+        zone = _zone_row(conn, zone_id)
+        floor_id = zone["floor_id"]
+        _floor_access_only(admin, {"id": floor_id, "site_id": zone["site_id"]})
+        if body.merge_into is not None:
+            target = conn.execute(
+                "SELECT id FROM zones WHERE id = %s AND floor_id = %s AND is_active AND id <> %s",
+                (body.merge_into, floor_id, zone_id),
+            ).fetchone()
+            if target is None:
+                raise HTTPException(status_code=422, detail={"code": "ZONE_NOT_FOUND"})
+        conn.execute("SELECT pg_advisory_xact_lock(%s, %s)", (LOCK_SEATING, floor_id))
+        scheduled = conn.execute(
+            f"""
+            SELECT 1 FROM seat_assignments a JOIN seats s ON s.id = a.seat_id
+            WHERE s.zone_id = %s AND {_scheduled()} LIMIT 1
+            """,
+            (zone_id,),
+        ).fetchone()
+        if scheduled is not None:
+            raise HTTPException(status_code=409, detail={"code": "SCHEDULED"})
+
+        released: list[dict[str, Any]] = []
+        if body.unassign:
+            released = conn.execute(
+                f"""
+                UPDATE seat_assignments a SET ends_at = now()
+                FROM seats s
+                WHERE s.id = a.seat_id AND s.zone_id = %s AND a.kind = 'FIXED' AND {_now()} AND a.starts_at < now()
+                RETURNING a.employee_id, s.code
+                """,
+                (zone_id,),
+            ).fetchall()
+        seats = conn.execute(
+            "UPDATE seats SET zone_id = %s, updated_at = now() WHERE zone_id = %s RETURNING id",
+            (body.merge_into, zone_id),
+        ).fetchall()
+        # 이 구역 관리자가 올린 진행 중 묶음은 취소, 권한은 회수
+        conn.execute(
+            """
+            UPDATE change_requests SET status = 'CANCELLED', updated_at = now()
+            WHERE zone_id = %s AND status IN ('DRAFT', 'PENDING')
+            """,
+            (zone_id,),
+        )
+        revoked = conn.execute(
+            """
+            UPDATE admin_grants SET revoked_at = now(), revoked_by = %s
+            WHERE zone_id = %s AND revoked_at IS NULL
+            RETURNING employee_id
+            """,
+            (admin["employee_id"], zone_id),
+        ).fetchall()
+        conn.execute("UPDATE zones SET is_active = false, updated_at = now() WHERE id = %s", (zone_id,))
+
+        label = f"{zone['floor_name']} {zone['name']} {zone['code']}구역"
+        notes = [
+            (r["employee_id"], "SEAT_CHANGED", {"floor": zone["floor_name"], "seat": None, "from_seat": r["code"]})
+            for r in released
+        ] + [(r["employee_id"], "GRANT_REVOKED", {"zone": label, "reason": "ZONE_DELETED"}) for r in revoked]
+        with conn.cursor() as cur:
+            cur.executemany(
+                "INSERT INTO notifications (recipient_id, channel, type, payload) VALUES (%s, 'IN_APP', %s, %s)",
+                [(emp, kind, _json(payload)) for emp, kind, payload in notes],
+            )
+        result = {
+            "seats": len(seats),
+            "merged_into": body.merge_into,
+            "unassigned": len(released),
+            "revoked": len(revoked),
+        }
+        _zone_audit(conn, admin["employee_id"], "ZONE_DELETE", zone_id, {"zone": label}, result, request)
+    return result
 
 
 # 반영 · 승인 흐름 ---------------------------------------------------------------
@@ -883,6 +1147,8 @@ def _apply(
         if final is not None:
             conflict(t, "OCCUPIED")
     for z in zone_items:
+        if z["to_zone_id"] is None:
+            continue
         ok = conn.execute(
             "SELECT 1 FROM zones WHERE id = %s AND floor_id = %s AND is_active", (z["to_zone_id"], floor_id)
         ).fetchone()
@@ -1010,28 +1276,40 @@ def _apply(
     }
 
 
+def _needs_approval(conn: Connection, request_id: int, access: dict[str, Any]) -> bool:
+    """이 묶음은 층 관리자 승인을 거쳐야 하나: "승인 후" 구역 관리자, 또는 구역 경계 변경이 든 구역 관리자의 묶음"""
+    if access["apply"] == "NEEDS_APPROVAL":
+        return True
+    if access["mode"] != "ZONE":
+        return False
+    row = conn.execute(
+        "SELECT 1 FROM change_request_items WHERE request_id = %s AND action = 'MOVE_ZONE' LIMIT 1", (request_id,)
+    ).fetchone()
+    return row is not None
+
+
 @router.post("/change-sets/{request_id}/apply")
 def apply_change_set(request_id: int, admin: CurrentAdmin, request: Request) -> dict[str, Any]:
-    """내 작업 묶음을 반영한다 (층 관리자 이상, "즉시 반영" 구역 관리자)"""
+    """내 작업 묶음을 반영한다 (층 관리자 이상, "즉시 반영" 구역 관리자. 구역 경계 변경은 승인 요청만)"""
     with pool.connection() as conn:
         cr = _load(conn, request_id, lock=True)
         if cr["requested_by"] != admin["employee_id"] or cr["status"] != "DRAFT":
             raise HTTPException(status_code=409, detail={"code": "NOT_DRAFT"})
         access = _require_access(admin, _floor(conn, cr["floor_id"]))
-        if access["apply"] != "IMMEDIATE":
+        if _needs_approval(conn, request_id, access):
             raise HTTPException(status_code=403, detail={"code": "NEEDS_APPROVAL"})
         return {"applied": _apply(conn, cr, access, admin["employee_id"], request)}
 
 
 @router.post("/change-sets/{request_id}/submit")
 def submit_change_set(request_id: int, admin: CurrentAdmin, request: Request) -> dict[str, Any]:
-    """층 관리자에게 승인 요청 ("층 관리자 승인 후" 구역 관리자)"""
+    """층 관리자에게 승인 요청 ("층 관리자 승인 후" 구역 관리자, 구역 경계를 바꾸려는 구역 관리자)"""
     with pool.connection() as conn:
         cr = _load(conn, request_id, lock=True)
         if cr["requested_by"] != admin["employee_id"] or cr["status"] != "DRAFT":
             raise HTTPException(status_code=409, detail={"code": "NOT_DRAFT"})
         access = _require_access(admin, _floor(conn, cr["floor_id"]))
-        if access["apply"] != "NEEDS_APPROVAL":
+        if not _needs_approval(conn, request_id, access):
             raise HTTPException(status_code=409, detail={"code": "APPLY_DIRECTLY"})
         if (
             conn.execute("SELECT 1 FROM change_request_items WHERE request_id = %s LIMIT 1", (request_id,)).fetchone()

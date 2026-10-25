@@ -934,10 +934,10 @@
   box-shadow: 0 0 0 3px var(--tc);
 }
 
+/* 구역 이름표: 구역 조각과 따로 도면에 놓는다 (위치는 화면이 구역의 가장 큰 조각 왼쪽 위로 정한다) */
 .zoneTag {
   position: absolute;
-  top: -1px;
-  left: -1px;
+  z-index: 1;
   padding: 1px 7px;
   border-radius: 6px 0 6px 0;
   background: var(--tc);

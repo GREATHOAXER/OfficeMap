@@ -49,23 +49,31 @@ CREATE TABLE floor_plans (
 CREATE UNIQUE INDEX floor_plans_one_published_idx ON floor_plans (floor_id) WHERE status = 'PUBLISHED';
 CREATE UNIQUE INDEX floor_plans_one_draft_idx ON floor_plans (floor_id) WHERE status = 'DRAFT';
 
--- 팀 구역: 도면 위에 색칠된 영역 (예: 재무팀 · B, 공용 자율석 · Z)
+-- 팀 구역: 한 팀(부서)이 쓰는 좌석 묶음 + 색 (예: 재무팀 · B, 공용 자율석 · Z)
+-- 구역의 원본은 "좌석 묶음"(seats.zone_id)이다. 도면에 칠하는 모양(shape)은 그 좌석들을 감싸서 자동으로 계산한
+-- 값을 저장해 둔 것이라(shape_mode = AUTO), 좌석이 구역을 옮기거나 도면에서 책상이 움직이면 저절로 따라간다
 -- 색은 부서가 아니라 구역에 붙인다. 층마다 같은 색을 다른 팀이 쓰기 때문
+-- 구역을 없애도 행은 지우지 않고 is_active = false (이력·권한 기록이 이 행을 가리킨다)
 CREATE TABLE zones (
     id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     floor_id      bigint       NOT NULL REFERENCES floors(id),
     code          varchar(10)  NOT NULL,                  -- 예: A, B, Z
     name          varchar(100) NOT NULL,                  -- 예: 재무팀, 공용 자율석, 교육장
+    name_custom   boolean      NOT NULL DEFAULT false,    -- false면 부서 이름을 따라간다 (조직도에서 이름이 바뀌면 같이)
     department_id bigint REFERENCES departments(id),      -- 공용 구역이면 NULL
     color_key     varchar(10)  NOT NULL,                  -- 디자인의 t0~t4
-    shape         jsonb        NOT NULL,                  -- {"type":"rect","x":0.1,"y":0.2,"w":0.3,"h":0.2} 또는 다각형
+    -- {"type":"rect","x","y","w","h"} 또는 좌석 덩어리가 여럿이면 {"type":"rects","rects":[{x,y,w,h}, …]}
+    -- 좌석이 하나도 없으면 NULL (그리지 않는다)
+    shape         jsonb,
+    shape_mode    varchar(10)  NOT NULL DEFAULT 'AUTO' CHECK (shape_mode IN ('AUTO', 'MANUAL')),  -- 자동 계산 / 손으로 그림
     sort_order    integer      NOT NULL DEFAULT 0,
     is_active     boolean      NOT NULL DEFAULT true,
     created_at    timestamptz  NOT NULL DEFAULT now(),
-    updated_at    timestamptz  NOT NULL DEFAULT now(),
-    UNIQUE (floor_id, code)
+    updated_at    timestamptz  NOT NULL DEFAULT now()
 );
 CREATE INDEX zones_department_id_idx ON zones (department_id);
+-- 층 안에서 살아 있는 구역끼리만 코드가 겹치지 않으면 된다 (없앤 구역의 코드는 다시 쓸 수 있다)
+CREATE UNIQUE INDEX zones_floor_code_idx ON zones (floor_id, code) WHERE is_active;
 
 -- 좌석: 층에 붙어 있어서 도면을 새 버전으로 바꿔도 좌석과 배정은 그대로 남는다
 CREATE TABLE seats (
@@ -85,3 +93,95 @@ CREATE TABLE seats (
     UNIQUE (floor_id, code)
 );
 CREATE INDEX seats_zone_id_idx ON seats (zone_id);
+
+-- 구역 모양 자동 계산 ----------------------------------------------------------
+-- 구역 좌석들을 가까운 것끼리 덩어리로 묶고(책상을 붙여 놓은 섬), 덩어리마다 좌석을 감싸는 사각형을 만든다.
+-- 좌석 크기는 화면(FloorPlan.tsx, frontend/src/lib/zoneShape.ts)과 같아야 한다. 위쪽 여백은 구역 이름표 자리
+CREATE OR REPLACE FUNCTION zone_auto_shape(p_zone bigint) RETURNS jsonb
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    seat_w CONSTANT numeric := 0.0533;
+    seat_h CONSTANT numeric := 0.0556;
+    near   CONSTANT numeric := 0.05;    -- 좌석 사이가 이보다 가까우면 한 덩어리
+    pad_x  CONSTANT numeric := 0.01;
+    pad_t  CONSTANT numeric := 0.05;
+    pad_b  CONSTANT numeric := 0.03;
+    xs numeric[];
+    ys numeric[];
+    label int[];
+    n int;
+    m int;
+    changed boolean;
+    rects jsonb;
+BEGIN
+    SELECT array_agg(x ORDER BY id), array_agg(y ORDER BY id) INTO xs, ys
+    FROM seats WHERE zone_id = p_zone AND status <> 'REMOVED';
+    IF xs IS NULL THEN
+        RETURN NULL;
+    END IF;
+    n := array_length(xs, 1);
+    label := ARRAY(SELECT generate_series(1, n));
+    -- 붙어 있는 좌석끼리 같은 번호가 될 때까지 작은 번호를 퍼뜨린다
+    LOOP
+        changed := false;
+        FOR i IN 1..n LOOP
+            FOR j IN i + 1..n LOOP
+                IF label[i] <> label[j]
+                   AND abs(xs[i] - xs[j]) <= seat_w + near AND abs(ys[i] - ys[j]) <= seat_h + near THEN
+                    m := least(label[i], label[j]);
+                    label[i] := m;
+                    label[j] := m;
+                    changed := true;
+                END IF;
+            END LOOP;
+        END LOOP;
+        EXIT WHEN NOT changed;
+    END LOOP;
+    SELECT jsonb_agg(jsonb_build_object(
+               'x', round(x0, 4), 'y', round(y0, 4), 'w', round(x1 - x0, 4), 'h', round(y1 - y0, 4))
+           ORDER BY y0, x0)
+    INTO rects
+    FROM (
+        SELECT greatest(0, min(xs[i]) - seat_w / 2 - pad_x) AS x0,
+               greatest(0, min(ys[i]) - seat_h / 2 - pad_t) AS y0,
+               least(1, max(xs[i]) + seat_w / 2 + pad_x) AS x1,
+               least(1, max(ys[i]) + seat_h / 2 + pad_b) AS y1
+        FROM generate_series(1, n) AS i
+        GROUP BY label[i]
+    ) c;
+    IF jsonb_array_length(rects) = 1 THEN
+        RETURN jsonb_build_object('type', 'rect') || (rects -> 0);
+    END IF;
+    RETURN jsonb_build_object('type', 'rects', 'rects', rects);
+END $$;
+
+-- 좌석이 생기거나 구역·위치·상태가 바뀌면 그 구역(옮겼으면 두 구역)의 모양을 다시 계산한다 (자동 모양인 구역만)
+CREATE OR REPLACE FUNCTION refresh_zone_shapes() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    UPDATE zones SET shape = zone_auto_shape(id), updated_at = now()
+    WHERE shape_mode = 'AUTO'
+      AND id IN (CASE WHEN TG_OP <> 'INSERT' THEN OLD.zone_id END, CASE WHEN TG_OP <> 'DELETE' THEN NEW.zone_id END);
+    RETURN NULL;
+END $$;
+
+CREATE TRIGGER seats_zone_shape
+    AFTER INSERT OR UPDATE OF zone_id, x, y, status OR DELETE ON seats
+    FOR EACH ROW EXECUTE FUNCTION refresh_zone_shapes();
+
+-- 조직도 변화 → 구역 -------------------------------------------------------------
+-- 부서 이름이 바뀌면 구역 이름도 따라 바꾼다 (관리자가 별칭을 정한 구역은 그대로)
+-- 부서가 없어지면(is_active = false) 구역은 남기고, 화면이 "폐지된 부서의 구역"으로 경고한다
+CREATE OR REPLACE FUNCTION follow_department_name() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.name IS DISTINCT FROM OLD.name THEN
+        UPDATE zones SET name = NEW.name, updated_at = now()
+        WHERE department_id = NEW.id AND NOT name_custom AND is_active;
+    END IF;
+    RETURN NULL;
+END $$;
+
+CREATE TRIGGER departments_zone_name
+    AFTER UPDATE OF name ON departments
+    FOR EACH ROW EXECUTE FUNCTION follow_department_name();

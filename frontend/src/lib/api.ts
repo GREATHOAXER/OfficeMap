@@ -79,13 +79,16 @@ export type SitesResponse = { sites: SiteSummary[]; my_floor_id: number | null; 
 
 export type PlanSpace = Rect & { kind: string; label: string };
 
+/** 팀 구역 모양: 좌석을 감싸는 사각형. 좌석 덩어리가 여럿이면 rects (자동 계산, zoneShape.ts) */
+export type ZoneShape = (Rect & { type?: "rect" }) | { type: "rects"; rects: Rect[] };
+
 export type Zone = {
   id: number;
   code: string;
   name: string;
   department: string | null; // 공용 구역이면 null
   color_key: string; // t0~t4
-  shape: Rect;
+  shape: ZoneShape | null; // 좌석이 없으면 null (그리지 않는다)
 };
 
 export type Room = {
@@ -404,7 +407,7 @@ export type AdminFloor = {
   flex: number; // 자율석 (배정하지 않음)
   occupied: number; // 배정된 개인석
   rooms: number;
-  zones: { code: string; name: string; color_key: string; department: string | null }[];
+  zones: { code: string; name: string; color_key: string; department: string | null; department_active: boolean }[];
   floor_admins: string[];
   zone_admins: number;
   plan: PlanState;
@@ -480,7 +483,15 @@ export type SeatingSeat = Omit<Seat, "occupant"> & {
   editable: boolean;
 };
 
-export type SeatingZone = Zone & { department_id: number | null; editable: boolean; managers: string[] };
+export type SeatingZone = Zone & {
+  department_id: number | null;
+  department_active: boolean; // false: 조직도에서 없어진 부서의 구역
+  name_custom: boolean; // true: 부서 이름 대신 별칭
+  editable: boolean;
+  managers: string[];
+};
+
+export type DepartmentChoice = { id: number; name: string; parent: string | null };
 
 /** 미배치 인원: 우리 팀(이 층에 구역이 있는 팀)인데 지금 고정석이 없는 사람 */
 export type UnassignedPerson = SeatingPerson & {
@@ -507,7 +518,7 @@ export type ChangeSet = {
   requester: string;
   assignments: { seat_id: number; emp_no: string | null; expected_emp_no: string | null }[];
   types: { seat_id: number; mode: SeatMode }[];
-  zone_moves: { seat_id: number; zone_id: number }[];
+  zone_moves: { seat_id: number; zone_id: number | null }[]; // zone_id null: 구역 없음으로
   people: Record<string, SeatingPerson & { active: boolean; seat: SeatRef | null }>;
 };
 
@@ -525,6 +536,7 @@ export type ChangeRequestRow = {
   requester: string;
   mine: boolean;
   item_count: number;
+  zone_moves: boolean; // 구역 경계 변경이 들어 있다
   summary: string[];
   can_review: boolean;
   can_cancel: boolean;
@@ -546,6 +558,7 @@ export type SeatingData = {
   plan: FloorMap["plan"];
   rooms: { id: number; name: string; shape: Rect | null }[];
   zones: SeatingZone[];
+  departments: DepartmentChoice[]; // 구역에 고를 수 있는 부서 (층 관리자 이상만)
   seats: SeatingSeat[];
   unassigned: UnassignedPerson[];
   draft: ChangeSet | null; // 내 작업 묶음 (작성 중 또는 승인 대기)

@@ -10,6 +10,7 @@ import { NO_STATUS_LABEL, PRESENCE_LABEL, type StatusFilter } from "@/lib/presen
 import { hhmm, roomStatusText } from "@/lib/rooms";
 import { useMediaQuery } from "@/lib/useMediaQuery";
 import { useNow } from "@/lib/useNow";
+import { zonePieces, zoneRects } from "@/lib/zoneShape";
 import styles from "./office.module.css";
 
 // 좌석 하나의 크기 (도면 너비·높이 대비). 좌석 좌표는 중심점이다
@@ -253,21 +254,30 @@ export default function FloorPlan(props: Props) {
         {map.rooms.map(
           (room) => room.shape && <RoomBox key={room.id} room={room} shape={room.shape} floorId={map.floor.id} />,
         )}
-        {map.zones.map((zone) => (
+        {zonePieces(map.zones, (zone) => zoneRects(zone.shape)).map(({ zone, rect }, i) => (
           <div
-            key={zone.id}
+            key={`${zone.id}-${i}`}
             className={`${styles.zone} ${focusZoneId && focusZoneId !== zone.id ? styles.dim : ""} ${
               focusZoneId === zone.id ? styles.zoneFocus : ""
             }`}
             data-color={zone.color_key}
             data-shared={zone.department === null}
-            style={rectStyle(zone.shape)}
-          >
-            <span className={styles.zoneTag}>
+            style={rectStyle(rect)}
+          />
+        ))}
+        {/* 이름표는 모든 구역을 칠한 뒤에 그려서 다른 구역 조각에 가려지지 않게 */}
+        {zonePieces(map.zones, (zone) => zoneRects(zone.shape))
+          .filter((piece) => piece.tagged)
+          .map(({ zone, rect }) => (
+            <span
+              key={`tag-${zone.id}`}
+              className={`${styles.zoneTag} ${focusZoneId && focusZoneId !== zone.id ? styles.dim : ""}`}
+              data-color={zone.color_key}
+              style={{ left: pct(rect.x), top: pct(rect.y) }}
+            >
               {zone.name} · {zone.code}
             </span>
-          </div>
-        ))}
+          ))}
         {map.seats.map((seat) => (
           <SeatButton
             key={seat.id}

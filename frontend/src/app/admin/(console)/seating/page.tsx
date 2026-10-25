@@ -22,7 +22,8 @@ export default async function SeatingPage({ searchParams }: PageProps<"/admin/se
       ? {
           admin,
           data: await fetchSeating(cookieHeader, floor.id),
-          notice: wanted !== null && floor.id !== wanted ? "고른 층은 내 관리 범위가 아니어서, 맡은 층을 열었어요." : null,
+          notice:
+            wanted !== null && floor.id !== wanted ? "고른 층은 내 관리 범위가 아니어서, 맡은 층을 열었어요." : null,
         }
       : null;
   } catch (error) {

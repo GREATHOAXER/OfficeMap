@@ -30,6 +30,7 @@ CREATE UNIQUE INDEX change_requests_one_open_idx ON change_requests (floor_id, r
 
 -- 묶음 안의 변경 1건 = 1행. 좌석마다 "반영하면 이렇게 된다"를 적는다
 -- (예: "B-11 ← 이서연", "B-04 비우기", "Z-01을 B구역으로", "B-18을 자율석으로")
+-- 구역 경계 변경(MOVE_ZONE)은 구역 관리자가 내면 언제나 층 관리자 승인 후 반영한다
 -- 자리 교환은 ASSIGN 2행, 다른 자리로 옮기기는 ASSIGN(새 자리) + UNASSIGN(옛 자리)
 CREATE TABLE change_request_items (
     id                   bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -40,11 +41,11 @@ CREATE TABLE change_request_items (
     -- ASSIGN·UNASSIGN: 이 변경을 만들 때 그 좌석에 앉아 있던 사람 (NULL = 빈 자리)
     -- 반영할 때 그사이 다른 관리자가 바꿔서 지금과 다르면 그 항목은 충돌로 멈춘다
     expected_employee_id bigint REFERENCES employees(id),
-    to_zone_id           bigint REFERENCES zones(id),      -- MOVE_ZONE: 옮길 구역
+    to_zone_id           bigint REFERENCES zones(id),      -- MOVE_ZONE: 옮길 구역 (NULL = 구역 없음으로 빼기)
     seat_mode            varchar(15) CHECK (seat_mode IN ('FIXED', 'FLEX', 'OUT_OF_SERVICE')),  -- SET_TYPE: 고정석·팀 내 자율석·사용 중지
     CHECK ((action = 'ASSIGN' AND employee_id IS NOT NULL)
         OR (action = 'UNASSIGN')
-        OR (action = 'MOVE_ZONE' AND to_zone_id IS NOT NULL)
+        OR (action = 'MOVE_ZONE')
         OR (action = 'SET_TYPE' AND seat_mode IS NOT NULL))
 );
 CREATE INDEX change_request_items_request_idx ON change_request_items (request_id);

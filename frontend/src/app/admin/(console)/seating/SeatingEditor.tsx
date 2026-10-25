@@ -14,10 +14,12 @@ import type {
   SeatingData,
   SeatingSearchHit,
   SeatingSeat,
+  SeatingZone,
   UnassignedPerson,
 } from "@/lib/api";
 import { addDays, kstDate, shortDate } from "@/lib/dates";
 import { useNow } from "@/lib/useNow";
+import { autoRects, zoneRects } from "@/lib/zoneShape";
 import {
   baseMode,
   baseOccupant,
@@ -28,6 +30,7 @@ import {
   draftFromChangeSet,
   layoutOf,
   MODE_LABEL,
+  moveZone,
   type Person,
   payloadOf,
   place,
@@ -38,9 +41,10 @@ import {
   unassign,
 } from "@/lib/seating";
 import SeatingCanvas, { type SeatView } from "./SeatingCanvas";
+import ZoneDialog, { type ZoneDialogState } from "./ZoneDialog";
 import styles from "./seating.module.css";
 
-type Tool = "move" | "swap" | "clear";
+type Tool = "move" | "swap" | "clear" | "zone";
 /** 눌러서 옮기기: 집어 든 사람(미배치 칸·옮기기 버튼) 또는 교환할 첫 좌석 */
 type Pick = { kind: "person"; emp: string } | { kind: "seat"; seatId: number } | null;
 type SaveState = { state: "clean" | "dirty" | "saving" | "saved" | "error"; message?: string };
@@ -96,6 +100,9 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
   const [serverConflicts, setServerConflicts] = useState<Map<number, string>>(() => new Map());
 
   const [tool, setTool] = useState<Tool>("move");
+  // 팀 구역 지정: 좌석을 넣을 구역 (null = 구역 없음으로 빼기)
+  const [zoneTarget, setZoneTarget] = useState<number | null>(() => initial.zones.find((z) => z.editable)?.id ?? null);
+  const [zoneDialog, setZoneDialog] = useState<ZoneDialogState | null>(null);
   const [pick, setPick] = useState<Pick>(null);
   const [selectedSeatId, setSelectedSeatId] = useState<number | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
@@ -182,9 +189,23 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
   const reviewDraft = useMemo(() => (review ? draftFromChangeSet(review, data.seats) : null), [review, data.seats]);
   const shown = reviewDraft ?? draft;
   const layout = useMemo(() => layoutOf(data.seats, shown), [data.seats, shown]);
-  const zoneMoves = useMemo(() => new Map((review?.zone_moves ?? []).map((z) => [z.seat_id, z.zone_id])), [review]);
-  const zoneOf = useCallback((seat: SeatingSeat) => zoneMoves.get(seat.id) ?? seat.zone_id, [zoneMoves]);
+  const zoneOf = layout.zoneOf;
   const readOnly = preview || pending || !!review;
+  // 구역 경계를 바꾸면 반영 전에 바뀔 모양을 미리 계산해서 그린다 (서버도 같은 방법으로 저장한다)
+  const zoneMoved = Object.keys(shown.zones).length > 0;
+  const autoShapes = useMemo(() => {
+    if (!zoneMoved) return null;
+    const members = new Map<number, { x: number; y: number }[]>();
+    for (const seat of data.seats) {
+      const zoneId = layout.zoneOf(seat);
+      if (zoneId !== null) members.set(zoneId, [...(members.get(zoneId) ?? []), seat]);
+    }
+    return new Map([...members].map(([zoneId, seats]) => [zoneId, autoRects(seats)]));
+  }, [zoneMoved, data.seats, layout]);
+  const rectsOf = useCallback(
+    (zone: SeatingZone) => (autoShapes ? (autoShapes.get(zone.id) ?? []) : zoneRects(zone.shape)),
+    [autoShapes],
+  );
 
   const changes = useMemo(() => changesOf(shown, data.seats, people), [shown, data.seats, people]);
   const conflicts = useMemo(() => {
@@ -192,14 +213,27 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
     if (!review) for (const [seatId, text] of serverConflicts) map.set(seatId, text);
     return map;
   }, [shown, data.seats, people, review, serverConflicts]);
-  const changedSeats = useMemo(
-    () => new Set([...changes.map((c) => c.seatId), ...zoneMoves.keys()]),
-    [changes, zoneMoves],
-  );
+  const changedSeats = useMemo(() => new Set(changes.map((c) => c.seatId)), [changes]);
   const myZones = useMemo(() => (perms.mode === "ZONE" ? new Set(perms.zones ?? []) : null), [perms]);
   const focusZones = myZones && focusMine && !preview ? myZones : null;
-  const hasTypes = Object.keys(draft.modes).length > 0;
-  const changeCount = changes.length + zoneMoves.size;
+  // 좌석 유형·구역 변경은 날짜를 정할 수 없다 (좌석에는 날짜가 없어서 바로 바뀐다)
+  const hasTypes = Object.keys(draft.modes).length > 0 || Object.keys(draft.zones).length > 0;
+  const changeCount = changes.length;
+  // 구역 관리자가 구역 경계를 바꾸면 언제나 층 관리자 승인 후 반영
+  const needsApproval =
+    perms.apply === "NEEDS_APPROVAL" || (perms.mode === "ZONE" && Object.keys(draft.zones).length > 0);
+  /** 이 좌석에 사람·유형을 바꿀 수 있나: 층 관리자 이상은 어디든, 구역 관리자는 (반영하면) 내 구역인 좌석 */
+  const editable = useCallback(
+    (seat: SeatingSeat) => perms.mode === "FLOOR" || (myZones?.has(layout.zoneOf(seat) ?? -1) ?? false),
+    [perms.mode, myZones, layout],
+  );
+  const zoneName = useCallback(
+    (zoneId: number | null) => {
+      const zone = data.zones.find((z) => z.id === zoneId);
+      return zone ? `${zone.name} · ${zone.code}구역` : "구역 없음";
+    },
+    [data.zones],
+  );
 
   // 자동 저장 ------------------------------------------------------------------
   const dirtyRef = useRef(false);
@@ -273,8 +307,10 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
     setHistory((h) => [...h.slice(-(HISTORY_MAX - 1)), draft]);
     setDraft(next);
     setServerConflicts(new Map());
-    // 유형 변경이 생기면 날짜 지정을 쓸 수 없다
-    if (Object.keys(next.modes).length > 0 && effective.on) setEffective((e) => ({ ...e, on: false }));
+    // 유형·구역 변경이 생기면 날짜 지정을 쓸 수 없다
+    if ((Object.keys(next.modes).length > 0 || Object.keys(next.zones).length > 0) && effective.on) {
+      setEffective((e) => ({ ...e, on: false }));
+    }
     markDirty();
   }
 
@@ -314,10 +350,27 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
       const wasPending = latest.current.data.draft?.status === "PENDING";
       setData(next);
       // 다른 탭에서 승인 요청을 했거나, 요청이 승인·반려됐으면 내 화면도 그 상태로
-      if (reset || wasPending !== (next.draft?.status === "PENDING") || (wasPending && !next.draft)) resetFrom(next);
+      if (reset || wasPending !== (next.draft?.status === "PENDING") || (wasPending && !next.draft)) {
+        resetFrom(next);
+        return;
+      }
+      // 없어진 구역으로 옮기던 좌석은 묶음에서 뺀다
+      const alive = new Set(next.zones.map((z) => z.id));
+      const stale = Object.entries(latest.current.draft.zones).filter(([, z]) => z !== null && !alive.has(z));
+      if (stale.length) {
+        const zones = { ...latest.current.draft.zones };
+        for (const [seatId] of stale) delete zones[Number(seatId)];
+        setDraft({ ...latest.current.draft, zones });
+        markDirtyRef.current();
+      }
+      setZoneTarget((t) => (t === null || alive.has(t) ? t : null));
     },
     [floorId, router, resetFrom],
   );
+  const markDirtyRef = useRef(markDirty);
+  useEffect(() => {
+    markDirtyRef.current = markDirty;
+  });
   const reloadRef = useRef(reload);
   useEffect(() => {
     reloadRef.current = reload;
@@ -380,7 +433,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
 
   /** 이 좌석에 사람을 놓을 수 없는 이유 */
   function blockReason(seat: SeatingSeat, emp: string | null): string | null {
-    if (!seat.editable) return "다른 구역이에요 · 층 관리자에게 요청하세요";
+    if (!editable(seat)) return "다른 구역이에요 · 층 관리자에게 요청하세요";
     if (seat.upcoming) return `${shortDate(seat.upcoming.at)} 변경이 예정된 자리라 그날까지 바꿀 수 없어요`;
     const mode = layout.mode(seat);
     if (mode === "FLEX") return "자율석에는 배정하지 않아요 · 오른쪽에서 고정석으로 바꾼 뒤 놓으세요";
@@ -412,7 +465,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
   }
 
   function clearSeat(seat: SeatingSeat) {
-    if (!seat.editable || seat.upcoming) {
+    if (!editable(seat) || seat.upcoming) {
       showToast(blockReason(seat, null) ?? "바꿀 수 없는 자리예요", "error");
       return;
     }
@@ -438,11 +491,16 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
       clearSeat(seat);
       return;
     }
+    if (tool === "zone") {
+      setSelectedSeatId(seat.id);
+      intoZone([seat.id]);
+      return;
+    }
     if (tool === "swap") {
       if (pick?.kind === "seat") {
         if (pick.seatId !== seat.id) swapSeats(pick.seatId, seat.id);
         setPick(null);
-      } else if (!seat.editable || seat.upcoming || layout.mode(seat) !== "FIXED") {
+      } else if (!editable(seat) || seat.upcoming || layout.mode(seat) !== "FIXED") {
         showToast(blockReason(seat, null) ?? "고정석끼리만 바꿀 수 있어요", "error");
       } else {
         setPick({ kind: "seat", seatId: seat.id });
@@ -456,7 +514,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
   function swapSeats(a: number, b: number) {
     const seatB = data.seats.find((s) => s.id === b)!;
     const reason =
-      !seatB.editable || seatB.upcoming || layout.mode(seatB) !== "FIXED" ? blockReason(seatB, null) : null;
+      !editable(seatB) || seatB.upcoming || layout.mode(seatB) !== "FIXED" ? blockReason(seatB, null) : null;
     const movers = [layout.occupant(a), layout.occupant(b)].filter((e): e is string => !!e);
     const stuck = movers.find((e) => !canMove(people.get(e)));
     if (reason || stuck) {
@@ -467,6 +525,37 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
     commit(swap(draft, data.seats, a, b));
     const codes = data.seats.filter((s) => s.id === a || s.id === b).map((s) => s.code);
     showToast(`${codes.join(" ↔ ")} 자리를 바꿨어요`);
+  }
+
+  /** 팀 구역 지정: 좌석들을 고른 구역에 넣는다. 구역 관리자는 내 구역으로 넣거나 내 구역에서 빼는 것만 */
+  function intoZone(seatIds: number[]) {
+    const target = zoneTarget;
+    const seats = data.seats.filter((s) => seatIds.includes(s.id) && layout.zoneOf(s) !== target);
+    const allowed = seats.filter(
+      (s) =>
+        perms.mode === "FLOOR" || myZones?.has(layout.zoneOf(s) ?? -1) || (target !== null && myZones?.has(target)),
+    );
+    if (allowed.length === 0) {
+      showToast(
+        seats.length ? "내 구역에 넣거나 내 구역에서 빼는 좌석만 고를 수 있어요" : `이미 ${zoneName(target)}이에요`,
+        seats.length ? "error" : undefined,
+      );
+      return;
+    }
+    commit(
+      moveZone(
+        draft,
+        data.seats,
+        allowed.map((s) => s.id),
+        target,
+      ),
+    );
+    const skipped = seats.length - allowed.length;
+    showToast(
+      `${allowed.length === 1 ? allowed[0].code : `${allowed.length}석`} → ${zoneName(target)}${
+        skipped ? ` (다른 구역끼리 옮기는 ${skipped}석은 뺐어요)` : ""
+      }`,
+    );
   }
 
   function onDragStartPerson(emp: string, event: DragEvent) {
@@ -511,7 +600,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
     const from = emp ? layout.seatOf(emp) : undefined;
     if (!emp || from === undefined) return;
     const seat = data.seats.find((s) => s.id === from)!;
-    if (!seat.editable || seat.upcoming) {
+    if (!editable(seat) || seat.upcoming) {
       showToast(blockReason(seat, null) ?? "바꿀 수 없는 자리예요", "error");
       return;
     }
@@ -558,7 +647,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
         showToast("저장하지 못해서 반영하지 않았어요. 다시 시도하세요", "error");
         return;
       }
-      const verb = perms.apply === "IMMEDIATE" ? "apply" : "submit";
+      const verb = needsApproval ? "submit" : "apply";
       const res = await post(`/api/admin/change-sets/${draftId}/${verb}`);
       if (res.ok && verb === "submit") {
         showToast(`승인을 요청했어요 · 층 관리자가 승인하면 반영돼요`);
@@ -709,6 +798,12 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
     });
   }
 
+  function chooseTool(next: Tool) {
+    setTool(next);
+    setPick(null);
+    if (next === "zone" && perms.mode === "ZONE") setZoneTarget(perms.zones?.[0] ?? null);
+  }
+
   async function goFloor(id: number) {
     await flush();
     router.push(`/admin/seating?floor=${id}`);
@@ -735,18 +830,28 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
 
   // 화면 ----------------------------------------------------------------------
 
+  const zoneDept = new Map(data.zones.map((z) => [z.id, z.department_id]));
   const viewOf = (seat: SeatingSeat): SeatView => {
     const emp = layout.occupant(seat.id);
     const person = emp ? people.get(emp) : undefined;
     const zoneId = zoneOf(seat);
+    const zoneDepartment = zoneId !== null ? zoneDept.get(zoneId) : null;
     return {
       dropBlock:
         dragging || pick?.kind === "person" ? blockReason(seat, dragging ?? (pick as { emp: string }).emp) : null,
-      draggable: seat.editable && !seat.upcoming && emp && canMove(person) ? emp : null,
+      draggable: tool !== "zone" && editable(seat) && !seat.upcoming && emp && canMove(person) ? emp : null,
       changed: changedSeats.has(seat.id),
       conflict: conflicts.get(seat.id) ?? null,
-      dimmed: !!focusZones && (zoneId === null || !focusZones.has(zoneId)),
+      dimmed: tool !== "zone" && !!focusZones && (zoneId === null || !focusZones.has(zoneId)),
+      // 팀 구역에 다른 팀 사람이 앉아 있다 (구역을 옮겼거나 부서를 옮긴 사람)
+      otherTeam: !!person && !!zoneDepartment && person.department_id !== zoneDepartment,
+      editable: editable(seat),
     };
+  };
+  /** 구역마다 반영하면 될 좌석 수·앉은 사람 수 */
+  const zoneStats = (zoneId: number) => {
+    const seats = data.seats.filter((s) => layout.zoneOf(s) === zoneId);
+    return { seats: seats.length, people: seats.filter((s) => layout.occupant(s.id)).length };
   };
 
   const selectedSeat = data.seats.find((s) => s.id === selectedSeatId) ?? null;
@@ -756,7 +861,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
   ];
   const roleChip = `${data.floor.site.name} ${data.floor.name}${zoneNames.length ? ` · ${zoneNames.join(", ")}` : ""}`;
   const scheduledLabel = effective.on && !hasTypes ? `${shortDate(`${effective.date}T00:00:00+09:00`)}부터 ` : "";
-  const primaryLabel = perms.apply === "IMMEDIATE" ? `${scheduledLabel}반영하기` : "층 관리자에게 승인 요청";
+  const primaryLabel = needsApproval ? "층 관리자에게 승인 요청" : `${scheduledLabel}반영하기`;
 
   let status: string;
   if (review) status = `검토 중 · ${review.requester}의 요청`;
@@ -785,19 +890,19 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
       </select>
     </section>
   );
+  const toolChoices: [Tool, string][] = [
+    ["move", "선택·이동"],
+    ["swap", "자리 교환"],
+    ["clear", "배정 해제"],
+    ...(perms.mode === "FLOOR" ? [["zone", "팀 구역 지정"] as [Tool, string]] : []),
+  ];
   const toolsCard = (
     <section className={styles.card} aria-labelledby="tools-title">
       <h2 id="tools-title" className={styles.cardTitle}>
         배치 도구
       </h2>
       <div className={styles.tools} role="radiogroup" aria-label="배치 도구">
-        {(
-          [
-            ["move", "선택·이동"],
-            ["swap", "자리 교환"],
-            ["clear", "배정 해제"],
-          ] as const
-        ).map(([value, label]) => (
+        {toolChoices.map(([value, label]) => (
           <button
             key={value}
             type="button"
@@ -805,59 +910,125 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
             aria-checked={tool === value}
             className={styles.tool}
             disabled={readOnly}
-            onClick={() => {
-              setTool(value);
-              setPick(null);
-            }}
+            onClick={() => chooseTool(value)}
           >
             {label}
           </button>
         ))}
-      </div>
-      {perms.mode === "FLOOR" ? (
-        <div className={styles.tools}>
-          <PendingButton label="팀 구역 지정" className={styles.toolPending} />
-          <PendingButton label="좌석 추가" className={styles.toolPending} />
-          <PendingButton label="도면 수정" className={styles.toolPending} />
-        </div>
-      ) : (
-        <div className={styles.tools}>
-          {["팀 구역 지정", "좌석 추가", "도면 수정"].map((label) => (
+        {perms.mode === "FLOOR" ? (
+          <>
+            <PendingButton label="좌석 추가" className={styles.toolPending} />
+            <PendingButton label="도면 수정" className={styles.toolPending} />
+          </>
+        ) : (
+          ["팀 구역 지정", "좌석 추가", "도면 수정"].map((label) => (
             <button key={label} type="button" className={styles.tool} disabled title="층 관리자 이상만 사용">
               {label}
             </button>
-          ))}
-        </div>
-      )}
+          ))
+        )}
+      </div>
       <p className={styles.hint}>
         {tool === "move" && "사람을 끌어 놓거나, 미배치 인원을 누른 뒤 자리를 누르세요."}
         {tool === "swap" && "바꿀 두 자리를 차례로 누르세요."}
-        {tool === "clear" && "비울 자리를 누르면 그 사람은 미배치 인원으로 가요."}{" "}
+        {tool === "clear" && "비울 자리를 누르면 그 사람은 미배치 인원으로 가요."}
+        {tool === "zone" && "아래에서 구역을 고르고, 좌석을 누르거나 끌어서 네모로 묶으세요."}{" "}
         {perms.mode === "FLOOR"
-          ? "팀 구역 지정은 다음 단계, 좌석 추가·도면 수정은 도면 편집에서 해요."
-          : "잠긴 도구는 층 관리자 이상만 써요."}
+          ? "좌석 추가·도면 수정은 도면 편집에서 해요."
+          : "잠긴 도구는 층 관리자 이상만 써요. 구역을 넓히려면 요청 목록의 \u201c구역 확장·변경 요청\u201d을 누르세요."}
       </p>
     </section>
   );
+  const choosingZone = tool === "zone" && !readOnly;
   const zonesCard = (
     <section className={styles.card} aria-labelledby="zones-title">
-      <h2 id="zones-title" className={styles.cardTitle}>
-        {data.floor.name} 팀 구역 · 관리자
-      </h2>
-      <ul className={styles.zoneList}>
-        {data.zones.map((z) => (
-          <li key={z.id} data-color={z.color_key} data-locked={!z.editable || undefined}>
-            <span className={styles.swatch} aria-hidden="true" />
-            <span className={styles.zoneName}>
-              <strong>
-                {z.name} · {z.code}
-              </strong>
-              <span>{z.managers.length ? z.managers.join(", ") : "구역 관리자 없음"}</span>
-            </span>
-            <span className={styles.zoneRight}>{myZones?.has(z.id) ? "내 구역" : z.editable ? "편집" : "잠김"}</span>
+      <div className={styles.cardHead}>
+        <h2 id="zones-title" className={styles.cardTitle}>
+          {data.floor.name} 팀 구역 · 관리자
+        </h2>
+        {perms.mode === "FLOOR" && !readOnly && (
+          <button type="button" className={styles.linkButton} onClick={() => setZoneDialog({ mode: "create" })}>
+            + 팀 구역 추가
+          </button>
+        )}
+      </div>
+      {choosingZone && <p className={styles.pickNote}>좌석을 넣을 구역을 고르세요</p>}
+      <ul
+        className={styles.zoneList}
+        role={choosingZone ? "radiogroup" : undefined}
+        aria-label={choosingZone ? "좌석을 넣을 구역" : undefined}
+      >
+        {data.zones.map((z) => {
+          const stat = zoneStats(z.id);
+          const choosable = choosingZone && (perms.mode === "FLOOR" || !!myZones?.has(z.id));
+          const body = (
+            <>
+              <span className={styles.swatch} aria-hidden="true" />
+              <span className={styles.zoneName}>
+                <strong>
+                  {z.name} · {z.code}
+                </strong>
+                <span>
+                  좌석 {stat.seats} · {stat.people}명 · {z.managers.length ? z.managers.join(", ") : "구역 관리자 없음"}
+                </span>
+                {!z.department_active && <span className={styles.conflictText}>조직도에서 없어진 부서의 구역</span>}
+              </span>
+            </>
+          );
+          return (
+            <li
+              key={z.id}
+              data-color={z.color_key}
+              data-locked={(!z.editable && !choosable) || undefined}
+              data-chosen={(choosable && zoneTarget === z.id) || undefined}
+            >
+              {choosable ? (
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={zoneTarget === z.id}
+                  className={styles.zoneChoose}
+                  onClick={() => setZoneTarget(z.id)}
+                >
+                  {body}
+                </button>
+              ) : (
+                body
+              )}
+              {perms.mode === "FLOOR" && !choosingZone && !readOnly ? (
+                <button
+                  type="button"
+                  className={styles.linkButton}
+                  onClick={() => setZoneDialog({ mode: "edit", zone: z })}
+                  aria-label={`${z.name} ${z.code}구역 고치기`}
+                >
+                  고치기
+                </button>
+              ) : (
+                <span className={styles.zoneRight}>{myZones?.has(z.id) ? "내 구역" : z.editable ? "" : "잠김"}</span>
+              )}
+            </li>
+          );
+        })}
+        {choosingZone && (
+          <li data-color="t0" data-chosen={zoneTarget === null || undefined}>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={zoneTarget === null}
+              className={styles.zoneChoose}
+              onClick={() => setZoneTarget(null)}
+            >
+              <span className={styles.swatch} aria-hidden="true" />
+              <span className={styles.zoneName}>
+                <strong>구역 없음</strong>
+                <span>{perms.mode === "FLOOR" ? "구역에서 빼기" : "내 구역에서 빼기"}</span>
+              </span>
+            </button>
           </li>
-        ))}
+        )}
       </ul>
+      {data.zones.length === 0 && <p className={styles.empty}>이 층에는 팀 구역이 아직 없어요.</p>}
     </section>
   );
   const peopleCard = (
@@ -944,8 +1115,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
     <ReviewPanel
       review={review}
       changes={changes}
-      zoneMoves={zoneMoves}
-      data={data}
+      zoneName={zoneName}
       people={people}
       conflicts={conflicts}
       busy={busy}
@@ -959,7 +1129,21 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
   ) : selectedSeat ? (
     <SeatDetails
       seat={selectedSeat}
-      zoneName={data.zones.find((z) => z.id === selectedSeat.zone_id)?.name ?? "구역 없음"}
+      zoneName={zoneName(layout.zoneOf(selectedSeat))}
+      editable={editable(selectedSeat)}
+      zoneId={layout.zoneOf(selectedSeat)}
+      zoneChoices={
+        perms.mode === "FLOOR"
+          ? [
+              ...data.zones.map((z) => ({ id: z.id as number | null, label: `${z.name} · ${z.code}` })),
+              { id: null, label: "구역 없음" },
+            ]
+          : null
+      }
+      onZone={(zoneId) => {
+        commit(moveZone(draft, data.seats, [selectedSeat.id], zoneId));
+        showToast(`${selectedSeat.code} → ${zoneName(zoneId)}`);
+      }}
       occupant={layout.occupant(selectedSeat.id)}
       mode={layout.mode(selectedSeat)}
       people={people}
@@ -1003,7 +1187,16 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
           아직 바꾼 것이 없어요. 반영하기 전에는 직원 화면에 보이지 않고, 바꾼 내용은 자동 저장돼요.
         </p>
       ) : (
-        <ChangeList changes={changes} people={people} conflicts={conflicts} />
+        <ChangeList
+          changes={changes}
+          people={people}
+          conflicts={conflicts}
+          zoneName={zoneName}
+          zoneNote={perms.mode === "ZONE" ? "구역 경계 · 층 관리자 승인 후 반영" : "구역 경계 · 바로 반영"}
+        />
+      )}
+      {perms.mode === "ZONE" && Object.keys(draft.zones).length > 0 && perms.apply === "IMMEDIATE" && !pending && (
+        <p className={styles.hint}>구역 경계를 바꾸는 묶음은 층 관리자 승인을 거쳐 반영돼요.</p>
       )}
       {!pending && (
         <>
@@ -1050,7 +1243,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
             </label>
             <p className={styles.hint}>
               {hasTypes
-                ? "좌석 유형 변경이 있으면 날짜를 정할 수 없어요 (유형은 바로 바뀌어요)."
+                ? "좌석 유형·구역 변경이 있으면 날짜를 정할 수 없어요 (바로 바뀌어요)."
                 : effective.on
                   ? "그날 0시부터 직원 화면에 바뀐 자리가 보여요. 그때까지 바꾼 자리·사람은 잠기고, 그 전에는 취소할 수 있어요."
                   : "이사·입사일처럼 정해진 날이 있으면 날짜를 지정하세요."}
@@ -1085,6 +1278,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
       onReview={(row) => void openReview(row)}
       onCancel={cancelScheduled}
       onReopen={(row) => void reopen(row)}
+      onExpandZone={perms.mode === "ZONE" && !readOnly ? () => chooseTool("zone") : null}
     />
   );
 
@@ -1207,6 +1401,16 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
             </p>
           )}
           {preview && !review && <p className={styles.modeBar}>직원 화면 미리보기: 반영하면 직원에게 이렇게 보여요.</p>}
+          {tool === "zone" && !readOnly && (
+            <p className={styles.modeBar} data-tone="zone" role="status">
+              팀 구역 지정: <strong>{zoneName(zoneTarget)}</strong>
+              {zoneTarget === null ? "으로 뺄" : "에 넣을"} 좌석을 누르거나 끌어서 네모로 묶으세요
+              {perms.mode === "ZONE" && " · 층 관리자 승인 후 반영돼요"} ·{" "}
+              <button type="button" className={styles.linkButton} onClick={() => chooseTool("move")}>
+                끝내기
+              </button>
+            </p>
+          )}
           {tool === "swap" && pick?.kind === "seat" && (
             <p className={styles.modeBar} role="status">
               {data.seats.find((s) => s.id === pick.seatId)?.code}와 바꿀 자리를 누르세요 ·{" "}
@@ -1227,8 +1431,11 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
               selectedSeatId={selectedSeatId}
               pickedSeatId={pick?.kind === "seat" ? pick.seatId : null}
               dragOverId={dragOverId}
-              focusZones={focusZones}
+              focusZones={tool === "zone" ? null : focusZones}
               zoneOf={zoneOf}
+              rectsOf={rectsOf}
+              boxSelect={tool === "zone" && !readOnly}
+              onBoxSelect={intoZone}
               onSeatClick={onSeatClick}
               onDragStartPerson={onDragStartPerson}
               onDragEnd={endDrag}
@@ -1249,12 +1456,14 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
         </main>
         <aside className={styles.right} aria-label="선택한 좌석, 미배치 인원과 변경 내용">
           {!wide && floorCard}
+          {/* 팀 구역 지정 중에는 구역 고르기가 도면 바로 옆에 오게 */}
+          {!wide && choosingZone && zonesCard}
           {sideTop}
           {!wide && peopleCard}
           {changesCard}
           {requestsCard}
           {!wide && toolsCard}
-          {!wide && zonesCard}
+          {!wide && !choosingZone && zonesCard}
         </aside>
       </div>
 
@@ -1292,6 +1501,29 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
       >
         <p>{confirm?.body}</p>
       </Dialog>
+
+      {zoneDialog && (
+        <ZoneDialog
+          state={zoneDialog}
+          floorId={floorId}
+          floorName={data.floor.name}
+          zones={data.zones}
+          departments={data.departments}
+          statsOf={zoneStats}
+          onClose={() => setZoneDialog(null)}
+          onExpired={() => router.replace(EXPIRED)}
+          onDone={async ({ message, zoneId }) => {
+            setZoneDialog(null);
+            showToast(message);
+            await reload(false);
+            if (zoneId !== undefined) {
+              setZoneTarget(zoneId);
+              setTool("zone");
+              setPick(null);
+            }
+          }}
+        />
+      )}
 
       <Dialog
         open={!!rejecting}
@@ -1341,6 +1573,8 @@ function saveErrorText(code: string | undefined): string {
       return "승인 대기 중이라 고칠 수 없어요";
     case "SEAT_LOCKED":
       return "내 구역이 아닌 좌석이 있어요";
+    case "ZONE_NOT_FOUND":
+      return "없어진 구역으로 옮기는 좌석이 있어요";
     case "PERSON_OUT_OF_SCOPE":
       return "우리 팀원이 아닌 사람이 있어요";
     case "PERSON_INACTIVE":
@@ -1348,7 +1582,7 @@ function saveErrorText(code: string | undefined): string {
     case "BAD_DATE":
       return "날짜는 내일부터 1년 안으로 정하세요";
     case "SCHEDULE_WITH_TYPES":
-      return "유형 변경이 있으면 날짜를 정할 수 없어요";
+      return "유형·구역 변경이 있으면 날짜를 정할 수 없어요";
     default:
       return "잠시 뒤 다시 시도하세요";
   }
@@ -1364,7 +1598,7 @@ function actionErrorText(code: string | undefined): string {
     case "NOT_SCHEDULED":
       return "이미 반영됐거나 취소된 변경이에요";
     case "SCHEDULE_WITH_TYPES":
-      return "유형 변경이 있으면 날짜를 정할 수 없어요";
+      return "유형·구역 변경이 있으면 날짜를 정할 수 없어요";
     case "EMPTY":
       return "바꾼 것이 없어요";
     default:
@@ -1377,6 +1611,11 @@ function actionErrorText(code: string | undefined): string {
 type DetailsProps = {
   seat: SeatingSeat;
   zoneName: string;
+  editable: boolean;
+  zoneId: number | null;
+  /** 층 관리자 이상: 이 좌석의 구역 고르기 */
+  zoneChoices: { id: number | null; label: string }[] | null;
+  onZone: (zoneId: number | null) => void;
   occupant: string | null;
   mode: SeatMode;
   people: Map<string, Person>;
@@ -1395,7 +1634,7 @@ type DetailsProps = {
 
 function SeatDetails(props: DetailsProps) {
   const { seat, zoneName, occupant, mode, people, candidates, conflict, readOnly, scheduled, canMoveOccupant } = props;
-  const locked = !seat.editable || !!seat.upcoming;
+  const locked = !props.editable || !!seat.upcoming;
   const disabled = readOnly || locked;
   const base = baseOccupant(seat);
   const person = occupant ? people.get(occupant) : undefined;
@@ -1410,8 +1649,26 @@ function SeatDetails(props: DetailsProps) {
           닫기
         </button>
       </div>
-      <p className={styles.muted}>{zoneName}</p>
-      {!seat.editable && <p className={styles.lockNote}>다른 구역이에요 · 바꾸려면 층 관리자에게 요청하세요</p>}
+      {props.zoneChoices ? (
+        <label className={styles.field}>
+          <span>구역</span>
+          <select
+            className={styles.select}
+            value={props.zoneId ?? ""}
+            disabled={readOnly || scheduled}
+            onChange={(event) => props.onZone(event.target.value ? Number(event.target.value) : null)}
+          >
+            {props.zoneChoices.map((z) => (
+              <option key={z.id ?? "none"} value={z.id ?? ""}>
+                {z.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <p className={styles.muted}>{zoneName}</p>
+      )}
+      {!props.editable && <p className={styles.lockNote}>다른 구역이에요 · 바꾸려면 층 관리자에게 요청하세요</p>}
       {seat.upcoming && (
         <p className={styles.lockNote}>
           {shortDate(seat.upcoming.at)}부터{" "}
@@ -1495,10 +1752,15 @@ function ChangeList({
   changes,
   people,
   conflicts,
+  zoneName,
+  zoneNote,
 }: {
   changes: Change[];
   people: Map<string, Person>;
   conflicts: Map<number, string>;
+  zoneName: (zoneId: number | null) => string;
+  /** 구역 경계 변경의 반영 방식 안내 */
+  zoneNote: string;
 }) {
   const name = (emp: string | null) => (emp ? (people.get(emp)?.name ?? emp) : "");
   return (
@@ -1520,13 +1782,20 @@ function ChangeList({
             </>
           );
           sub = c.prev ? `${name(c.prev)} → 미배치` : "";
-        } else {
+        } else if (c.kind === "mode") {
           main = (
             <>
               <span className="mono">{c.code}</span> → {MODE_LABEL[c.mode]}
             </>
           );
           sub = "좌석 유형 · 바로 반영";
+        } else {
+          main = (
+            <>
+              <span className="mono">{c.code}</span> → {zoneName(c.zoneId)}
+            </>
+          );
+          sub = zoneNote;
         }
         const conflict = conflicts.get(c.seatId);
         return (
@@ -1554,12 +1823,15 @@ function RequestList({
   onReview,
   onCancel,
   onReopen,
+  onExpandZone,
 }: {
   requests: ChangeRequestRow[];
   reviewingId: number | null;
   onReview: (row: ChangeRequestRow) => void;
   onCancel: (row: ChangeRequestRow) => void;
   onReopen: (row: ChangeRequestRow) => void;
+  /** 구역 관리자: 구역 확장·변경 요청 (팀 구역 지정 도구를 내 구역 범위로 연다) */
+  onExpandZone: (() => void) | null;
 }) {
   return (
     <section className={styles.card} aria-labelledby="requests-title">
@@ -1579,7 +1851,11 @@ function RequestList({
                 data-active={r.id === reviewingId || undefined}
               >
                 <div className={styles.requestHead}>
-                  <strong>{r.type === "ZONE_CHANGE" ? "구역 변경 요청" : r.note || "좌석 배치"}</strong>
+                  <strong>
+                    {r.type === "ZONE_CHANGE"
+                      ? "구역 변경 요청"
+                      : r.note || (r.zone_moves ? "구역 경계 변경" : "좌석 배치")}
+                  </strong>
                   <span className={styles.statusChip}>{label}</span>
                 </div>
                 <span className={styles.requestSummary}>
@@ -1620,6 +1896,11 @@ function RequestList({
           })}
         </ul>
       )}
+      {onExpandZone && (
+        <button type="button" className={styles.btn} onClick={onExpandZone}>
+          + 구역 확장·변경 요청
+        </button>
+      )}
     </section>
   );
 }
@@ -1627,8 +1908,7 @@ function RequestList({
 function ReviewPanel({
   review,
   changes,
-  zoneMoves,
-  data,
+  zoneName,
   people,
   conflicts,
   busy,
@@ -1638,8 +1918,7 @@ function ReviewPanel({
 }: {
   review: ChangeSet;
   changes: Change[];
-  zoneMoves: Map<number, number>;
-  data: SeatingData;
+  zoneName: (zoneId: number | null) => string;
   people: Map<string, Person>;
   conflicts: Map<number, string>;
   busy: boolean;
@@ -1672,23 +1951,13 @@ function ReviewPanel({
             : `${shortDate(review.effective_at)}부터`
           : "승인하는 즉시"}
       </p>
-      <ChangeList changes={changes} people={people} conflicts={conflicts} />
-      {zoneMoves.size > 0 && (
-        <ul className={styles.changes}>
-          {[...zoneMoves].map(([seatId, zoneId]) => {
-            const seat = data.seats.find((s) => s.id === seatId);
-            const zone = data.zones.find((z) => z.id === zoneId);
-            return (
-              <li key={`zone-${seatId}`}>
-                <span>
-                  <span className="mono">{seat?.code}</span> → {zone ? `${zone.name} · ${zone.code}구역` : "다른 구역"}
-                </span>
-                <span className={styles.muted}>구역 변경 · 바로 반영</span>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      <ChangeList
+        changes={changes}
+        people={people}
+        conflicts={conflicts}
+        zoneName={zoneName}
+        zoneNote="구역 경계 · 승인하면 바로 반영"
+      />
       {conflicts.size > 0 && (
         <p className={styles.conflictNote}>
           충돌 {conflicts.size}건: 요청 뒤에 자리가 바뀌었어요. 반려하고 다시 요청받으세요.

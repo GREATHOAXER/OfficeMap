@@ -261,8 +261,14 @@ function FloorRow({ floor, siteWide, editPlan }: { floor: AdminFloor; siteWide: 
       <td data-label="입주 팀">
         {floor.zones.length > 0 ? (
           floor.zones.map((z) => (
-            <span key={z.code} className={styles.team} data-color={z.color_key}>
+            <span
+              key={z.code}
+              className={styles.team}
+              data-color={z.color_key}
+              title={z.department_active ? undefined : "조직도에서 없어진 부서의 구역이에요"}
+            >
               {z.name}
+              {!z.department_active && " (폐지된 부서)"}
             </span>
           ))
         ) : (

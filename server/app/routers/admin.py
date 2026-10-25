@@ -205,7 +205,8 @@ def overview(admin: CurrentAdmin) -> dict[str, Any]:
         ).fetchall()
         zones = conn.execute(
             """
-            SELECT z.floor_id, z.code, z.name, z.color_key, d.name AS department
+            SELECT z.floor_id, z.code, z.name, z.color_key, d.name AS department,
+                   coalesce(d.is_active, true) AS department_active
             FROM zones z LEFT JOIN departments d ON d.id = z.department_id
             WHERE z.is_active
             ORDER BY z.floor_id, z.sort_order, z.code

@@ -11,9 +11,11 @@ export type Override = { emp: string | null; expected: string | null };
 export type SeatDraft = {
   overrides: Record<number, Override>;
   modes: Record<number, SeatMode>;
+  /** 좌석 → 반영하면 속할 구역 (null = 구역 없음). 지금과 다른 좌석만 */
+  zones: Record<number, number | null>;
 };
 
-export const EMPTY_DRAFT: SeatDraft = { overrides: {}, modes: {} };
+export const EMPTY_DRAFT: SeatDraft = { overrides: {}, modes: {}, zones: {} };
 
 /** 화면에 나오는 사람 (이름·부서, 다른 층 자리) */
 export type Person = SeatingPerson & {
@@ -42,6 +44,8 @@ export type Layout = {
   /** 사람 → 반영하면 앉을 좌석 (이 층) */
   seatOf: (empNo: string) => number | undefined;
   mode: (seat: SeatingSeat) => SeatMode;
+  /** 반영하면 속할 구역 */
+  zoneOf: (seat: SeatingSeat) => number | null;
 };
 
 export function layoutOf(seats: SeatingSeat[], draft: SeatDraft): Layout {
@@ -61,6 +65,7 @@ export function layoutOf(seats: SeatingSeat[], draft: SeatDraft): Layout {
     occupant: (seatId) => occ.get(seatId) ?? null,
     seatOf: (empNo) => where.get(empNo),
     mode: (seat) => draft.modes[seat.id] ?? baseMode(seat),
+    zoneOf: (seat) => (seat.id in draft.zones ? draft.zones[seat.id] : seat.zone_id),
   };
 }
 
@@ -73,13 +78,15 @@ function withSeat(draft: SeatDraft, seats: SeatingSeat[], seatId: number, emp: s
 function normalize(draft: SeatDraft, seats: SeatingSeat[]): SeatDraft {
   const overrides: Record<number, Override> = {};
   const modes: Record<number, SeatMode> = {};
+  const zones: Record<number, number | null> = {};
   for (const seat of seats) {
     const o = draft.overrides[seat.id];
     if (o && o.emp !== baseOccupant(seat)) overrides[seat.id] = o;
     const m = draft.modes[seat.id];
     if (m && m !== baseMode(seat)) modes[seat.id] = m;
+    if (seat.id in draft.zones && draft.zones[seat.id] !== seat.zone_id) zones[seat.id] = draft.zones[seat.id];
   }
-  return { overrides, modes };
+  return { overrides, modes, zones };
 }
 
 /** 사람을 좌석에 놓는다. 앉은 사람이 있으면: 그 사람이 내 원래 자리로 (교환), 미배치에서 왔으면 그 사람은 미배치로 */
@@ -132,6 +139,13 @@ export function setMode(draft: SeatDraft, seats: SeatingSeat[], seatId: number, 
   return normalize(next, seats);
 }
 
+/** 좌석들을 구역에 넣는다 (zoneId가 null이면 구역에서 뺀다). 앉아 있는 사람은 그대로 */
+export function moveZone(draft: SeatDraft, seats: SeatingSeat[], seatIds: number[], zoneId: number | null): SeatDraft {
+  const zones = { ...draft.zones };
+  for (const id of seatIds) zones[id] = zoneId;
+  return normalize({ ...draft, zones }, seats);
+}
+
 /** 서버에 저장된 묶음 → 화면 상태 */
 export function draftFromChangeSet(changeSet: ChangeSet | null, seats: SeatingSeat[]): SeatDraft {
   if (!changeSet) return EMPTY_DRAFT;
@@ -139,7 +153,9 @@ export function draftFromChangeSet(changeSet: ChangeSet | null, seats: SeatingSe
   for (const a of changeSet.assignments) overrides[a.seat_id] = { emp: a.emp_no, expected: a.expected_emp_no };
   const modes: Record<number, SeatMode> = {};
   for (const t of changeSet.types) modes[t.seat_id] = t.mode;
-  return normalize({ overrides, modes }, seats);
+  const zones: Record<number, number | null> = {};
+  for (const z of changeSet.zone_moves) zones[z.seat_id] = z.zone_id;
+  return normalize({ overrides, modes, zones }, seats);
 }
 
 /** 저장할 항목: 지금 배치와 다른 좌석만 */
@@ -154,15 +170,17 @@ export function payloadOf(draft: SeatDraft, seats: SeatingSeat[]) {
       expected_emp_no: s.id in draft.overrides ? draft.overrides[s.id].expected : baseOccupant(s),
     }));
   const types = Object.entries(draft.modes).map(([seatId, mode]) => ({ seat_id: Number(seatId), mode }));
-  return { assignments, types };
+  const zones = Object.entries(draft.zones).map(([seatId, zoneId]) => ({ seat_id: Number(seatId), zone_id: zoneId }));
+  return { assignments, types, zones };
 }
 
 export type Change =
   | { kind: "assign"; seatId: number; code: string; emp: string; from: string; prev: string | null }
   | { kind: "clear"; seatId: number; code: string; prev: string | null }
-  | { kind: "mode"; seatId: number; code: string; mode: SeatMode };
+  | { kind: "mode"; seatId: number; code: string; mode: SeatMode }
+  | { kind: "zone"; seatId: number; code: string; zoneId: number | null };
 
-/** 변경 내용 목록 (사람이 읽는 순서: 배정 → 비우기 → 유형) */
+/** 변경 내용 목록 (사람이 읽는 순서: 배정 → 비우기 → 유형 → 구역) */
 export function changesOf(draft: SeatDraft, seats: SeatingSeat[], people: Map<string, Person>): Change[] {
   const bySeat = new Map(seats.map((s) => [s.id, s]));
   const baseSeatOf = new Map<string, SeatingSeat>();
@@ -186,6 +204,10 @@ export function changesOf(draft: SeatDraft, seats: SeatingSeat[], people: Map<st
   for (const [seatId, mode] of Object.entries(draft.modes)) {
     const seat = bySeat.get(Number(seatId));
     if (seat) out.push({ kind: "mode", seatId: seat.id, code: seat.code, mode });
+  }
+  for (const [seatId, zoneId] of Object.entries(draft.zones)) {
+    const seat = bySeat.get(Number(seatId));
+    if (seat) out.push({ kind: "zone", seatId: seat.id, code: seat.code, zoneId });
   }
   return out;
 }
