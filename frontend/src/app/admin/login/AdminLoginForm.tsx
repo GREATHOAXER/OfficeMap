@@ -77,8 +77,9 @@ export default function AdminLoginForm({ supportContact, maxFailedCount, next, k
   const passwordError = ["INVALID_CREDENTIALS", "EMPTY", "EMPTY_PASSWORD"].includes(error?.code ?? "");
   const clearError = () => error && error.code !== "LOCKED" && setError(null);
 
+  // 화면 스크립트가 뜨기 전에 눌러도 비밀번호가 주소(?password=…)에 남지 않게 form은 POST로 둔다
   return (
-    <form className={styles.form} onSubmit={handleSubmit} noValidate>
+    <form className={styles.form} method="post" onSubmit={handleSubmit} noValidate>
       <label className={styles.field}>
         사번
         <input

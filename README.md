@@ -64,6 +64,30 @@ npm run dev
 
 http://localhost:3000 에 접속하면 로그인 화면이 뜹니다.
 
+### 내 PC를 ngrok으로 바깥에 공개하기
+
+공개하는 것은 화면 서버(3000) 하나입니다. API(8000)는 화면 서버가 `/api`로 넘겨주므로 따로 공개하지 않습니다.
+바깥에 보여 줄 때는 **빌드해서 띄우는 쪽**을 권합니다 (개발 서버보다 훨씬 빠르고 아래 설정도 필요 없음).
+
+```bash
+cd frontend
+npm run build
+npm start                          # http://localhost:3000
+ngrok http 3000                    # 다른 터미널. 출력된 https://….ngrok-free.app 으로 접속
+```
+
+개발 서버(`npm run dev`)를 그대로 공개하려면 `frontend/.env.local`에 ngrok 주소의 호스트 이름을 넣고 개발 서버를 다시 켭니다.
+
+```bash
+DEV_ORIGINS=abcd-12-34-56.ngrok-free.app     # https://와 끝의 / 없이. 여러 개면 쉼표로
+```
+
+이걸 빼면 Next.js 개발 서버가 모르는 주소에서 온 개발용 요청(`/_next/…`)을 막아서 화면 스크립트가 돌지 않습니다.
+그래서 로그인 버튼을 눌러도 로그인 화면이 다시 뜨기만 하고, 개발 서버 터미널에는 `Blocked cross-origin request … allowedDevOrigins`
+경고가, uvicorn 창에는 `GET /api/auth/me 401`이 찍힙니다 (로그인 안 된 상태로 로그인 화면을 다시 그린 결과이고 원인은 위 설정).
+uvicorn 창에 `POST /api/auth/login … 401`이 찍히면 그건 사번·비밀번호가 틀린 것입니다. ngrok 무료 주소는 처음 들어갈 때
+ngrok 안내 화면이 한 번 뜨는데 "Visit Site"를 누르면 됩니다. 로그인 쿠키는 `COOKIE_SECURE=false` 그대로 https(ngrok)에서도 동작합니다.
+
 ### 목업 계정
 
 비밀번호는 모두 `officemap1234` 입니다.

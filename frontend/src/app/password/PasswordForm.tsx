@@ -88,8 +88,9 @@ export default function PasswordForm({ empNo, forced }: { empNo: string; forced:
     );
   }
 
+  // 화면 스크립트가 뜨기 전에 눌러도 비밀번호가 주소(?password=…)에 남지 않게 form은 POST로 둔다
   return (
-    <form className={styles.form} onSubmit={handleSubmit} noValidate>
+    <form className={styles.form} method="post" onSubmit={handleSubmit} noValidate>
       <label className={styles.field}>
         {forced ? "임시 비밀번호" : "현재 비밀번호"}
         <input

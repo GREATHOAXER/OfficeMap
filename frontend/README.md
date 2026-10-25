@@ -8,6 +8,9 @@ npm run dev                  # http://localhost:3000
 
 API 서버(`server/`, uvicorn)가 `http://localhost:8000`에서 떠 있어야 로그인이 됩니다.
 브라우저는 `/api/...`로만 요청하고, Next.js가 `API_URL`로 넘겨줍니다(`next.config.ts`).
+개발 서버를 localhost가 아닌 주소(ngrok 등)로 열 때는 `.env.local`의 `DEV_ORIGINS`에 그 호스트 이름을 넣습니다
+(`allowedDevOrigins`. 안 넣으면 개발용 스크립트가 막혀 버튼이 동작하지 않음). 로그인·관리자 로그인·비밀번호 변경 폼은
+`method="post"`라서 스크립트가 뜨기 전에 눌려도 비밀번호가 주소에 남지 않습니다.
 
 | 명령 | 하는 일 |
 |---|---|
