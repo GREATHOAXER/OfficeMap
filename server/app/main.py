@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from app.db import pool
 from app.jobs import jobs
 from app.realtime import hub
-from app.routers import admin, auth, employees, moves, office, plans, presence, profile, rooms, seating
+from app.routers import admin, auth, employees, moves, office, org, plans, presence, profile, rooms, seating
 
 
 @asynccontextmanager
@@ -32,6 +32,7 @@ app.include_router(seating.router)
 app.include_router(plans.router)
 app.include_router(moves.router)
 app.include_router(profile.router)
+app.include_router(org.router)
 
 
 @app.get("/api/health")

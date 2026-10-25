@@ -588,3 +588,10 @@
     box-shadow: inset 3px 0 0 var(--ink);
   }
 }
+
+/* 사업장 고치기 · 층 추가 */
+.siteActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

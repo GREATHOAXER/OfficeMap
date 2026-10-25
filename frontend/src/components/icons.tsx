@@ -310,3 +310,15 @@ export function CameraIcon(props: IconProps) {
     </Svg>
   );
 }
+
+/** 조직도 (나무) */
+export function OrgIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="9" y="3" width="6" height="5" rx="1" />
+      <rect x="3" y="16" width="6" height="5" rx="1" />
+      <rect x="15" y="16" width="6" height="5" rx="1" />
+      <path d="M12 8v4M6 16v-2h12v2" />
+    </Svg>
+  );
+}

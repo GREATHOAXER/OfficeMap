@@ -161,12 +161,40 @@ scripts/
 - `app_settings`의 `admin.session.idle_minutes`(기본 15분) 동안 쓰지 않으면 401. 최대 8시간.
 - 권한을 모두 회수하면 로그인해 있던 세션도 바로 401이 됩니다.
 - 직원 화면의 `GET /api/auth/me`의 `role`은 관리자 계정 + 살아 있는 권한이 있으면 `ADMIN`입니다
-  (직원 화면 왼쪽 메뉴의 "관리자 페이지" 입구만 정함. 따로 저장하지 않아서 권한을 회수하면 바로 사라짐).
+  (따로 저장하지 않아서 권한을 회수하면 바로 바뀜). 직원 화면에는 관리자 페이지 링크를 두지 않습니다.
 - 권한 단계: `COMPANY_ADMIN` 전사 > `SITE_ADMIN` 사업장 > `FLOOR_ADMIN` 층 > `ZONE_ADMIN` 구역.
   `overview`는 전체를 보여 주고, 층마다 `in_scope`(`ALL` 내 관리 / `ZONE` 층 안 내 구역만 / `null`)를 붙입니다.
 - `overview.summary`의 좌석·회의실·오늘 예약·대기 요청은 **내 관리 범위 안** 숫자입니다 (`scope`: `ALL`/`FLOORS`/`ZONES`).
   좌석은 개인석(`seats`, 배정 `occupied`)과 자율석(`flex`)을 나눠 셉니다. `unseated`: 재직 중인데 자리가 없는 사람.
   `pending_requests`는 층 관리 권한이면 내가 승인할 요청, 구역만 맡았으면 내가 올려 승인을 기다리는 요청.
+
+## 사업장·층·조직도 API (`/api/admin`)
+
+사업장은 전사 관리자, 층은 그 사업장의 사업장 관리자 이상, 조직도 고치기는 전사 관리자(보기는 관리자 누구나).
+없앤 사업장·층·부서는 지우지 않고 `is_active = false`로 둡니다. 모두 감사 기록(`SITE_*`, `FLOOR_*`, `DEPT_*`,
+`EMPLOYEE_*`, `PASSWORD_RESET`)을 남깁니다.
+
+| 요청 | 하는 일 |
+|---|---|
+| `POST /api/admin/sites` | 사업장 추가 `{name, kind: HQ\|CENTER, address?}`. 같은 이름 409 `SITE_NAME_TAKEN` |
+| `PUT /api/admin/sites/{ID}` | 사업장 고치기 |
+| `DELETE /api/admin/sites/{ID}` | 사업장 닫기. 층이 남아 있으면 409 `SITE_HAS_FLOORS`. 그 사업장 관리자 권한 회수 |
+| `POST /api/admin/sites/{ID}/floors` | 층 추가 `{name, description?, under_floor_id?}` (그 층 바로 아래, 없으면 맨 위). 같은 이름 409 `FLOOR_NAME_TAKEN` |
+| `PUT /api/admin/floors/{ID}` | 층 이름·용도·자리 (`move: false`면 자리는 그대로) |
+| `DELETE /api/admin/floors/{ID}` | 층 없애기. 좌석·회의실이 있으면 409 `FLOOR_IN_USE {seats, rooms}`. 빈 구역·초안·이 층 권한 정리 |
+| `GET /api/admin/org?inactive=` | 부서 목록 (`parent_id`, 인원 `members`, 이 부서 구역 `zones`), `can_edit` |
+| `GET /api/admin/org/departments/{ID}/members` | 부서 사람 (재직·휴직, 자리·관리자·임시 비밀번호 여부) |
+| `POST /api/admin/org/departments` | 부서 추가 `{name, parent_id?, code?}` (코드가 없으면 `NEW001`…) |
+| `PUT /api/admin/org/departments/{ID}` | 이름·위 부서·코드. 자기 아래로 옮기면 422 `PARENT_CYCLE` |
+| `DELETE /api/admin/org/departments/{ID}` | 부서 없애기. 사람·아래 부서가 있으면 409 `DEPT_NOT_EMPTY {members, children}` |
+| `POST /api/admin/org/departments/{ID}/members` | 데려오기 `{emp_nos}` → `{moved, released}` (고정석 배정이 끝난 사람 이름) |
+| `GET /api/admin/org/people?q=` | 이름·사번으로 사람 찾기 (재직·휴직, 지금 부서) |
+| `POST /api/admin/org/employees` | 새 직원 등록 → `{employee, temporary_password}` (직원 화면 계정, 첫 로그인 때 비밀번호 변경). 같은 사번 409 `EMP_NO_TAKEN` |
+| `PUT /api/admin/org/employees/{사번}` | 보낸 칸만: 이름·직급·직책·이메일·내선·`department_id`·`status`(`ACTIVE`/`LEAVE`/`RETIRED`) → `{released}`. 나를 퇴사 422 `CANNOT_RETIRE_SELF` |
+| `POST /api/admin/org/employees/{사번}/reset-password` | 직원 화면 임시 비밀번호(잠금 해제, 로그인 끊음) → `{temporary_password}` |
+
+- 부서를 옮기거나 퇴사하면 고정석 배정은 DB 트리거(`release_seat_on_org_change`)가 끝내고 새 팀의 미배치 인원이 됩니다.
+  휴직(`LEAVE`)은 자리를 그대로 두고 로그인만 막힙니다. 퇴사하면 관리자 권한도 회수하고 세션을 끊습니다.
 
 ## 좌석 배치 편집 API (`/api/admin`, 관리자 로그인 필요)
 

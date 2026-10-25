@@ -30,6 +30,7 @@ import {
   MenuIcon,
   MoreIcon,
   MoveIcon,
+  OrgIcon,
   PenIcon,
   PersonIcon,
   ShieldIcon,
@@ -64,6 +65,7 @@ function consoleMenu(admin: Admin): MenuGroup[] {
       title: "관리",
       items: [
         { label: "사업장·권한", icon: <ShieldIcon />, href: "/admin" },
+        { label: "조직도", icon: <OrgIcon />, href: "/admin/org" },
         { label: "좌석 배치 편집", icon: <MoveIcon />, href: "/admin/seating" },
         // 도면 편집은 층 관리자 이상 (구역 관리자는 보기만)
         ...(hasPlanRole(admin)

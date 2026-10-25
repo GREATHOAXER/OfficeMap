@@ -509,6 +509,40 @@ export function fetchAdminOverview(cookieHeader: string | null) {
   return apiGet<AdminOverview>("/api/admin/overview", cookieHeader);
 }
 
+// 조직도 (관리자 페이지) ------------------------------------------------------------
+
+/** 부서 하나. members: 재직·휴직 인원, zones: 이 부서 팀 구역 */
+export type OrgDepartment = {
+  id: number;
+  code: string;
+  name: string;
+  parent_id: number | null;
+  sort_order: number;
+  is_active: boolean;
+  members: number;
+  zones: { floor: string; code: string }[];
+};
+
+export type OrgMember = {
+  emp_no: string;
+  name: string;
+  rank: string | null;
+  position: string | null;
+  email: string | null;
+  extension: string | null;
+  status: "ACTIVE" | "LEAVE";
+  hired_on: string | null;
+  seat_code: string | null;
+  floor_name: string | null;
+  site_name: string | null;
+  is_admin: boolean;
+  temporary_password: boolean | null; // 아직 임시 비밀번호 (null이면 계정 없음)
+};
+
+export function fetchOrg(cookieHeader: string | null) {
+  return apiGet<{ departments: OrgDepartment[]; can_edit: boolean }>("/api/admin/org", cookieHeader);
+}
+
 // 좌석 배치 편집 (⑤) -------------------------------------------------------------
 
 /** 좌석 유형: 고정석 / 팀 내 자율석 / 사용 중지 (고장·수리) */

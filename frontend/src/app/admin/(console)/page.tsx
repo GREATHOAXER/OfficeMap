@@ -1,10 +1,12 @@
 import { headers } from "next/headers";
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import PendingButton from "@/components/PendingButton";
 import { applyModeText, canEditPlan, canManage, canManageSite, LEVELS, PLAN_LABEL, ROLE_TASKS } from "@/lib/admin";
 import { type Admin, type AdminFloor, type AdminSite, ApiError, fetchAdmin, fetchAdminOverview } from "@/lib/api";
 import { kstDate, shortDate } from "@/lib/dates";
+import { FloorButton, SiteButton } from "./SiteActions";
 import styles from "./admin.module.css";
 
 // 아직 화면이 없는 작업 버튼 (누르면 "준비 중" 말풍선)
@@ -63,8 +65,10 @@ export default async function AdminHomePage() {
         </div>
         {isCompany && (
           <div className={styles.headerActions}>
-            <Pending label="조직도 동기화" />
-            <Pending label="사업장 추가" primary />
+            <Link href="/admin/org" className={styles.btn}>
+              조직도 관리
+            </Link>
+            <SiteButton />
           </div>
         )}
       </header>
@@ -81,7 +85,7 @@ export default async function AdminHomePage() {
         </p>
 
         <p className={styles.readyNote}>
-          좌석 배치 편집과 도면 편집이 열렸어요. 점선 버튼(층 추가 · 권한 부여 등)은 다음 단계에서 열려요.
+          사업장·층 추가와 조직도 관리가 열렸어요. 점선 버튼(권한 부여 등)은 다음 단계에서 열려요.
         </p>
 
         <ul className={styles.stats} aria-label={scoped ? "내 관리 범위 현황" : "전체 현황"}>
@@ -95,14 +99,15 @@ export default async function AdminHomePage() {
         </ul>
 
         {overview.sites.map((site) => (
-          <SiteSection key={site.id} site={site} admin={admin} />
+          <SiteSection key={site.id} site={site} admin={admin} isCompany={isCompany} />
         ))}
 
         <section className={styles.section} aria-labelledby="levels-title">
           <div className={styles.sectionHead}>
             <h2 id="levels-title">관리자 권한 체계</h2>
             <span className={styles.muted}>
-              상위 관리자가 바로 아래 관리자를 지정 · 각자 맡은 범위 안에서만 편집 · 좌석·도면 조회는 직원 화면에서 누구나
+              상위 관리자가 바로 아래 관리자를 지정 · 각자 맡은 범위 안에서만 편집 · 좌석·도면 조회는 직원 화면에서
+              누구나
             </span>
             {admin.role !== "ZONE_ADMIN" && (
               <span className={styles.sectionAction}>
@@ -176,7 +181,7 @@ export default async function AdminHomePage() {
   );
 }
 
-function SiteSection({ site, admin }: { site: AdminSite; admin: Admin }) {
+function SiteSection({ site, admin, isCompany }: { site: AdminSite; admin: Admin; isCompany: boolean }) {
   const seats = site.floors.reduce((n, f) => n + f.seats, 0);
   const occupied = site.floors.reduce((n, f) => n + f.occupied, 0);
   const siteWide = canManageSite(admin, site.id);
@@ -201,7 +206,12 @@ function SiteSection({ site, admin }: { site: AdminSite; admin: Admin }) {
             담당 <strong>{site.admins.join(", ") || "—"}</strong>
           </span>
         </div>
-        {siteWide && <Pending label="+ 층 추가" />}
+        {(siteWide || isCompany) && (
+          <div className={styles.siteActions}>
+            {isCompany && <SiteButton site={site} />}
+            {siteWide && <FloorButton siteId={site.id} floors={site.floors} />}
+          </div>
+        )}
       </div>
       <div className={styles.tableScroll}>
         <table className={styles.table}>
@@ -236,6 +246,7 @@ function SiteSection({ site, admin }: { site: AdminSite; admin: Admin }) {
                 floor={floor}
                 siteWide={siteWide}
                 editPlan={canEditPlan(admin, { id: floor.id, siteId: site.id })}
+                edit={siteWide ? <FloorButton siteId={site.id} floors={site.floors} floor={floor} /> : null}
               />
             ))}
           </tbody>
@@ -247,16 +258,25 @@ function SiteSection({ site, admin }: { site: AdminSite; admin: Admin }) {
 
 /** siteWide: 사업장 전체를 맡았다 (모든 층이 내 범위라 층마다 "내 관리" 표시는 하지 않는다)
  *  editPlan: 이 층 도면을 고칠 수 있다 (층 관리자 이상) */
-function FloorRow({ floor, siteWide, editPlan }: { floor: AdminFloor; siteWide: boolean; editPlan: boolean }) {
+function FloorRow({
+  floor,
+  siteWide,
+  editPlan,
+  edit,
+}: {
+  floor: AdminFloor;
+  siteWide: boolean;
+  editPlan: boolean;
+  /** 층 고치기 (사업장 관리자 이상) */
+  edit: ReactNode;
+}) {
   const admins = floor.floor_admins.join(", ");
   const mark = !siteWide && floor.in_scope;
   return (
     <tr data-scope={mark || undefined}>
       <th scope="row" data-label="층">
         <strong className="mono">{floor.name}</strong>
-        {mark && (
-          <span className={styles.scopeTag}>{floor.in_scope === "ALL" ? "내 관리" : "내 구역"}</span>
-        )}
+        {mark && <span className={styles.scopeTag}>{floor.in_scope === "ALL" ? "내 관리" : "내 구역"}</span>}
       </th>
       <td data-label="입주 팀">
         {floor.zones.length > 0 ? (
@@ -295,6 +315,7 @@ function FloorRow({ floor, siteWide, editPlan }: { floor: AdminFloor; siteWide: 
       </td>
       <td className={styles.actions}>
         <div className={styles.actionRow}>
+          {edit}
           {floor.in_scope ? (
             <>
               {editPlan && (
