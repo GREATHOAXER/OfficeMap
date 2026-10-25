@@ -1,19 +1,19 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { FloorEvent, FloorMap, MyPresence, PresenceEvent } from "./api";
+import { openEventStream } from "./eventStream";
 import { expiredLoginUrl } from "./loginRedirect";
 
 /** 사번 → 그 사람의 가장 최근 상태 변경 알림 */
 export type LiveChanges = ReadonlyMap<string, PresenceEvent>;
 
-const RETRY_MIN_MS = 3_000;
-const RETRY_MAX_MS = 30_000;
 const MAX_TIMEOUT_MS = 2 ** 31 - 1; // setTimeout이 받는 최대 지연 (약 24일)
 
 /**
  * 동료들의 재실 상태 변경을 실시간으로 받는다 (/api/presence/stream, SSE).
  * - 받은 변경은 사번별로 모아 돌려준다. 서버에서 읽은 값보다 나중 것만 화면에 덮어쓴다 (withLivePresence)
  * - 끊겼다 다시 붙거나 서버가 resync를 보내면, 그 사이 놓친 변경이 있을 수 있어 화면 데이터를 다시 읽는다
+ * - 탭이 안 보이는 동안은 연결을 닫는다 (lib/eventStream.ts: 탭이 많으면 페이지 이동이 멈추는 문제)
  * - 로그아웃·자동 로그아웃으로 연결이 거절되면 로그인 화면으로 보낸다
  * - 같은 연결로 도면·좌석 배치 변경(floor 이벤트)도 온다. onFloor로 받는다
  */
@@ -25,58 +25,30 @@ export function useLivePresence(onFloor?: (change: FloorEvent) => void): LiveCha
     onFloorRef.current = onFloor;
   });
 
-  useEffect(() => {
-    let source: EventSource | null = null;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    let retryMs = RETRY_MIN_MS;
-    let connectedBefore = false;
-    let stopped = false;
-
-    function connect() {
-      source = new EventSource("/api/presence/stream");
-      source.addEventListener("open", () => {
-        retryMs = RETRY_MIN_MS;
-        if (connectedBefore) router.refresh();
-        connectedBefore = true;
-      });
-      source.addEventListener("presence", (event) => {
-        const change = JSON.parse((event as MessageEvent<string>).data) as PresenceEvent;
-        setChanges((prev) => new Map(prev).set(change.emp_no, change));
-      });
-      source.addEventListener("floor", (event) => {
-        onFloorRef.current?.(JSON.parse((event as MessageEvent<string>).data) as FloorEvent);
-      });
-      source.addEventListener("resync", () => router.refresh());
-      source.addEventListener("error", () => {
-        // 브라우저가 알아서 다시 붙는 중(CONNECTING)이면 둔다. CLOSED는 서버가 거절한 것
-        // (로그인 만료 401, API 서버 꺼짐 5xx)이라 어느 쪽인지 확인하고 직접 다시 시도한다
-        if (source?.readyState === EventSource.CLOSED) void retry();
-      });
-    }
-
-    async function retry() {
-      try {
-        const res = await fetch("/api/auth/me");
-        if (stopped) return;
-        if (res.status === 401) {
-          router.replace(expiredLoginUrl());
-          return;
-        }
-      } catch {
-        // 네트워크 오류: 아래에서 다시 시도
-      }
-      if (stopped) return;
-      retryTimer = setTimeout(connect, retryMs);
-      retryMs = Math.min(retryMs * 2, RETRY_MAX_MS);
-    }
-
-    connect();
-    return () => {
-      stopped = true;
-      clearTimeout(retryTimer);
-      source?.close();
-    };
-  }, [router]);
+  useEffect(
+    () =>
+      openEventStream({
+        url: "/api/presence/stream",
+        on: {
+          presence: (data) => {
+            const change = JSON.parse(data) as PresenceEvent;
+            setChanges((prev) => new Map(prev).set(change.emp_no, change));
+          },
+          floor: (data) => onFloorRef.current?.(JSON.parse(data) as FloorEvent),
+        },
+        onResync: () => router.refresh(),
+        // 로그아웃·자동 로그아웃이면 로그인 화면으로, 아니면(서버 재시작 등) 다시 붙는다
+        onRejected: async () => {
+          const res = await fetch("/api/auth/me").catch(() => null);
+          if (res?.status === 401) {
+            router.replace(expiredLoginUrl());
+            return false;
+          }
+          return true;
+        },
+      }),
+    [router],
+  );
 
   return changes;
 }

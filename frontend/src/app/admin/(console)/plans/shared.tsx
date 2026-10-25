@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useRef } from "react";
 import type { Admin, FloorEvent, PlanEditorData } from "@/lib/api";
+import { openEventStream } from "@/lib/eventStream";
 import ui from "../seating/seating.module.css";
 
 // 도면 편집 화면들(시작·초안 편집·게시 예약)이 같이 쓰는 것
@@ -68,24 +70,41 @@ export function Header({
   );
 }
 
-/** 이 층에 게시·좌석 변경이 생기면 (조금 모았다가) 다시 읽는다. 관리자 화면 알림(/api/admin/stream)을 쓴다 */
+/** 이 층에 게시·좌석 변경이 생기면 (조금 모았다가) 다시 읽는다. 관리자 화면 알림(/api/admin/stream)을 쓴다.
+ *  탭이 안 보이는 동안은 연결을 닫고, 다시 보이면 한 번 다시 읽는다 (lib/eventStream.ts) */
 export function useFloorChanges(floorId: number, onChange: () => unknown) {
+  const router = useRouter();
   const latest = useRef(onChange);
   useEffect(() => {
     latest.current = onChange;
   });
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const source = new EventSource("/api/admin/stream");
-    source.addEventListener("floor", (event) => {
-      const change = JSON.parse((event as MessageEvent<string>).data) as FloorEvent;
-      if (change.floor_id !== floorId || change.kind === "requests") return;
+    const later = () => {
       clearTimeout(timer);
       timer = setTimeout(() => void latest.current(), 500);
+    };
+    const close = openEventStream({
+      url: "/api/admin/stream",
+      on: {
+        floor: (data) => {
+          const change = JSON.parse(data) as FloorEvent;
+          if (change.floor_id === floorId && change.kind !== "requests") later();
+        },
+      },
+      onResync: later,
+      onRejected: async () => {
+        const res = await fetch("/api/admin/auth/session").catch(() => null);
+        if (res?.status === 401) {
+          router.replace(EXPIRED);
+          return false;
+        }
+        return true;
+      },
     });
     return () => {
       clearTimeout(timer);
-      source.close();
+      close();
     };
-  }, [floorId]);
+  }, [floorId, router]);
 }

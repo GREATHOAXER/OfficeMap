@@ -20,6 +20,7 @@ import type {
   UnassignedPerson,
 } from "@/lib/api";
 import { addDays, kstDate, shortDate } from "@/lib/dates";
+import { openEventStream } from "@/lib/eventStream";
 import { drawingFromSeating } from "@/lib/floorDrawing";
 import { useNow } from "@/lib/useNow";
 import { autoRects, zoneRects } from "@/lib/zoneShape";
@@ -387,43 +388,32 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
 
   // 다른 관리자가 이 층에 반영하면 바로 다시 읽는다 (내 묶음은 그대로 두고, 겹치면 충돌로 표시)
   useEffect(() => {
-    let source: EventSource | null = null;
     let refetchTimer: ReturnType<typeof setTimeout> | undefined;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    let stopped = false;
     const refetch = () => {
       clearTimeout(refetchTimer);
       refetchTimer = setTimeout(() => void reloadRef.current(false), 300);
     };
-    function connect() {
-      source = new EventSource("/api/admin/stream");
-      source.addEventListener("floor", (event) => {
-        const change = JSON.parse((event as MessageEvent<string>).data) as FloorEvent;
-        if (change.floor_id === floorId) refetch();
-      });
-      source.addEventListener("resync", refetch);
-      source.addEventListener("error", () => {
-        if (source?.readyState === EventSource.CLOSED) void retry();
-      });
-    }
-    async function retry() {
-      const res = await fetch("/api/admin/auth/session").catch(() => null);
-      if (stopped) return;
-      if (res?.status === 401) {
-        router.replace(EXPIRED);
-        return;
-      }
-      retryTimer = setTimeout(() => {
-        connect();
-        refetch();
-      }, 5000);
-    }
-    connect();
+    // 탭이 안 보이는 동안은 연결을 닫고, 다시 보이면 한 번 다시 읽는다 (lib/eventStream.ts)
+    const close = openEventStream({
+      url: "/api/admin/stream",
+      on: {
+        floor: (data) => {
+          if ((JSON.parse(data) as FloorEvent).floor_id === floorId) refetch();
+        },
+      },
+      onResync: refetch,
+      onRejected: async () => {
+        const res = await fetch("/api/admin/auth/session").catch(() => null);
+        if (res?.status === 401) {
+          router.replace(EXPIRED);
+          return false;
+        }
+        return true;
+      },
+    });
     return () => {
-      stopped = true;
       clearTimeout(refetchTimer);
-      clearTimeout(retryTimer);
-      source?.close();
+      close();
     };
   }, [floorId, router]);
 

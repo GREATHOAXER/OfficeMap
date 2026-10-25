@@ -68,6 +68,19 @@ export function canStartAt(day: RoomsDay, room: RoomDay, start: number): boolean
   return !isPast(day, start) && isFree(room, start, start + day.policy.slot);
 }
 
+/**
+ * 표에서 끌어서 고른 시간: 처음 누른 칸(from)에서 끈 칸(to)까지. 지난 칸·다른 예약·문 닫는 시각·최대 시간에 막히면
+ * 그 앞까지만 (왼쪽으로 끌면 from 칸이 끝 칸이 된다)
+ */
+export function dragRange(day: RoomsDay, room: RoomDay, from: number, to: number) {
+  const { slot, max } = day.policy;
+  if (to >= from) return { start: from, end: Math.max(from + slot, Math.min(to + slot, latestEnd(day, room, from))) };
+  let start = from;
+  while (start - slot >= to && from + slot - (start - slot) <= max && canStartAt(day, room, start - slot))
+    start -= slot;
+  return { start, end: from + slot };
+}
+
 /** 빈 칸을 눌렀을 때 새로 잡는 시간: 기본 1시간, 다음 예약 전까지 */
 export function defaultRange(day: RoomsDay, room: RoomDay, start: number) {
   return { start, endDays: 0, end: Math.min(start + 60, latestEnd(day, room, start)) };
