@@ -331,8 +331,9 @@ def create_draft(floor_id: int, body: DraftIn, admin: CurrentAdmin, request: Req
             # 넣은 크기는 사무실(바깥 벽) 크기다. 도면은 벽 둘레로 1.5 m씩 여유를 두어 그만큼 크게 잡는다.
             # 넣지 않았으면 지금 도면 크기 안에 벽을 넣는다.
             # 책상 기본 크기는 보통 사무용 책상 (도면 파일 가져오기와 같다)
-            if body.width_m and body.height_m:
+            if body.width_m:
                 width = min(geo.MAX_SIZE, body.width_m + 2 * BLANK_MARGIN_M)
+            if body.height_m:
                 height = min(geo.MAX_SIZE, body.height_m + 2 * BLANK_MARGIN_M)
             m = BLANK_MARGIN_M
             geometry = {
