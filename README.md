@@ -76,15 +76,18 @@ npm start                          # http://localhost:3000
 ngrok http 3000                    # 다른 터미널. 출력된 https://….ngrok-free.app 으로 접속
 ```
 
-개발 서버(`npm run dev`)를 그대로 공개하려면 `frontend/.env.local`에 ngrok 주소의 호스트 이름을 넣고 개발 서버를 다시 켭니다.
+개발 서버(`npm run dev`)를 그대로 공개할 때는 **ngrok을 먼저 켜고 개발 서버를 켜세요**. 개발 서버가 켜질 때 이 PC의 ngrok
+주소를 읽어 허용합니다 (터미널에 `개발 서버 외부 주소 허용: ….ngrok-free.dev`가 찍힘). 개발 서버를 먼저 켰다면 한 번 껐다 켜면 됩니다.
+ngrok 말고 다른 주소(PC 이름, 사내 IP 등)로 열거나 자동으로 안 잡히면 `frontend/.env.local`에 호스트 이름을 넣고 개발 서버를 다시 켭니다.
 
 ```bash
-DEV_ORIGINS=abcd-12-34-56.ngrok-free.app     # https://와 끝의 / 없이. 여러 개면 쉼표로
+DEV_ORIGINS=abcd-12-34-56.ngrok-free.dev     # 여러 개면 쉼표로. https://…/ 처럼 주소째 넣어도 됨
 ```
 
-이걸 빼면 Next.js 개발 서버가 모르는 주소에서 온 개발용 요청(`/_next/…`)을 막아서 화면 스크립트가 돌지 않습니다.
-그래서 로그인 버튼을 눌러도 로그인 화면이 다시 뜨기만 하고, 개발 서버 터미널에는 `Blocked cross-origin request … allowedDevOrigins`
-경고가, uvicorn 창에는 `GET /api/auth/me 401`이 찍힙니다 (로그인 안 된 상태로 로그인 화면을 다시 그린 결과이고 원인은 위 설정).
+허용되지 않은 주소로 열면 Next.js 개발 서버가 개발용 연결(`/_next/…`)을 막아서 화면 스크립트가 돌지 않습니다.
+로그인 버튼을 눌러도 로그인 화면이 다시 뜨기만 하고, 몇 초 뒤 화면 위에 "화면 스크립트가 붙지 않았습니다" 안내가 뜹니다
+(개발 서버에서만). 이때 개발 서버 터미널에는 `Blocked cross-origin request … allowedDevOrigins` 경고가, uvicorn 창에는
+`GET /api/auth/me 401`이 찍힙니다 (로그인 안 된 상태로 로그인 화면을 다시 그린 결과이고 원인은 위 설정).
 uvicorn 창에 `POST /api/auth/login … 401`이 찍히면 그건 사번·비밀번호가 틀린 것입니다. ngrok 무료 주소는 처음 들어갈 때
 ngrok 안내 화면이 한 번 뜨는데 "Visit Site"를 누르면 됩니다. 로그인 쿠키는 `COOKIE_SECURE=false` 그대로 https(ngrok)에서도 동작합니다.
 
