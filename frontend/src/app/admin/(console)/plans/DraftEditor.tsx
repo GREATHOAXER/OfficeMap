@@ -10,6 +10,7 @@ import { drawingFromPlan } from "@/lib/floorDrawing";
 import {
   type AlignMode,
   alignElements,
+  boxOf,
   boxOfAll,
   copyElements,
   groupSize,
@@ -17,6 +18,7 @@ import {
   MAX_SIZE,
   moveElement,
   newId,
+  overlapsExisting,
   problemsOf,
   rotateElements,
   scaleElement,
@@ -488,8 +490,19 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
       p,
       docRef.current.geometry,
     );
+    // 가장자리 가까이 눌러도 묶음이 도면 밖으로 나가지 않게 안으로 당긴다
+    const { width: W, height: H } = docRef.current;
+    const b = boxOf(group);
+    group.x = Math.min(Math.max(group.x, 0), Math.max(W - b.w, 0));
+    group.y = Math.min(Math.max(group.y, 0), Math.max(H - b.h, 0));
+    const overlap = overlapsExisting([group], docRef.current.geometry);
     addElement(group);
-    showToast(`책상 ${group.cells.length}석을 놓았어요 (${group.cells[0].code}부터). 오른쪽에서 번호를 고칠 수 있어요`);
+    showToast(
+      `책상 ${group.cells.length}석을 놓았어요 (${group.cells[0].code}부터). ${
+        overlap ? "다른 책상·회의실과 겹쳐요 · 끌어서 옮기세요" : "오른쪽에서 번호를 고칠 수 있어요"
+      }`,
+      overlap ? "error" : undefined,
+    );
   }
 
   /** 지우면 영향 받는 것: 앉은 사람, 남은 예약 */
@@ -549,7 +562,10 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
 
   const duplicateSelected = useCallback(() => {
     const els = docRef.current.geometry.elements.filter((e) => selectedIds.includes(e.id));
-    if (els.length) placeCopies(els, 1, 1);
+    if (els.length === 0) return;
+    const copies = placeCopies(els, 1, 1);
+    if (overlapsExisting(copies, docRef.current.geometry))
+      showToast(`복제했어요: ${clipText(copies)} · 다른 책상·회의실과 겹쳐요 · 끌어서 옮기세요`, "error");
   }, [selectedIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 층 사이 복사·붙여넣기: 이 브라우저의 다른 층 도면 편집 화면에서도 붙여 넣을 수 있게 localStorage에 둔다
@@ -584,7 +600,13 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
     const x = Math.min(Math.max(box.x + offset, 0), Math.max(W - box.w, 0));
     const y = Math.min(Math.max(box.y + offset, 0), Math.max(H - box.h, 0));
     const copies = placeCopies(c.elements, x - box.x, y - box.y);
-    showToast(`붙여 넣었어요: ${clipText(copies)}${c.floorId !== data.floor.id ? ` (${c.floor}에서)` : ""}`);
+    const overlap = overlapsExisting(copies, docRef.current.geometry);
+    showToast(
+      `붙여 넣었어요: ${clipText(copies)}${c.floorId !== data.floor.id ? ` (${c.floor}에서)` : ""}${
+        overlap ? " · 다른 책상·회의실과 겹쳐요 · 끌어서 옮기세요" : ""
+      }`,
+      overlap ? "error" : undefined,
+    );
   }, [clip, data.floor.id, showToast]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** 고른 것 90도 돌리기 (R 오른쪽, Shift+R 왼쪽): 책상은 방향, 사각형은 폭·높이, 여러 개면 함께 */
@@ -1222,7 +1244,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
         <FloorExportDialog
           drawing={drawingFromPlan(geometry, width, height, data.live)}
           title={`${data.floor.site.name} ${data.floor.name} 도면 초안 v${draft.version}`}
-          fileBase={`${data.floor.name}-도면초안-v${draft.version}`}
+          fileBase={`${data.floor.site.name}-${data.floor.name}-도면초안-v${draft.version}`}
           onClose={() => setExporting(false)}
         />
       )}

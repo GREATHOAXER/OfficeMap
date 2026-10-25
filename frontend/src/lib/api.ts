@@ -551,7 +551,7 @@ export function fetchOrg(cookieHeader: string | null) {
 export type SeatMode = "FIXED" | "FLEX" | "OUT_OF_SERVICE";
 
 /** 자리 위치 (층 이름 + 좌석 번호) */
-export type SeatRef = { id: number; code: string; floor_id: number; floor: string };
+export type SeatRef = { id: number; code: string; floor_id: number; floor: string; site?: string | null };
 
 export type SeatingPerson = {
   emp_no: string;

@@ -20,6 +20,7 @@ import type {
   UnassignedPerson,
 } from "@/lib/api";
 import { addDays, kstDate, shortDate } from "@/lib/dates";
+import { placeOf } from "../place";
 import { openEventStream } from "@/lib/eventStream";
 import { drawingFromSeating } from "@/lib/floorDrawing";
 import { useNow } from "@/lib/useNow";
@@ -621,6 +622,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
     }
     return map;
   }, [data.seats]);
+  const siteName = data.floor.site.name;
   const panel = useMemo(() => {
     const out: (Person & { tag: string })[] = [];
     const seen = new Set<string>();
@@ -631,9 +633,9 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
     };
     for (const p of data.unassigned) push(people.get(p.emp_no), people.get(p.emp_no)?.note ?? "");
     for (const [emp, code] of baseSeatCode) push(people.get(emp), `${code}에서 뺌`);
-    for (const p of staged) push(people.get(p.emp_no), p.seat ? `지금 ${p.seat.floor} ${p.seat.code}` : "자리 없음");
+    for (const p of staged) push(people.get(p.emp_no), p.seat ? `지금 ${placeOf(p.seat, siteName)}` : "자리 없음");
     return out;
-  }, [data.unassigned, people, baseSeatCode, staged, layout]);
+  }, [data.unassigned, people, baseSeatCode, staged, layout, siteName]);
 
   function onPanelDrop() {
     const emp = dragging;
@@ -1149,7 +1151,12 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
           })}
         </ul>
       )}
-      {!readOnly && <PeopleSearch floorId={floorId} zoneOnly={perms.mode === "ZONE"} onPick={addStaged} />}
+      {!readOnly && <PeopleSearch
+          floorId={floorId}
+          siteName={data.floor.site.name}
+          zoneOnly={perms.mode === "ZONE"}
+          onPick={addStaged}
+        />}
       <p className={styles.hint}>
         {perms.mode === "ZONE"
           ? "조직도 기준 우리 팀 인원만 보여요."
@@ -1615,7 +1622,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
         <FloorExportDialog
           drawing={exportDrawing}
           title={`${data.floor.site.name} ${data.floor.name} 좌석 배치도`}
-          fileBase={`${data.floor.name}-좌석배치`}
+          fileBase={`${data.floor.site.name}-${data.floor.name}-좌석배치`}
           onClose={() => setExporting(false)}
         />
       )}
@@ -2103,10 +2110,13 @@ function ReviewPanel({
 
 function PeopleSearch({
   floorId,
+  siteName,
   zoneOnly,
   onPick,
 }: {
   floorId: number;
+  /** 이 층의 사업장 (다른 사업장 자리면 사업장 이름을 붙인다) */
+  siteName: string;
   zoneOnly: boolean;
   onPick: (hit: SeatingSearchHit) => void;
 }) {
@@ -2162,7 +2172,7 @@ function PeopleSearch({
               >
                 <strong>{h.name}</strong> {h.rank}
                 <span>
-                  {h.department} · {h.seat ? `${h.seat.floor} ${h.seat.code}` : "자리 없음"}
+                  {h.department} · {h.seat ? placeOf(h.seat, siteName) : "자리 없음"}
                   {h.locked && " · 변경 예정"}
                 </span>
               </button>

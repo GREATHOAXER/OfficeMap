@@ -73,7 +73,7 @@ export default function StartScreen({ admin, data, setData, reload, showToast, g
     <>
       <Header admin={admin} data={data} goFloor={goFloor} />
       <p className={ui.infoBar}>
-        {data.floor.name}에는 편집 중인 초안이 없어요. 어디서 시작할지 고르세요. 초안은 게시하기 전까지 직원 화면에
+        {data.floor.site.name} {data.floor.name}에는 편집 중인 초안이 없어요. 어디서 시작할지 고르세요. 초안은 게시하기 전까지 직원 화면에
         보이지 않고, 게시하면 좌석·회의실이 초안에 맞춰져요.
       </p>
       {notice && <p className={ui.notice}>{notice}</p>}
