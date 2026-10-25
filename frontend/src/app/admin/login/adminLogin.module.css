@@ -57,15 +57,6 @@
   color: var(--muted-on-dark);
 }
 
-.back {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  min-height: 32px;
-  font-size: 13px;
-  margin-top: -12px;
-}
-
 @media (max-width: 640px) {
   .levels {
     display: none;

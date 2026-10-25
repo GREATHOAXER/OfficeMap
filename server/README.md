@@ -82,6 +82,23 @@ scripts/
   휴가·출장·재택(`absence`)도 알려 줍니다. 참석자를 고를 때 "이 시간 다른 회의" 표시에 씁니다.
 - 이름이 같은 사람이 먼저, 그다음 이름이 그 글자로 시작하는 사람, 이름에 들어간 사람, 팀·본부로 걸린 사람 순서입니다.
 - `members`에도 같은 `date`, `start_min`, `end_min`을 줄 수 있습니다.
+- 검색은 "내 정보"의 부르는 이름·한 줄 소개·하는 일·업무 키워드도 봅니다. 이름·부서가 아니라 이것으로 찾은 사람에게는
+  `matched`(걸린 부분, 키워드면 `#법인카드`)가 붙습니다. 결과마다 `photo`·`display_name`·`headline`·`duties`·`skills`.
+
+## 내 정보 API (로그인 필요)
+
+이름·부서·직급·내선·이메일은 인사 정보(조직도)라 여기서 바꾸지 않습니다. 직원이 고치는 것은 `employee_profiles`·
+`employee_photos`(`db/schema/10_profile.sql`)에 따로 두어 조직도를 다시 가져와도 남습니다.
+
+| 요청 | 하는 일 |
+|---|---|
+| `GET /api/profile` | 내 인사 정보 + `display_name`(부르는 이름, 30자), `headline`(한 줄 소개, 80자), `duties`(하는 일, 1000자), `skills`(키워드 15개·20자), `photo` |
+| `PUT /api/profile` | 위 네 가지를 통째로 저장 (키워드는 앞뒤 공백·#·쉼표를 떼고 같은 것은 하나로). 감사 기록 `PROFILE_UPDATE`(바꾼 칸 이름만) |
+| `PUT /api/profile/photo` | 본문이 그림 파일 그대로 (`image/jpeg`·`png`·`webp`, 400KB까지, 파일 앞부분으로 형식 확인). 413 `PHOTO_TOO_BIG`, 415 `PHOTO_TYPE` |
+| `DELETE /api/profile/photo` | 사진 지우기 |
+| `GET /api/employees/{사번}/photo` | 사진 (로그인한 사람만). 주소의 `?v=`(바꾼 시각)가 있으면 하루 캐시, `ETag`로 304 |
+
+- 자리·재실 현황의 좌석 `occupant`와 `/api/auth/me`의 사용자에도 `photo`·`display_name`(좌석은 `headline`·`duties`·`skills`까지)이 붙습니다.
 
 ## 회의실 확인·예약 API (로그인 필요)
 
@@ -144,12 +161,40 @@ scripts/
 - `app_settings`의 `admin.session.idle_minutes`(기본 15분) 동안 쓰지 않으면 401. 최대 8시간.
 - 권한을 모두 회수하면 로그인해 있던 세션도 바로 401이 됩니다.
 - 직원 화면의 `GET /api/auth/me`의 `role`은 관리자 계정 + 살아 있는 권한이 있으면 `ADMIN`입니다
-  (직원 화면 왼쪽 메뉴의 "관리자 페이지" 입구만 정함. 따로 저장하지 않아서 권한을 회수하면 바로 사라짐).
+  (따로 저장하지 않아서 권한을 회수하면 바로 바뀜). 직원 화면에는 관리자 페이지 링크를 두지 않습니다.
 - 권한 단계: `COMPANY_ADMIN` 전사 > `SITE_ADMIN` 사업장 > `FLOOR_ADMIN` 층 > `ZONE_ADMIN` 구역.
   `overview`는 전체를 보여 주고, 층마다 `in_scope`(`ALL` 내 관리 / `ZONE` 층 안 내 구역만 / `null`)를 붙입니다.
 - `overview.summary`의 좌석·회의실·오늘 예약·대기 요청은 **내 관리 범위 안** 숫자입니다 (`scope`: `ALL`/`FLOORS`/`ZONES`).
   좌석은 개인석(`seats`, 배정 `occupied`)과 자율석(`flex`)을 나눠 셉니다. `unseated`: 재직 중인데 자리가 없는 사람.
   `pending_requests`는 층 관리 권한이면 내가 승인할 요청, 구역만 맡았으면 내가 올려 승인을 기다리는 요청.
+
+## 사업장·층·조직도 API (`/api/admin`)
+
+사업장은 전사 관리자, 층은 그 사업장의 사업장 관리자 이상, 조직도 고치기는 전사 관리자(보기는 관리자 누구나).
+없앤 사업장·층·부서는 지우지 않고 `is_active = false`로 둡니다. 모두 감사 기록(`SITE_*`, `FLOOR_*`, `DEPT_*`,
+`EMPLOYEE_*`, `PASSWORD_RESET`)을 남깁니다.
+
+| 요청 | 하는 일 |
+|---|---|
+| `POST /api/admin/sites` | 사업장 추가 `{name, kind: HQ\|CENTER, address?}`. 같은 이름 409 `SITE_NAME_TAKEN` |
+| `PUT /api/admin/sites/{ID}` | 사업장 고치기 |
+| `DELETE /api/admin/sites/{ID}` | 사업장 닫기. 층이 남아 있으면 409 `SITE_HAS_FLOORS`. 그 사업장 관리자 권한 회수 |
+| `POST /api/admin/sites/{ID}/floors` | 층 추가 `{name, description?, under_floor_id?}` (그 층 바로 아래, 없으면 맨 위). 같은 이름 409 `FLOOR_NAME_TAKEN` |
+| `PUT /api/admin/floors/{ID}` | 층 이름·용도·자리 (`move: false`면 자리는 그대로) |
+| `DELETE /api/admin/floors/{ID}` | 층 없애기. 좌석·회의실이 있으면 409 `FLOOR_IN_USE {seats, rooms}`. 빈 구역·초안·이 층 권한 정리 |
+| `GET /api/admin/org?inactive=` | 부서 목록 (`parent_id`, 인원 `members`, 이 부서 구역 `zones`), `can_edit` |
+| `GET /api/admin/org/departments/{ID}/members` | 부서 사람 (재직·휴직, 자리·관리자·임시 비밀번호 여부) |
+| `POST /api/admin/org/departments` | 부서 추가 `{name, parent_id?, code?}` (코드가 없으면 `NEW001`…) |
+| `PUT /api/admin/org/departments/{ID}` | 이름·위 부서·코드. 자기 아래로 옮기면 422 `PARENT_CYCLE` |
+| `DELETE /api/admin/org/departments/{ID}` | 부서 없애기. 사람·아래 부서가 있으면 409 `DEPT_NOT_EMPTY {members, children}` |
+| `POST /api/admin/org/departments/{ID}/members` | 데려오기 `{emp_nos}` → `{moved, released}` (고정석 배정이 끝난 사람 이름) |
+| `GET /api/admin/org/people?q=` | 이름·사번으로 사람 찾기 (재직·휴직, 지금 부서) |
+| `POST /api/admin/org/employees` | 새 직원 등록 → `{employee, temporary_password}` (직원 화면 계정, 첫 로그인 때 비밀번호 변경). 같은 사번 409 `EMP_NO_TAKEN` |
+| `PUT /api/admin/org/employees/{사번}` | 보낸 칸만: 이름·직급·직책·이메일·내선·`department_id`·`status`(`ACTIVE`/`LEAVE`/`RETIRED`) → `{released}`. 나를 퇴사 422 `CANNOT_RETIRE_SELF` |
+| `POST /api/admin/org/employees/{사번}/reset-password` | 직원 화면 임시 비밀번호(잠금 해제, 로그인 끊음) → `{temporary_password}` |
+
+- 부서를 옮기거나 퇴사하면 고정석 배정은 DB 트리거(`release_seat_on_org_change`)가 끝내고 새 팀의 미배치 인원이 됩니다.
+  휴직(`LEAVE`)은 자리를 그대로 두고 로그인만 막힙니다. 퇴사하면 관리자 권한도 회수하고 세션을 끊습니다.
 
 ## 좌석 배치 편집 API (`/api/admin`, 관리자 로그인 필요)
 
@@ -204,14 +249,18 @@ scripts/
 | 요청 | 하는 일 |
 |---|---|
 | `GET /api/admin/plans/floors` | 도면을 편집할 수 있는 층 (`published`, `drafting`) |
-| `GET /api/admin/floors/{층 ID}/plan` | 편집 화면: `draft`(모양·`revision`·편집 중인 사람), `published`, `archived`, 복제할 수 있는 층(`sources`), `live`(책상 칸·회의실마다 지금 앉은 사람·남은 예약) |
-| `POST /api/admin/floors/{층 ID}/plan/draft` | 초안 만들기 `{source: published\|blank\|archived\|floor, plan_id?, floor_id?, width_m?, height_m?}` (`blank`에 사무실 크기 10~300 m, 없으면 지금 게시본 크기). 이미 있으면 409 `HAS_DRAFT` |
+| `GET /api/admin/floors/{층 ID}/plan` | 편집 화면: `draft`(모양·`revision`·편집 중인 사람), `published`, `archived`, 복제할 수 있는 층(`sources`), `live`(책상 칸·회의실마다 지금 앉은 사람·남은 예약), `background`(밑그림 `{url, x_m, y_m, w_m, h_m, opacity, visible, name, bytes}` 또는 null) |
+| `POST /api/admin/floors/{층 ID}/plan/draft` | 초안 만들기 `{source: published\|blank\|archived\|floor\|import, plan_id?, floor_id?, width_m?, height_m?, geometry?}` (`blank`에 사무실 크기 10~300 m, 없으면 지금 게시본 크기. `import`는 도면 파일에서 찾은 `geometry`와 크기가 꼭 있어야 함(422 `IMPORT_SIZE`), 요소 ID 앞에 `i{버전}-`을 붙임). 이미 있으면 409 `HAS_DRAFT` |
 | `PUT /api/admin/plans/{ID}` | 자동 저장 `{revision, geometry, width_m?, height_m?}` (도면 크기 10~300 m) → `{revision, updated_at}`. 409 `REVISION`(먼저 저장한 곳이 있음, 서버 `revision` 포함), 423 `EDITING`(다른 사람이 편집 중), 409 `SCHEDULED`(게시 예약 중), 422 `BAD_GEOMETRY` |
 | `POST /api/admin/plans/{ID}/heartbeat` | 편집 중 표시 (30초마다). `{take_over: true}`면 넘겨받기 |
 | `DELETE /api/admin/plans/{ID}` | 초안 버리기 |
 | `GET /api/admin/plans/{ID}/check` | 게시 전 점검: `summary`(좌석 수·새로·빠짐·옮김·번호 바뀜), `people`(자리가 없어지는 사람과 추천 자리), `rooms_removed`(남은 예약), `rooms_added`·`rooms_changed`, 고를 수 있는 자리·회의실, `problems` |
 | `POST /api/admin/plans/{ID}/publish` | 게시 `{revision, people: [{emp_no, to_key?}], rooms: [{room_id, action: MOVE\|CANCEL, to_key?}], note?, effective_date?}`. `effective_date`(내일~1년)를 주면 게시 예약 → `{scheduled: {version, effective_at}}` |
 | `POST /api/admin/plans/{ID}/unschedule` | 게시 예약 취소 (다시 고칠 수 있는 초안으로) |
+| `PUT /api/admin/floors/{층 ID}/plan/background?w_m&h_m&x_m&y_m&opacity&name` | 밑그림 올리기(있으면 바꿈). 본문이 그림 파일 그대로(`image/png`·`jpeg`·`webp`, 8MB까지, 앞부분으로 형식 확인). 413 `IMAGE_TOO_BIG`, 415 `IMAGE_TYPE`, 422 `BAD_PLACE` |
+| `PATCH /api/admin/floors/{층 ID}/plan/background` | 자리·크기·진하기·보이기 `{x_m?, y_m?, w_m?, h_m?, opacity?, visible?}`. 없으면 404 `NO_BACKGROUND` |
+| `DELETE /api/admin/floors/{층 ID}/plan/background` | 밑그림 지우기 |
+| `GET /api/admin/floors/{층 ID}/plan/background?v=` | 밑그림 그림 (`v`가 있으면 하루 캐시, ETag) |
 
 - 책상 칸 하나가 좌석 하나이고, 칸 `id`가 `seats.plan_element_key`입니다. 같은 칸이면 같은 좌석이라 옮기거나 번호를 바꿔도
   앉은 사람은 그대로입니다. 초안에 없는 좌석은 `REMOVED`(지우지 않음), 새 칸은 새 좌석(같은 묶음의 가장 많은 구역·유형).
@@ -222,6 +271,10 @@ scripts/
   `RESERVATION_CANCELLED` 알림, `audit_logs`(`PLAN_DRAFT_CREATE`, `PLAN_TAKE_OVER`, `PLAN_DRAFT_DISCARD`, `PLAN_PUBLISH`).
   직원 화면에는 `floor` 이벤트 `kind: plan`이 가서 배너를 띄우고 5초 뒤 새로 읽습니다.
 - 목업 게시본(v0, 비율 좌표)은 초안을 만들 때 v1으로 바꿉니다(구역마다 좌석을 책상 묶음으로 맞춤).
+- **밑그림**(`floor_plan_backgrounds`, `db/schema/11_plan_background.sql`): 도면 파일 그림을 층마다 하나 둡니다. 편집 화면에서만
+  요소 밑에 깔고 직원 화면에는 주지 않습니다. 초안이 아니라 층에 붙어 있어 초안을 버리거나 게시해도 남습니다(보관본마다 복사하지
+  않음). 감사 기록 `PLAN_BACKGROUND_SET`·`PLAN_BACKGROUND_DELETE`(대상 `floor`). 도면 파일은 화면(브라우저)이 읽어서 찾은 요소를
+  `source: import` 초안으로, 고른 부분 그림을 밑그림으로 보냅니다.
 - **게시 예약**(`SCHEDULED`): 예약할 때는 고른 자리·회의실이 초안에 있는지만 보고, 없어지는 회의실은 예약이 없어도 모두
   정해야 합니다(422 `ROOMS_UNRESOLVED`). 그날 0시(서울)에 서버 작업(`app/jobs.py`, 1분마다)이 같은 방식으로 게시하는데,
   그사이 고른 자리가 찼으면 그 사람은 미배치, 옮길 회의실에 같은 시간 예약이 있으면 그 예약만 취소합니다. 실패하면 초안으로

@@ -2,7 +2,7 @@
 
 import { forwardRef } from "react";
 import { type DrawingSeat, type DrawingStyle, type FloorDrawing, teamColor } from "@/lib/floorDrawing";
-import { DESK } from "@/lib/planGeometry";
+import { DEFAULT_LINE, DESK } from "@/lib/planGeometry";
 
 // 내보낸 그림에서도 같은 모양이 나오게 글꼴·색을 속성으로 직접 적는다 (CSS를 쓰지 않는다)
 const FONT = "'IBM Plex Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif";
@@ -33,7 +33,7 @@ const FloorSvg = forwardRef<SVGSVGElement, Props>(function FloorSvg(props, ref) 
   const { drawing: d, title, subtitle, showNames, onSeatClick, seatTitle, className, label } = props;
   const top = title ? HEADER_M : 0;
   const bottom = title ? FOOTER_M : 0;
-  const wallW = Math.max(0.15, d.width / 250);
+  const wallW = DEFAULT_LINE.wall ?? 0.3; // 벽(사각형) 기본 굵기 (m). 화면과 같다
   const k = (s: DrawingStyle) => (s.label_size ?? 100) / 100;
   const bold = (s: DrawingStyle) => (s.label_bold ? 700 : undefined);
   const scale = NICE.find((n) => n / d.width >= 0.08) ?? NICE[NICE.length - 1];

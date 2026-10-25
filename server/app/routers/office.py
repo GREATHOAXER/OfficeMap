@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.db import pool
 from app.plan_geometry import to_ratio
+from app.routers.profile import PROFILE_COLUMNS, PROFILE_JOIN, profile_out
 from app.session import CurrentUser
 
 router = APIRouter(prefix="/api/office", tags=["office"])
@@ -139,12 +140,14 @@ def floor_map(floor_id: int, user: CurrentUser) -> dict[str, Any]:
                    CASE WHEN {_LIVE_PRESENCE} THEN p.status END AS presence_status,
                    CASE WHEN {_LIVE_PRESENCE} THEN p.message END AS presence_message,
                    CASE WHEN {_LIVE_PRESENCE} THEN p.expires_at END AS presence_expires_at,
-                   CASE WHEN {_LIVE_PRESENCE} THEN p.updated_at END AS presence_updated_at
+                   CASE WHEN {_LIVE_PRESENCE} THEN p.updated_at END AS presence_updated_at,
+                   {PROFILE_COLUMNS}
             FROM seats s
             LEFT JOIN seat_assignments a ON a.seat_id = s.id AND {_CURRENT_ASSIGNMENT}
             LEFT JOIN employees e ON e.id = a.employee_id AND e.employment_status = 'ACTIVE'
             LEFT JOIN departments d ON d.id = e.department_id
             LEFT JOIN presence_status p ON p.employee_id = e.id
+            {PROFILE_JOIN}
             WHERE s.floor_id = %s AND s.status <> 'REMOVED'
             ORDER BY s.code
             """,
@@ -236,6 +239,7 @@ def _seat_out(row: dict[str, Any]) -> dict[str, Any]:
             "extension": row["extension"],
             "email": row["email"],
             "kind": row["assignment_kind"],
+            **profile_out(row),  # 사진·부르는 이름·한 줄 소개·하는 일·업무 키워드 (내 정보)
             "presence": (
                 {
                     "status": row["presence_status"],

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Avatar from "@/components/Avatar";
 import { CloseIcon } from "@/components/icons";
 import type { FloorMap, Occupant, Seat } from "@/lib/api";
 import { agoText } from "@/lib/dates";
@@ -35,17 +36,19 @@ export default function SeatPanel({ map, seat, myEmpNo, onClear }: Props) {
         <>
           <div className={styles.person}>
             <span className={styles.personAvatar} aria-hidden="true">
-              {occupant.name.slice(-2)}
+              <Avatar name={occupant.name} photo={occupant.photo} size={52} />
             </span>
             <div>
               <h2 id="seat-title" className={styles.personName}>
                 {occupant.name} {occupant.rank}
+                {occupant.display_name && <span className={styles.personAlias}>{occupant.display_name}</span>}
                 {mine && <span className={styles.tag}>내 자리</span>}
               </h2>
               <p className={styles.personTeam}>
                 <span className={styles.swatch} aria-hidden="true" />
                 {occupant.department}
               </p>
+              {occupant.headline && <p className={styles.personHeadline}>{occupant.headline}</p>}
             </div>
           </div>
           <div className={styles.statusBox}>
@@ -67,6 +70,24 @@ export default function SeatPanel({ map, seat, myEmpNo, onClear }: Props) {
               내 재실 상태 바꾸기 ›
             </Link>
           )}
+          {(occupant.duties || occupant.skills.length > 0) && (
+            <div className={styles.duties}>
+              <h3>하는 일</h3>
+              {occupant.duties && <p>{occupant.duties}</p>}
+              {occupant.skills.length > 0 && (
+                <ul aria-label="업무 키워드">
+                  {occupant.skills.map((s) => (
+                    <li key={s}>#{s}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+          {mine && (
+            <Link href="/profile" className={styles.cardLink}>
+              {occupant.duties || occupant.photo ? "내 정보 고치기 ›" : "내 정보에 사진·하는 일 적기 ›"}
+            </Link>
+          )}
           <dl className={styles.facts}>
             <dt>위치</dt>
             <dd>
@@ -76,9 +97,7 @@ export default function SeatPanel({ map, seat, myEmpNo, onClear }: Props) {
             <dt>내선</dt>
             <dd className="mono">{occupant.extension ?? "—"}</dd>
             <dt>이메일</dt>
-            <dd className="mono">
-              {occupant.email ? <a href={`mailto:${occupant.email}`}>{occupant.email}</a> : "—"}
-            </dd>
+            <dd className="mono">{occupant.email ? <a href={`mailto:${occupant.email}`}>{occupant.email}</a> : "—"}</dd>
           </dl>
         </>
       ) : (
@@ -165,9 +184,7 @@ function SharedFloorCard({ map }: { map: FloorMap }) {
         <ul className={styles.roomList}>
           {map.rooms.map((room) => (
             <li key={room.id}>
-              <strong>
-                {room.name}
-              </strong>
+              <strong>{room.name}</strong>
               <span>
                 최대 {room.capacity}명 · {roomStatusText(room)}
               </span>

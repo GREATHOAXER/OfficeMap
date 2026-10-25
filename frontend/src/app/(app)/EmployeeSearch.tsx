@@ -68,7 +68,7 @@ export default function EmployeeSearch({ onPick }: { onPick: (hit: EmployeeHit) 
           aria-controls={listId}
           aria-autocomplete="list"
           aria-activedescendant={showList && activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined}
-          placeholder="이름·팀·부서·사번으로 직원 찾기"
+          placeholder="이름·팀·사번·하는 일로 직원 찾기"
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);
@@ -103,6 +103,7 @@ export default function EmployeeSearch({ onPick }: { onPick: (hit: EmployeeHit) 
                   <span className={styles.searchMain}>
                     <span>
                       <strong>{hit.name}</strong> {hit.rank}
+                      {hit.display_name && <span className={styles.searchAlias}> · {hit.display_name}</span>}
                       {hit.is_me && <span className={styles.searchMe}>나</span>}
                     </span>
                     <span className={styles.searchMeta}>
@@ -110,6 +111,7 @@ export default function EmployeeSearch({ onPick }: { onPick: (hit: EmployeeHit) 
                       {hit.department} ·{" "}
                       {hit.seat ? `${hit.seat.site_name} ${hit.seat.floor_name} ${hit.seat.code}` : "배정된 자리 없음"}
                     </span>
+                    {hit.matched && <span className={styles.searchMatched}>{hit.matched}</span>}
                   </span>
                   <span className={styles.searchState}>{hit.presence ? PRESENCE_LABEL[hit.presence.status] : ""}</span>
                 </li>

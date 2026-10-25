@@ -1,7 +1,7 @@
 -- 07_admin.sql
 -- 관리자 권한: 4단계(전사 → 사업장 → 층 → 구역)와 관리자 페이지 로그인 계정
 -- 무엇을 관리하는지는 admin_grants, 관리자 페이지에 어떻게 들어오는지는 admin_accounts
--- 둘 다 있는 직원은 직원 화면 왼쪽 메뉴에도 "관리자 페이지" 링크가 보인다 (들어가려면 관리자 로그인을 따로 한다)
+-- 둘 다 있어야 관리자 페이지(/admin)에 로그인할 수 있다. 직원 화면에는 관리자 페이지로 가는 링크를 두지 않는다
 
 CREATE TABLE admin_grants (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

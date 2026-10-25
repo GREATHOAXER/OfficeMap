@@ -25,16 +25,19 @@ import {
   ChevronDownIcon,
   CloseIcon,
   GridIcon,
+  IdCardIcon,
   KeyIcon,
   MenuIcon,
   MoreIcon,
   MoveIcon,
+  OrgIcon,
   PenIcon,
   PersonIcon,
   ShieldIcon,
   SparkleIcon,
   TruckIcon,
 } from "./icons";
+import Avatar from "./Avatar";
 import LogoutButton from "./LogoutButton";
 import SessionWatch from "./SessionWatch";
 import styles from "./AppShell.module.css";
@@ -49,11 +52,11 @@ const MAIN_MENU: MenuItem[] = [
   { label: "회의실 확인·예약", icon: <CalendarIcon />, href: "/rooms" },
   { label: "내 예약", icon: <ChecklistIcon />, href: "/reservations" },
   { label: "내 재실 상태", icon: <PersonIcon />, href: "/presence" },
+  { label: "내 정보", icon: <IdCardIcon />, href: "/profile" },
 ];
 
-// 직원 화면에는 관리 기능을 두지 않고, 관리자 권한이 있는 사람에게만 관리자 페이지로 가는 입구 하나를 보여 준다.
-// 관리 메뉴(사업장·권한, 좌석 배치 편집, 도면 편집)는 관리자 페이지 안에 있고, 관리자 비밀번호로 따로 로그인한다
-const ADMIN_MENU: MenuItem[] = [{ label: "관리자 페이지", icon: <ShieldIcon />, href: "/admin" }];
+// 직원 화면과 관리자 페이지는 완전히 나눈다: 서로 넘어가는 링크를 두지 않는다.
+// 관리자는 관리자 페이지 주소(/admin)로 들어가 관리자 비밀번호로 따로 로그인한다
 
 /** 관리자 페이지의 왼쪽 메뉴. 도면 편집은 층 관리자 이상만 할 수 있어서 구역 관리자에게는 보이지 않는다 */
 function consoleMenu(admin: Admin): MenuGroup[] {
@@ -62,6 +65,7 @@ function consoleMenu(admin: Admin): MenuGroup[] {
       title: "관리",
       items: [
         { label: "사업장·권한", icon: <ShieldIcon />, href: "/admin" },
+        { label: "조직도", icon: <OrgIcon />, href: "/admin/org" },
         { label: "좌석 배치 편집", icon: <MoveIcon />, href: "/admin/seating" },
         // 도면 편집은 층 관리자 이상 (구역 관리자는 보기만)
         ...(hasPlanRole(admin)
@@ -72,7 +76,6 @@ function consoleMenu(admin: Admin): MenuGroup[] {
           : []),
       ],
     },
-    { title: "직원 화면", items: [{ label: "자리·재실 현황", icon: <GridIcon />, href: "/" }] },
   ];
 }
 
@@ -92,8 +95,9 @@ type Account = {
   emp_no: string;
   department: string;
   roleLabel: string;
+  photo?: string | null; // 내 정보 사진 (관리자 페이지에는 없음)
   scopes?: string[]; // 관리자: 맡은 범위
-  links?: { label: string; href: string }[]; // 계정 메뉴의 링크 (비밀번호 변경 등)
+  links?: { label: string; href: string; icon: ReactNode }[]; // 계정 메뉴의 링크 (내 정보·비밀번호 변경)
   logout: { endpoint: string; redirectTo: string };
 };
 
@@ -154,10 +158,7 @@ export default function AppShell(props: Props) {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [drawerOpen]);
 
-  const groups: MenuGroup[] =
-    props.variant === "admin"
-      ? consoleMenu(props.admin)
-      : [{ items: MAIN_MENU }, ...(props.user.role === "ADMIN" ? [{ title: "관리", items: ADMIN_MENU }] : [])];
+  const groups: MenuGroup[] = props.variant === "admin" ? consoleMenu(props.admin) : [{ items: MAIN_MENU }];
   const account: Account =
     props.variant === "admin"
       ? {
@@ -170,7 +171,10 @@ export default function AppShell(props: Props) {
           ...props.user,
           // 직원 화면에서는 직급을 보여 준다 (관리자 단계 이름은 관리자 페이지에서만)
           roleLabel: props.user.rank ?? "직원",
-          links: [{ label: "비밀번호 변경", href: "/password" }],
+          links: [
+            { label: "내 정보", href: "/profile", icon: <IdCardIcon size={18} /> },
+            { label: "비밀번호 변경", href: "/password", icon: <KeyIcon size={18} /> },
+          ],
           logout: { endpoint: "/api/auth/logout", redirectTo: "/login?reason=logout" },
         };
   const menuLabel = props.variant === "admin" ? "관리자 메뉴" : "주 메뉴";
@@ -479,7 +483,6 @@ function UserCard({ account: user }: { account: Account }) {
     setOpen(true);
   }
 
-  const initials = user.name.slice(-2);
   const menuButtonProps = {
     type: "button" as const,
     "aria-label": "내 계정 메뉴",
@@ -501,7 +504,7 @@ function UserCard({ account: user }: { account: Account }) {
       }}
     >
       <span className={styles.avatar} aria-hidden="true">
-        {initials}
+        <Avatar name={user.name} photo={user.photo} />
       </span>
       <span className={styles.userText}>
         <strong>{user.name}</strong>
@@ -514,7 +517,7 @@ function UserCard({ account: user }: { account: Account }) {
         <MoreIcon />
       </button>
       <button {...menuButtonProps} className={styles.avatarButton} title={`${user.name} · ${user.department}`}>
-        {initials}
+        <Avatar name={user.name} photo={user.photo} />
       </button>
       {open &&
         createPortal(
@@ -539,7 +542,7 @@ function UserCard({ account: user }: { account: Account }) {
             )}
             {user.links?.map((link) => (
               <Link key={link.href} href={link.href} className={styles.popoverItem} onClick={() => setOpen(false)}>
-                <KeyIcon size={18} />
+                {link.icon}
                 {link.label}
               </Link>
             ))}

@@ -194,6 +194,41 @@ export function rotateGroup(group: DeskGroup, clockwise: boolean): DeskGroup {
   };
 }
 
+/** 요소 하나를 제자리(가운데 기준)에서 90도: 책상 묶음은 방향, 선 벽은 가운데를 축으로, 사각형은 폭·높이를 바꾼다 */
+export function rotateElement(el: PlanElement, clockwise: boolean): PlanElement {
+  if (el.type === "desk_group") return rotateGroup(el, clockwise);
+  if (el.type === "wall_line") {
+    const cx = (el.x + el.x2) / 2;
+    const cy = (el.y + el.y2) / 2;
+    // 화면(y가 아래로)에서 시계 방향: (dx, dy) → (−dy, dx)
+    const turn = (x: number, y: number) =>
+      clockwise ? { x: r2(cx - (y - cy)), y: r2(cy + (x - cx)) } : { x: r2(cx + (y - cy)), y: r2(cy - (x - cx)) };
+    const a = turn(el.x, el.y);
+    const b = turn(el.x2, el.y2);
+    return { ...el, x: a.x, y: a.y, x2: b.x, y2: b.y };
+  }
+  const cx = el.x + el.w / 2;
+  const cy = el.y + el.h / 2;
+  return { ...el, x: r2(cx - el.h / 2), y: r2(cy - el.w / 2), w: el.h, h: el.w };
+}
+
+/** 여러 요소를 함께 90도: 고른 것 전체의 가운데를 축으로 자리도 돈다 (하나면 제자리) */
+export function rotateElements(els: PlanElement[], clockwise: boolean): PlanElement[] {
+  const all = boxOfAll(els);
+  if (!all || els.length === 1) return els.map((el) => rotateElement(el, clockwise));
+  const cx = all.x + all.w / 2;
+  const cy = all.y + all.h / 2;
+  return els.map((el) => {
+    const b = boxOf(el);
+    const dx = b.x + b.w / 2 - cx;
+    const dy = b.y + b.h / 2 - cy;
+    const to = clockwise ? { x: cx - dy, y: cy + dx } : { x: cx + dy, y: cy - dx };
+    const turned = rotateElement(el, clockwise);
+    const nb = boxOf(turned);
+    return moveElement(turned, to.x - (nb.x + nb.w / 2), to.y - (nb.y + nb.h / 2));
+  });
+}
+
 export const lineLength = (el: { x: number; y: number; x2: number; y2: number }) =>
   Math.hypot(el.x2 - el.x, el.y2 - el.y);
 

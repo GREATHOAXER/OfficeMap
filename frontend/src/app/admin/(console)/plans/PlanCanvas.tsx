@@ -1,13 +1,22 @@
 "use client";
 
-import { type CSSProperties, type PointerEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type PointerEvent,
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import office from "@/app/(app)/office.module.css";
-import { labelStyle } from "@/app/(app)/PlanShapes";
+import { labelStyle, wallLineStyle } from "@/app/(app)/PlanShapes";
 import type { DeskGroup, PlanEditorData, PlanElement, PlanGeometry, PlanRect, WallLine } from "@/lib/api";
 import {
   boxOf,
   boxOfAll,
   cellCenter,
+  DEFAULT_LINE,
   groupSize,
   lineLength,
   lineOf,
@@ -16,6 +25,7 @@ import {
   snapTo,
   SPACE_KINDS,
 } from "@/lib/planGeometry";
+import { joinedEnds, setEnd, type Snapped, snapMove, snapPoint, type SnapTargets, snapTargets } from "@/lib/wallSnap";
 import ui from "../seating/seating.module.css";
 import styles from "./plans.module.css";
 
@@ -36,6 +46,7 @@ const zoomStep = (zoom: number, dir: 1 | -1) =>
 type Handle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 const HANDLES: Handle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 const MOVE_THRESHOLD_PX = 3;
+const SNAP_PX = 10; // 선 벽 끝이 이음 자리에 붙는 거리 (화면 px)
 const MIN_SIZE_M = 0.3;
 const RULER_PX = 22; // 눈금자 두께
 const MIN_CANVAS_PX = 620; // 100%일 때 도면 폭의 하한 (좁은 화면에서는 옆으로 밀어서 본다)
@@ -57,7 +68,7 @@ type RectElement = Exclude<PlanElement, DeskGroup | WallLine>;
 type Point = { x: number; y: number };
 
 type Drag =
-  | { kind: "draw"; start: Point; px: number; py: number }
+  | { kind: "draw"; start: Point; px: number; py: number; targets: SnapTargets }
   | {
       kind: "move";
       anchor: PlanElement;
@@ -67,9 +78,11 @@ type Drag =
       py: number;
       moved: boolean;
       collapseTo: string | null;
+      targets: SnapTargets | null; // 선 벽을 옮길 때 붙을 자리 (선 벽이 없으면 null)
     }
   | { kind: "resize"; orig: RectElement; handle: Handle; start: Point }
-  | { kind: "end"; orig: WallLine; end: 1 | 2 }
+  // joined: 이 끝과 이어진 다른 선 벽 끝 (함께 움직인다)
+  | { kind: "end"; orig: WallLine; end: 1 | 2; joined: { id: string; end: 1 | 2 }[]; targets: SnapTargets }
   | { kind: "marquee"; start: Point; px: number; py: number; additive: boolean };
 
 type Props = {
@@ -95,6 +108,10 @@ type Props = {
   /** 옮기거나 크기를 바꾼 요소들 (한 번에 되돌린다) */
   onChange: (els: PlanElement[]) => void;
   onCursor: (point: Point | null) => void;
+  /** 고른 요소 위에 띄우는 도구 막대 (돌리기·복제·지우기 등) */
+  toolbar?: (selected: PlanElement[]) => ReactNode;
+  /** 요소 밑에 까는 도면 파일 그림 (따라 그리기용) */
+  underlay?: { url: string; x: number; y: number; w: number; h: number; opacity: number } | null;
 };
 
 const fmt = (v: number) => String(Math.round(v * 100) / 100);
@@ -118,7 +135,7 @@ function angleSnap(from: Point, to: Point, snap: boolean): Point {
  */
 export default function PlanCanvas(props: Props) {
   const { geometry, width, height, zoom, onZoom, tool, snap, readOnly, selectedIds, live, problemIds } = props;
-  const { showDims, onSelect, onDraw, onDrawLine, onPlaceDesk, onChange, onCursor } = props;
+  const { showDims, onSelect, onDraw, onDrawLine, onPlaceDesk, onChange, onCursor, toolbar, underlay } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
   const ref = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -127,6 +144,22 @@ export default function PlanCanvas(props: Props) {
   const [drawLine, setDrawLine] = useState<LinePoints | null>(null);
   const [marquee, setMarquee] = useState<PlanRect | null>(null);
   const [cursor, setCursor] = useState<Point | null>(null);
+  const [snapHint, setSnapHint] = useState<Snapped | null>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+
+  // 도구 막대가 도면 밖으로 잘리지 않게 옆으로 민다 (고른 것이 가장자리에 있을 때)
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    const box = ref.current;
+    if (!bar || !box) return;
+    bar.style.marginLeft = "0px";
+    const b = bar.getBoundingClientRect();
+    const c = box.getBoundingClientRect();
+    let shift = 0;
+    if (b.right > c.right - 4) shift = c.right - 4 - b.right;
+    if (b.left + shift < c.left + 4) shift = c.left + 4 - b.left;
+    bar.style.marginLeft = `${shift}px`;
+  });
   const [availPx, setAvailPx] = useState(900);
 
   // 배율 100% = 보이는 폭에 도면 폭을 맞춘다
@@ -213,8 +246,19 @@ export default function PlanCanvas(props: Props) {
   const rectStyle = (r: PlanRect): CSSProperties => ({ left: px(r.x), top: py(r.y), width: px(r.w), height: py(r.h) });
   /** 미터 굵기 → 화면 굵기 (도면 폭이 100cqw) */
   const cq = (m: number) => `${((m / width) * 100).toFixed(4)}cqw`;
-  const border = (line_w: number | undefined): CSSProperties =>
-    line_w ? ({ borderWidth: `max(1px, ${cq(line_w)})`, "--bw": `max(1px, ${cq(line_w)})` } as CSSProperties) : {};
+  const border = (line_w: number | undefined, min = 1): CSSProperties =>
+    line_w
+      ? ({ borderWidth: `max(${min}px, ${cq(line_w)})`, "--bw": `max(${min}px, ${cq(line_w)})` } as CSSProperties)
+      : {};
+
+  // 선 벽 끝 붙이기: 이음 자리(다른 선 끝·벽 모서리·벽 위·가로세로 줄)에. Shift는 45도씩, Alt는 붙이지 않고 칸에만
+  const tol = SNAP_PX / pxPerM;
+  const grid = (v: number) => snapTo(v, snap);
+  function lineEnd(at: Point, from: Point | undefined, keys: { altKey: boolean; shiftKey: boolean }, t: SnapTargets) {
+    if (from && keys.shiftKey) return { ...angleSnap(from, at, snap), kind: "none", guides: [] } as Snapped;
+    if (keys.altKey) return { x: grid(at.x), y: grid(at.y), kind: "none", guides: [] } as Snapped;
+    return snapPoint(at, t, tol, { from, grid });
+  }
 
   function meters(event: PointerEvent): Point {
     const r = ref.current!.getBoundingClientRect();
@@ -248,8 +292,10 @@ export default function PlanCanvas(props: Props) {
     }
     ref.current!.setPointerCapture(event.pointerId);
     if (tool !== "select") {
-      const start = { x: snapTo(at.x, snap), y: snapTo(at.y, snap) };
-      setDrag({ kind: "draw", start, px: event.clientX, py: event.clientY });
+      const targets = snapTargets(geometry.elements);
+      const s = tool === "wall_line" ? lineEnd(at, undefined, event, targets) : null;
+      const start = s ? { x: s.x, y: s.y } : { x: snapTo(at.x, snap), y: snapTo(at.y, snap) };
+      setDrag({ kind: "draw", start, px: event.clientX, py: event.clientY, targets });
       if (tool === "wall_line") setDrawLine({ ...start, x2: start.x, y2: start.y });
       else setDrawRect({ ...start, w: 0, h: 0 });
       return;
@@ -262,7 +308,11 @@ export default function PlanCanvas(props: Props) {
     }
     const end = target.closest<HTMLElement>("[data-end]")?.dataset.end;
     if (end && single?.type === "wall_line") {
-      setDrag({ kind: "end", orig: single, end: end === "1" ? 1 : 2 });
+      const which = end === "1" ? 1 : 2;
+      // 같은 자리에 이어진 다른 선 벽 끝도 같이 옮긴다 (Alt를 누르고 끌면 이 선만 떼어 낸다)
+      const joined = event.altKey ? [] : joinedEnds(geometry.elements, single, which);
+      const moving = (id: string, e: 1 | 2) => id === single.id || joined.some((j) => j.id === id && j.end === e);
+      setDrag({ kind: "end", orig: single, end: which, joined, targets: snapTargets(geometry.elements, moving) });
       return;
     }
     const el = elId ? byId(elId) : undefined;
@@ -274,15 +324,19 @@ export default function PlanCanvas(props: Props) {
       const keep = selectedIds.includes(el.id);
       const ids = keep ? selectedIds : [el.id];
       if (!keep) onSelect(ids);
+      const origs = geometry.elements.filter((e) => ids.includes(e.id));
       setDrag({
         kind: "move",
         anchor: el,
-        origs: geometry.elements.filter((e) => ids.includes(e.id)),
+        origs,
         start: at,
         px: event.clientX,
         py: event.clientY,
         moved: false,
         collapseTo: keep && ids.length > 1 ? el.id : null,
+        targets: origs.some((e) => e.type === "wall_line")
+          ? snapTargets(geometry.elements.filter((e) => !ids.includes(e.id)))
+          : null,
       });
       return;
     }
@@ -294,10 +348,16 @@ export default function PlanCanvas(props: Props) {
     const at = meters(event);
     setCursor(at);
     onCursor(at);
-    if (!drag) return;
+    if (!drag) {
+      // 선 벽 도구: 누르기 전에도 시작점이 붙을 자리를 보여 준다
+      if (tool === "wall_line" && !readOnly) setSnapHint(lineEnd(at, undefined, event, snapTargets(geometry.elements)));
+      else if (snapHint) setSnapHint(null);
+      return;
+    }
     if (drag.kind === "draw") {
       if (tool === "wall_line") {
-        const end = event.shiftKey ? angleSnap(drag.start, at, snap) : { x: snapTo(at.x, snap), y: snapTo(at.y, snap) };
+        const end = lineEnd(at, drag.start, event, drag.targets);
+        setSnapHint(end);
         setDrawLine({ x: drag.start.x, y: drag.start.y, x2: end.x, y2: end.y });
         return;
       }
@@ -313,16 +373,35 @@ export default function PlanCanvas(props: Props) {
       if (!drag.moved) setDrag({ ...drag, moved: true });
       // 잡은 요소의 왼쪽 위를 칸에 맞추고, 함께 고른 요소는 같은 만큼 옮긴다
       const a = drag.anchor;
-      const dx = snapTo(a.x + at.x - drag.start.x, snap) - a.x;
-      const dy = snapTo(a.y + at.y - drag.start.y, snap) - a.y;
+      let dx = snapTo(a.x + at.x - drag.start.x, snap) - a.x;
+      let dy = snapTo(a.y + at.y - drag.start.y, snap) - a.y;
+      // 선 벽 끝이 다른 벽에 가까우면 붙인다 (Alt: 붙이지 않음)
+      const stick =
+        drag.targets && !event.altKey
+          ? snapMove(
+              drag.origs.map((e) => moveElement(e, dx, dy)),
+              drag.targets,
+              tol,
+            )
+          : null;
+      if (stick) {
+        dx += stick.dx;
+        dy += stick.dy;
+      }
+      setSnapHint(stick ? { ...stick.at, kind: "point", guides: [] } : null);
       setPreviews(drag.origs.map((e) => moveElement(e, dx, dy)));
     } else if (drag.kind === "resize") {
       setPreviews([resized(drag.orig, drag.handle, at.x - drag.start.x, at.y - drag.start.y, snap)]);
     } else if (drag.kind === "end") {
       const o = drag.orig;
       const fixed = drag.end === 1 ? { x: o.x2, y: o.y2 } : { x: o.x, y: o.y };
-      const p = event.shiftKey ? angleSnap(fixed, at, snap) : { x: snapTo(at.x, snap), y: snapTo(at.y, snap) };
-      setPreviews([drag.end === 1 ? { ...o, x: p.x, y: p.y } : { ...o, x2: p.x, y2: p.y }]);
+      const p = lineEnd(at, fixed, event, drag.targets);
+      setSnapHint(p);
+      const others = drag.joined.flatMap((j) => {
+        const l = byId(j.id);
+        return l?.type === "wall_line" ? [setEnd(l, j.end, p)] : [];
+      });
+      setPreviews([setEnd(o, drag.end, p), ...others]);
     } else {
       if (Math.hypot(event.clientX - drag.px, event.clientY - drag.py) < MOVE_THRESHOLD_PX) return;
       setMarquee({
@@ -352,6 +431,7 @@ export default function PlanCanvas(props: Props) {
     setDrawRect(null);
     setDrawLine(null);
     setMarquee(null);
+    setSnapHint(null);
   }
 
   const previewOf = new Map((previews ?? []).map((e) => [e.id, e]));
@@ -364,6 +444,15 @@ export default function PlanCanvas(props: Props) {
   const selected = shown.filter((e) => marked.has(e.id));
   const single = selected.length === 1 ? selected[0] : null;
   const all = boxOfAll(selected);
+  // 이음 자리 점 (파워포인트 연결점처럼): 선 벽을 그리거나 끝을 끌거나 선 벽을 옮길 때
+  let dots: { x: number; y: number }[] = [];
+  if (!readOnly) {
+    if (drag?.kind === "end") dots = drag.targets.points;
+    else if (drag?.kind === "move" && drag.targets && drag.moved) dots = drag.targets.points;
+    else if (tool === "wall_line" && (!drag || drag.kind === "draw"))
+      dots = (drag?.kind === "draw" ? drag.targets : snapTargets(geometry.elements)).points;
+  }
+  const dotKeys = new Set<string>();
 
   return (
     <div
@@ -401,8 +490,19 @@ export default function PlanCanvas(props: Props) {
           onPointerLeave={() => {
             setCursor(null);
             onCursor(null);
+            if (!drag) setSnapHint(null);
           }}
         >
+          {underlay && (
+            // eslint-disable-next-line @next/next/no-img-element -- 관리자만 보는 밑그림 (이미지 최적화가 필요 없다)
+            <img
+              className={styles.underlay}
+              src={underlay.url}
+              alt=""
+              draggable={false}
+              style={{ ...rectStyle(underlay), opacity: underlay.opacity }}
+            />
+          )}
           {[...shown]
             .sort((a, b) => ORDER[a.type] - ORDER[b.type])
             .map((el) => {
@@ -418,7 +518,7 @@ export default function PlanCanvas(props: Props) {
                     key={el.id}
                     {...common}
                     className={`${office.wall} ${styles.wall} ${styles.el}`}
-                    style={{ ...rectStyle(box), ...border(el.line_w) }}
+                    style={{ ...rectStyle(box), ...border(el.line_w ?? DEFAULT_LINE.wall, 2) }}
                   >
                     {(["t", "r", "b", "l"] as const).map((edge) => (
                       <i key={edge} data-edge={edge} />
@@ -433,14 +533,13 @@ export default function PlanCanvas(props: Props) {
                     key={el.id}
                     {...common}
                     className={`${office.wallLine} ${styles.lineEl} ${styles.el}`}
-                    style={{
-                      left: px(el.x),
-                      top: py(el.y),
-                      width: px(lineLength(el)),
-                      height: thick,
-                      marginTop: `calc(${thick} / -2)`,
-                      transform: `rotate(${Math.atan2(el.y2 - el.y, el.x2 - el.x).toFixed(5)}rad)`,
-                    }}
+                    style={wallLineStyle(
+                      px(el.x),
+                      py(el.y),
+                      px(lineLength(el)),
+                      thick,
+                      Math.atan2(el.y2 - el.y, el.x2 - el.x),
+                    )}
                   >
                     <i aria-hidden="true" />
                   </div>
@@ -615,6 +714,50 @@ export default function PlanCanvas(props: Props) {
             </>
           )}
           {marquee && <div className={styles.marquee} style={rectStyle(marquee)} aria-hidden="true" />}
+
+          {dots.map((p) => {
+            const key = `${p.x},${p.y}`;
+            if (dotKeys.has(key)) return null;
+            dotKeys.add(key);
+            return (
+              <span key={key} className={styles.connDot} style={{ left: px(p.x), top: py(p.y) }} aria-hidden="true" />
+            );
+          })}
+          {snapHint?.guides.map((g, i) => (
+            <span
+              key={`guide-${i}`}
+              className={styles.snapGuide}
+              style={{
+                left: px(Math.min(g.a.x, g.b.x)),
+                top: py(Math.min(g.a.y, g.b.y)),
+                width: px(Math.abs(g.b.x - g.a.x)),
+                height: py(Math.abs(g.b.y - g.a.y)),
+              }}
+              aria-hidden="true"
+            />
+          ))}
+          {snapHint && (snapHint.kind === "point" || snapHint.kind === "edge") && (
+            <span
+              className={styles.snapRing}
+              data-kind={snapHint.kind}
+              style={{ left: px(snapHint.x), top: py(snapHint.y) }}
+              aria-hidden="true"
+            />
+          )}
+
+          {toolbar && all && !drag && (
+            <div
+              ref={barRef}
+              className={styles.floatBar}
+              data-below={all.y < height * 0.12 || undefined}
+              style={{ left: px(all.x + all.w / 2), top: py(all.y < height * 0.12 ? all.y + all.h : all.y) }}
+              role="toolbar"
+              aria-label="고른 요소 도구"
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              {toolbar(selected)}
+            </div>
+          )}
         </div>
       </div>
     </div>

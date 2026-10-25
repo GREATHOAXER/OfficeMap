@@ -27,12 +27,15 @@ def load_session(conn: Connection, token: str, *, touch: bool = True) -> dict[st
         f"""
         SELECT s.id AS session_id, s.token_hash, e.id AS employee_id, e.emp_no, e.name, e.rank_name,
                d.name AS department, a.must_change_password, {IS_ADMIN_SQL},
+               pr.display_name, ph.updated_at AS photo_at,
                -- 자동 로그아웃까지 남은 초 (화면이 1분 전에 알려 준다)
                extract(epoch FROM s.last_active_at + make_interval(mins => %s) - now())::int AS idle_left
         FROM user_sessions s
         JOIN employees e ON e.id = s.employee_id
         JOIN departments d ON d.id = e.department_id
         JOIN user_accounts a ON a.employee_id = e.id
+        LEFT JOIN employee_profiles pr ON pr.employee_id = e.id
+        LEFT JOIN employee_photos ph ON ph.employee_id = e.id
         WHERE s.token_hash = %s
           AND s.kind = 'USER'  -- 관리자 페이지 세션으로는 직원 화면에 못 들어온다 (반대도 마찬가지)
           AND s.revoked_at IS NULL

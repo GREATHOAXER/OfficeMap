@@ -8,25 +8,33 @@ import type { DeskGroup, PlanEditorData, PlanElement, PlanGeometry, PlanRect, Sp
 import { agoText, shortDate } from "@/lib/dates";
 import { drawingFromPlan } from "@/lib/floorDrawing";
 import {
+  type AlignMode,
+  alignElements,
   boxOfAll,
   copyElements,
   groupSize,
   makeDeskGroup,
+  MAX_SIZE,
   moveElement,
   newId,
   problemsOf,
-  rotateGroup,
+  rotateElements,
   scaleElement,
   snapTo,
   SPACE_KINDS,
   TYPE_LABEL,
 } from "@/lib/planGeometry";
 import { useNow } from "@/lib/useNow";
+import { straighten, type TidyResult } from "@/lib/wallSnap";
 import ui from "../seating/seating.module.css";
+import BackgroundDialog from "./BackgroundDialog";
+import ImportWizard, { type Background } from "./ImportWizard";
 import PlanCanvas, { type DrawTool, type LinePoints, type Tool, ZoomControls } from "./PlanCanvas";
 import PlanPanel from "./PlanPanel";
 import PublishDialog, { type PublishResult, type ScheduleResult } from "./PublishDialog";
 import ResizeDialog from "./ResizeDialog";
+import SelectionToolbar from "./SelectionToolbar";
+import TidyDialog from "./TidyDialog";
 import { EXPIRED, Header, json, type ScreenProps, useFloorChanges } from "./shared";
 import styles from "./plans.module.css";
 
@@ -109,6 +117,11 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
   const [snap, setSnap] = useState(true);
   const [showDims, setShowDims] = useState(false);
   const [resizing, setResizing] = useState(false);
+  const [tidying, setTidying] = useState(false);
+  // 밑그림 (층마다 하나, 초안과 따로 저장된다)
+  const [background, setBackground] = useState(data.background);
+  const [importing, setImporting] = useState(false);
+  const [bgEditing, setBgEditing] = useState(false);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [save, setSave] = useState<SaveState>({ state: "clean", at: draft.updated_at });
   const [lock, setLock] = useState<Lock>(() =>
@@ -364,6 +377,43 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
   }
   const addElement = (el: PlanElement) => addElements([el]);
 
+  /** 도면 파일 깔기: 밑그림이 도면보다 크면 도면을 넓히고, 찾은 요소를 더한다 (되돌리기 한 번) */
+  function applyImport(r: { elements: PlanElement[]; widthM: number; heightM: number; background: Background }) {
+    const cur = docRef.current;
+    const fit = (v: number, now: number) => Math.max(now, Math.min(MAX_SIZE, Math.ceil(v * 2) / 2));
+    const room = 2000 - cur.geometry.elements.length;
+    const els = r.elements.length <= room ? r.elements : [];
+    const size = { width: fit(r.widthM, cur.width), height: fit(r.heightM, cur.height) };
+    if (els.length || size.width !== cur.width || size.height !== cur.height)
+      commit({ geometry: { ...cur.geometry, elements: [...cur.geometry.elements, ...els] }, ...size });
+    setBackground(r.background);
+    setImporting(false);
+    if (els.length) setSelectedIds([]);
+    showToast(
+      r.elements.length > room
+        ? "밑그림을 깔았어요. 찾은 요소가 너무 많아(도면 요소 2000개까지) 더하지 않았어요"
+        : els.length
+          ? `밑그림을 깔고 요소 ${els.length}개를 더했어요 (되돌리기 Ctrl+Z)`
+          : "밑그림을 깔았어요",
+    );
+  }
+
+  /** 밑그림 보이기·숨기기 (다음에 열 때도 그대로) */
+  async function toggleBackground(visible: boolean) {
+    if (!background) return;
+    setBackground({ ...background, visible });
+    try {
+      const res = await fetch(`/api/admin/floors/${data.floor.id}/plan/background`, {
+        method: "PATCH",
+        headers: json,
+        body: JSON.stringify({ visible }),
+      });
+      if (res.status === 401) router.replace(EXPIRED);
+    } catch {
+      // 화면에서는 이미 바뀌었다. 다음에 열 때 예전 값이면 다시 고르면 된다
+    }
+  }
+
   const undo = useCallback(() => {
     if (blockedRef.current) return;
     setHistory((h) => {
@@ -529,16 +579,39 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
     showToast(`붙여 넣었어요: ${clipText(copies)}${c.floorId !== data.floor.id ? ` (${c.floor}에서)` : ""}`);
   }, [clip, data.floor.id, showToast]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** 고른 책상 묶음 돌리기 (R 오른쪽, Shift+R 왼쪽) */
+  /** 고른 것 90도 돌리기 (R 오른쪽, Shift+R 왼쪽): 책상은 방향, 사각형은 폭·높이, 여러 개면 함께 */
   const rotateSelected = useCallback(
     (clockwise: boolean) => {
-      const groups = docRef.current.geometry.elements.filter(
-        (e): e is DeskGroup => e.type === "desk_group" && selectedIds.includes(e.id),
-      );
-      if (groups.length) replaceElements(groups.map((g) => rotateGroup(g, clockwise)));
+      const els = docRef.current.geometry.elements.filter((e) => selectedIds.includes(e.id));
+      if (els.length) replaceElements(rotateElements(els, clockwise));
     },
     [selectedIds, replaceElements],
   );
+
+  const alignSelected = (mode: AlignMode) =>
+    replaceElements(
+      alignElements(
+        docRef.current.geometry.elements.filter((e) => selectedIds.includes(e.id)),
+        mode,
+      ),
+    );
+
+  const straightenSelected = () => {
+    const el = docRef.current.geometry.elements.find((e) => selectedIds.includes(e.id));
+    if (el?.type === "wall_line") replaceElements([straighten(el)]);
+  };
+
+  /** 선 정리 결과를 한 번에 (되돌리기 한 번) */
+  function applyTidy(result: TidyResult) {
+    commitGeometry({ ...docRef.current.geometry, elements: result.elements });
+    setSelectedIds((ids) => ids.filter((id) => result.elements.some((e) => e.id === id)));
+    setTidying(false);
+    showToast(
+      `선 정리: 선 ${result.moved}개를 고쳤어요${result.removed ? ` · 짧은 선 ${result.removed}개 지움` : ""}${
+        result.thickened ? ` · 굵기 ${result.thickened}개` : ""
+      } (되돌리기 Ctrl+Z)`,
+    );
+  }
 
   // 키보드: Delete 지우기, 방향키 옮기기, Ctrl+Z/Y 되돌리기·다시, Ctrl+D 복제, Esc 놓기
   useEffect(() => {
@@ -849,11 +922,11 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
   const hint = readOnly
     ? "보기만 할 수 있어요. 요소를 누르면 속성을 볼 수 있어요."
     : tool === "select"
-      ? "요소를 눌러 고르고 끌어서 옮겨요. Ctrl(⌘)·Shift+누르기나 빈 곳에서 끌어 여러 개를 골라요. 방향키로 조금씩(Shift는 1m), R로 책상 돌리기, Delete로 지우기. 핀치·Ctrl+휠로 확대해요."
+      ? "요소를 누르면 바로 위에 도구 막대(돌리기·복제·지우기 등)가 떠요. 끌어서 옮기고, Ctrl(⌘)·Shift+누르기나 빈 곳에서 끌어 여러 개를 골라요. 선 벽 끝은 가까운 벽·선 끝에 저절로 붙어요."
       : tool === "desk"
         ? `도면을 누르면 ${PRESETS.find((p) => p.key === preset)?.label} 묶음이 놓여요. Esc로 그만 놓기`
         : tool === "wall_line"
-          ? `끌어서 선 벽을 그려요 (Shift: 45도씩). 누르기만 하면 ${DEFAULT_SIZE.wall_line.w}m 가로 선이 놓여요. 굵기는 오른쪽에서 바꿔요.`
+          ? `끌어서 선 벽을 그려요. 동그라미(다른 선 끝·벽 모서리)나 벽 가까이 가면 초록 표시와 함께 붙고, 가로·세로가 맞으면 안내선이 떠요. Shift: 45도씩 · Alt: 붙이지 않기. 누르기만 하면 ${DEFAULT_SIZE.wall_line.w}m 가로 선이 놓여요.`
           : `끌어서 ${tool === "space" ? SPACE_KINDS.find((k) => k.kind === spaceKind)?.label : tool === "entrance" ? (entranceMain ? "주 출입구" : "출입구") : TYPE_LABEL[tool]} 사각형을 그려요. 누르기만 하면 ${DEFAULT_SIZE[tool].w}×${DEFAULT_SIZE[tool].h}m로 놓여요.`;
 
   return (
@@ -978,6 +1051,40 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
               <input type="checkbox" checked={showDims} onChange={(e) => setShowDims(e.target.checked)} />
               치수 보기
             </label>
+            <button
+              type="button"
+              className={ui.btn}
+              disabled={readOnly || !geometry.elements.some((e) => e.type === "wall_line")}
+              onClick={() => setTidying(true)}
+              title="기운 선 벽을 곧게 펴고 벌어진 끝을 이어요"
+            >
+              선 정리…
+            </button>
+            {background ? (
+              <span className={styles.bgControls}>
+                <label className={ui.check}>
+                  <input
+                    type="checkbox"
+                    checked={background.visible}
+                    onChange={(e) => void toggleBackground(e.target.checked)}
+                  />
+                  밑그림
+                </label>
+                <button type="button" className={ui.btn} onClick={() => setBgEditing(true)} title="밑그림 자리·진하기">
+                  밑그림…
+                </button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                className={ui.btn}
+                disabled={readOnly}
+                onClick={() => setImporting(true)}
+                title="도면 그림·PDF·엑셀을 밑그림으로 깔고 벽·방·책상을 찾아 더해요"
+              >
+                도면 파일 깔기…
+              </button>
+            )}
             <ZoomControls zoom={zoom} onZoom={setZoom} />
           </div>
           <p className={ui.modeBar} data-tone={tool !== "select" && !readOnly ? "zone" : undefined}>
@@ -1003,6 +1110,31 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
               onPlaceDesk={onPlaceDesk}
               onChange={(els) => replaceElements(els)}
               onCursor={setCursor}
+              underlay={
+                background?.visible
+                  ? {
+                      url: background.url,
+                      x: background.x_m,
+                      y: background.y_m,
+                      w: background.w_m,
+                      h: background.h_m,
+                      opacity: background.opacity,
+                    }
+                  : null
+              }
+              toolbar={(sel) => (
+                <SelectionToolbar
+                  selected={sel}
+                  readOnly={readOnly}
+                  onRotate={rotateSelected}
+                  onStraighten={straightenSelected}
+                  onTidy={() => setTidying(true)}
+                  onAlign={alignSelected}
+                  onDuplicate={duplicateSelected}
+                  onCopy={copySelected}
+                  onDelete={deleteSelected}
+                />
+              )}
             />
           </div>
           <p className={ui.hint}>
@@ -1027,6 +1159,40 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
             setPublishing(false);
             setTool("select");
             setSelectedIds([id]);
+          }}
+          onExpired={() => router.replace(EXPIRED)}
+        />
+      )}
+
+      {tidying && (
+        <TidyDialog
+          elements={geometry.elements}
+          selectedLines={selected.filter((e) => e.type === "wall_line").map((e) => e.id)}
+          onClose={() => setTidying(false)}
+          onApply={applyTidy}
+        />
+      )}
+
+      {importing && (
+        <ImportWizard
+          mode="draft"
+          data={{ ...data, size: { width_m: width, height_m: height } }}
+          onClose={() => setImporting(false)}
+          onExpired={() => router.replace(EXPIRED)}
+          onApply={applyImport}
+        />
+      )}
+
+      {bgEditing && background && (
+        <BackgroundDialog
+          floorId={data.floor.id}
+          background={background}
+          readOnly={readOnly}
+          onClose={() => setBgEditing(false)}
+          onChange={setBackground}
+          onReplace={() => {
+            setBgEditing(false);
+            setImporting(true);
           }}
           onExpired={() => router.replace(EXPIRED)}
         />

@@ -324,6 +324,11 @@ div.body[data-cols="3"] {
   cursor: move;
 }
 
+/* 공간·회의실·출입구 이름표는 선 벽보다 위에 그려지지만 누르는 것은 막지 않는다 (아래 벽을 고를 수 있게) */
+.el > span:not(.desk) {
+  pointer-events: none;
+}
+
 .el[data-problem] {
   outline: 2px solid var(--danger);
   outline-offset: 2px;
@@ -962,4 +967,468 @@ div.body[data-cols="3"] {
 /* 좌석 번호 칸(고정폭 글꼴)이 기본 폭 때문에 속성 칸 밖으로 밀리지 않게 */
 .cellEdit input:not([type="checkbox"]) {
   width: 100%;
+}
+
+/* 선 벽 잇기 ---------------------------------------------------------------------- */
+
+/* 이음 자리 (다른 선 벽 끝·벽 모서리). 선 벽을 그리거나 끝을 끌 때 보인다 */
+.connDot {
+  position: absolute;
+  z-index: 9;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border: 1.5px solid var(--link);
+  border-radius: 50%;
+  background: var(--surface);
+  pointer-events: none;
+}
+
+/* 지금 붙을 자리: 점은 동그라미, 선 위는 네모 */
+.snapRing {
+  position: absolute;
+  z-index: 10;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border: 2.5px solid #16a34a;
+  border-radius: 50%;
+  background: rgba(22, 163, 74, 0.15);
+  pointer-events: none;
+}
+
+.snapRing[data-kind="edge"] {
+  border-radius: 3px;
+  transform: rotate(45deg);
+}
+
+/* 다른 점과 가로·세로 줄이 맞을 때의 안내선 */
+.snapGuide {
+  position: absolute;
+  z-index: 9;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px dashed #16a34a;
+  border-top: 1px dashed #16a34a;
+  pointer-events: none;
+}
+
+/* 고른 요소 위에 뜨는 도구 막대 ---------------------------------------------------- */
+
+.floatBar {
+  position: absolute;
+  z-index: 13;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+  transform: translate(-50%, calc(-100% - 12px));
+  white-space: nowrap;
+  cursor: default;
+  pointer-events: none; /* 단추 사이 빈 곳은 아래 도면을 누를 수 있게 */
+}
+
+.floatBar[data-below] {
+  transform: translate(-50%, 32px);
+}
+
+.floatBar button {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.floatBar button:hover:not(:disabled) {
+  background: var(--bg);
+}
+
+.floatBar button:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: -2px;
+}
+
+.floatBar button:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.floatBar button[data-tone="danger"] {
+  color: var(--danger-text);
+}
+
+.floatBar hr {
+  width: 1px;
+  height: 20px;
+  margin: 0 3px;
+  border: 0;
+  background: var(--divider);
+}
+
+/* 선 정리 대화상자의 선택 줄 */
+.tidyRows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.tidyRows label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.tidyRows label[data-sub] {
+  padding-left: 24px;
+}
+
+.tidyRows span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.tidyRows input[type="number"] {
+  width: 64px;
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.tidyRows input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+/* 밑그림: 도면 파일 그림을 요소 밑에 깐다 (누르기·끌기는 도면으로) */
+.underlay {
+  position: absolute;
+  max-width: none;
+  object-fit: fill;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* 도면 파일로 초안 만들기 ------------------------------------------------------------ */
+
+.dropZone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 40px 16px;
+  border: 1.5px dashed var(--divider);
+  border-radius: 12px;
+  background: var(--bg);
+  text-align: center;
+}
+
+.dropZone p {
+  margin: 0;
+}
+
+.importTips {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.importLayout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 280px;
+  height: 100%;
+  min-height: 0;
+}
+
+.importPages,
+.importMain,
+.importSettings {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px;
+}
+
+.importPages {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-right: 1px solid var(--divider);
+}
+
+.importPages > p {
+  margin: 0;
+}
+
+.importSettings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-left: 1px solid var(--divider);
+}
+
+.importSettings fieldset {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+}
+
+.importSettings fieldset > p {
+  margin: 0;
+}
+
+@media (max-width: 1100px) {
+  .importLayout {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .importSettings {
+    grid-column: 1 / -1;
+    border-left: 0;
+    border-top: 1px solid var(--divider);
+  }
+}
+
+@media (max-width: 720px) {
+  .importLayout {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+  }
+
+  .importPages {
+    border-right: 0;
+    border-bottom: 1px solid var(--divider);
+  }
+
+  .importPages,
+  .importMain,
+  .importSettings {
+    overflow: visible;
+  }
+}
+
+.pageList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pageList li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+}
+
+.pageList li:has([aria-current]) {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink);
+}
+
+.pageItem {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.pageItem:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+.thumb {
+  flex: none;
+  width: 64px;
+  height: 48px;
+  object-fit: contain;
+  background: #fff;
+  border: 1px solid var(--divider);
+  border-radius: 4px;
+}
+
+.pageText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  font-size: 12.5px;
+}
+
+.jobState {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.jobState[data-state="done"] {
+  color: var(--ok, #1a7f37);
+}
+
+.jobState[data-state="error"] {
+  color: var(--danger, #c62828);
+}
+
+.importBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.importBar label {
+  margin-left: auto;
+}
+
+.importStage {
+  position: relative;
+  border: 1px solid var(--divider);
+  background: #fff;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  overflow: hidden;
+}
+
+.importStage > img {
+  display: block;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
+}
+
+.importCrop,
+.importDrag,
+.importFound,
+.measureDot {
+  position: absolute;
+  pointer-events: none;
+}
+
+/* 고른 부분 밖은 어둡게 */
+.importCrop {
+  outline: 2px solid var(--link);
+  box-shadow: 0 0 0 9999px rgba(28, 28, 28, 0.32);
+}
+
+.importDrag {
+  border: 2px dashed var(--ink);
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.measureDot {
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #e5484d;
+  box-shadow: 0 0 0 1px #e5484d;
+}
+
+.importFound {
+  overflow: visible;
+}
+
+.importFound [data-kind="wall"] {
+  stroke: #e5484d;
+  stroke-opacity: 0.85;
+}
+
+.importFound [data-kind="pillar"] {
+  fill: #7c3aed;
+  fill-opacity: 0.7;
+}
+
+.importFound [data-kind="room"] rect {
+  fill: rgba(37, 99, 235, 0.14);
+  stroke: #2563eb;
+}
+
+.importFound [data-kind="space"] rect {
+  fill: rgba(22, 163, 74, 0.14);
+  stroke: #16a34a;
+}
+
+.importFound text {
+  fill: #1c1c1c;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 0.08;
+}
+
+.importFound [data-kind="desk"] rect {
+  fill: rgba(234, 179, 8, 0.3);
+  stroke: #a16207;
+}
+
+.foundCounts {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+
+.smallNumber {
+  width: 64px;
+  height: 30px;
+  margin: 0 4px;
+  padding: 0 6px;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.inlineField {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  font-size: 13px;
+}
+
+.inlineField .select {
+  width: auto;
+}
+
+.inlineField input[type="range"] {
+  width: 110px;
+}
+
+.bgControls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }

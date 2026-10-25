@@ -15,6 +15,30 @@ export type User = {
   department: string;
   role: "USER" | "ADMIN";
   must_change_password: boolean;
+  display_name: string | null; // 내 정보의 부르는 이름
+  photo: string | null; // 내 정보의 사진 주소
+};
+
+/** 내 정보에서 고치는 것: 사진·부르는 이름(영문·별칭)·한 줄 소개·하는 일·업무 키워드. 다른 사람에게도 보인다 */
+export type PublicProfile = {
+  photo: string | null;
+  display_name: string | null;
+  headline: string | null;
+  duties: string | null;
+  skills: string[];
+};
+
+/** 내 정보 화면: 인사 정보(바꾸지 않음) + 내가 고치는 것 */
+export type MyProfile = PublicProfile & {
+  emp_no: string;
+  name: string;
+  rank: string | null;
+  position: string | null;
+  department: string;
+  division: string | null;
+  email: string | null;
+  extension: string | null;
+  updated_at: string | null;
 };
 
 export type LoginInfo = {
@@ -115,6 +139,11 @@ export type Occupant = {
   extension: string | null;
   email: string | null;
   kind: "FIXED" | "DAILY";
+  photo: string | null;
+  display_name: string | null;
+  headline: string | null;
+  duties: string | null;
+  skills: string[];
   presence: {
     status: PresenceStatus;
     message: string | null;
@@ -244,7 +273,13 @@ export type EmployeeHit = {
   /** 시간을 같이 넘겨 검색했을 때만: 그 시간에 겹치는 다른 회의 / 휴가·외근 */
   busy: { title: string; starts_at: string; ends_at: string } | null;
   absence: "LEAVE" | "BUSINESS_TRIP" | "REMOTE" | null;
-};
+  /** 이름·부서가 아니라 내 정보(하는 일·키워드 등)로 찾았을 때 걸린 부분 (검색만) */
+  matched?: string | null;
+} & PublicProfile;
+
+export function fetchProfile(cookieHeader: string | null): Promise<MyProfile> {
+  return apiGet<MyProfile>("/api/profile", cookieHeader);
+}
 
 // 회의실 확인·예약 -----------------------------------------------------------------
 
@@ -474,6 +509,40 @@ export function fetchAdminOverview(cookieHeader: string | null) {
   return apiGet<AdminOverview>("/api/admin/overview", cookieHeader);
 }
 
+// 조직도 (관리자 페이지) ------------------------------------------------------------
+
+/** 부서 하나. members: 재직·휴직 인원, zones: 이 부서 팀 구역 */
+export type OrgDepartment = {
+  id: number;
+  code: string;
+  name: string;
+  parent_id: number | null;
+  sort_order: number;
+  is_active: boolean;
+  members: number;
+  zones: { floor: string; code: string }[];
+};
+
+export type OrgMember = {
+  emp_no: string;
+  name: string;
+  rank: string | null;
+  position: string | null;
+  email: string | null;
+  extension: string | null;
+  status: "ACTIVE" | "LEAVE";
+  hired_on: string | null;
+  seat_code: string | null;
+  floor_name: string | null;
+  site_name: string | null;
+  is_admin: boolean;
+  temporary_password: boolean | null; // 아직 임시 비밀번호 (null이면 계정 없음)
+};
+
+export function fetchOrg(cookieHeader: string | null) {
+  return apiGet<{ departments: OrgDepartment[]; can_edit: boolean }>("/api/admin/org", cookieHeader);
+}
+
 // 좌석 배치 편집 (⑤) -------------------------------------------------------------
 
 /** 좌석 유형: 고정석 / 팀 내 자율석 / 사용 중지 (고장·수리) */
@@ -639,8 +708,21 @@ export type PlanSummary = {
 
 export type PlanEditorData = {
   floor: FloorMap["floor"];
-  floors: { id: number; name: string; site: string; published: boolean; drafting: boolean }[];
+  floors: { id: number; name: string; site: string; site_id: number; published: boolean; drafting: boolean }[];
   size: { width_m: number; height_m: number };
+  /** 밑그림: 도면 파일 그림 (편집 화면에서만 요소 밑에 깐다). 층마다 하나 */
+  background: {
+    url: string;
+    x_m: number;
+    y_m: number;
+    w_m: number;
+    h_m: number;
+    opacity: number;
+    visible: boolean;
+    name: string | null;
+    bytes: number;
+    updated_at: string;
+  } | null;
   published: PlanSummary | null;
   draft: {
     id: number;

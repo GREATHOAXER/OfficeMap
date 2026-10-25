@@ -9,6 +9,9 @@
 게시는 날짜를 정해 예약할 수도 있다(SCHEDULED). 그날 0시에 서버 작업(app/jobs.py)이 같은 방식으로 게시하고,
 그사이 고른 자리가 찼으면 그 사람은 미배치, 옮길 회의실에 같은 시간 예약이 있으면 그 예약만 취소한다.
 
+도면 파일(이미지·PDF·엑셀)로 시작하면 화면이 파일을 읽어 벽·기둥·공간을 찾아 초안(source import)으로 보내고,
+그 쪽 그림은 층의 밑그림(floor_plan_backgrounds)으로 올린다. 밑그림은 편집 화면에서만 요소 밑에 깔린다.
+
 권한: 도면 편집·게시는 층 관리자 이상(결정 1). 구역 관리자는 보기만.
 """
 
@@ -16,7 +19,7 @@ import datetime as dt
 import logging
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from psycopg import Connection, errors
 from pydantic import BaseModel, Field
@@ -33,6 +36,12 @@ log = logging.getLogger(__name__)
 LOCK_MINUTES = 2  # 편집 화면이 이만큼 소식이 없으면 다른 사람이 편집할 수 있다
 DEFAULT_SIZE = geo.DEFAULT_SIZE  # 도면이 하나도 없는 층의 크기 (m)
 MOVED_RATIO = 0.002  # 좌석 위치가 이만큼(도면 대비) 넘게 바뀌면 "자리 옮김"으로 센다
+MAX_BACKGROUND_BYTES = 8_000_000  # 밑그림 그림 (화면이 긴 쪽 4096px 안으로 줄여 올린다)
+IMAGE_MAGIC = {
+    "image/jpeg": (b"\xff\xd8\xff",),
+    "image/png": (b"\x89PNG\r\n\x1a\n",),
+    "image/webp": (b"RIFF",),
+}
 
 
 def _plan_access(admin: dict[str, Any], floor: dict[str, Any]) -> None:
@@ -77,6 +86,7 @@ def _floor_list(conn: Connection, admin: dict[str, Any]) -> list[dict[str, Any]]
                     "id": f["id"],
                     "name": f["name"],
                     "site": f["site_name"],
+                    "site_id": f["site_id"],
                     "published": f["published"],
                     "drafting": f["drafting"],
                 }
@@ -205,6 +215,7 @@ def _editor_data(conn: Connection, admin: dict[str, Any], floor: dict[str, Any])
             if draft
             else None
         ),
+        "background": _background(conn, floor_id),
         "archived": [summary(p) for p in plans if p["status"] == "ARCHIVED"][:20],
         "sources": [{"id": s["id"], "name": s["name"], "site": s["site_name"]} for s in sources],
         # 지금(게시본 기준) 책상 칸·회의실 공간에 앉은 사람과 예약. 초안에서 지우면 영향 받는 것을 미리 보여 준다
@@ -228,12 +239,13 @@ def _editor_data(conn: Connection, admin: dict[str, Any], floor: dict[str, Any])
 
 
 class DraftIn(BaseModel):
-    source: Literal["published", "blank", "archived", "floor"] = "published"
+    source: Literal["published", "blank", "archived", "floor", "import"] = "published"
     plan_id: int | None = None  # archived: 이 층의 보관본(또는 게시본)
     floor_id: int | None = None  # floor: 다른 층의 게시본을 복제
-    # blank: 사무실 실제 크기 (m). 없으면 지금 게시본 크기
+    # blank: 사무실 실제 크기 (m). 없으면 지금 게시본 크기. import: 꼭 넣는다 (도면 파일에서 고른 부분의 실제 크기)
     width_m: float | None = Field(default=None, ge=geo.MIN_SIZE, le=geo.MAX_SIZE)
     height_m: float | None = Field(default=None, ge=geo.MIN_SIZE, le=geo.MAX_SIZE)
+    geometry: dict[str, Any] | None = None  # import: 화면이 도면 파일에서 찾은 벽·기둥·공간 (편집기 모양)
 
 
 def _v1_from_plan(conn: Connection, plan: dict[str, Any], seat_floor: int, *, link: bool) -> dict[str, Any]:
@@ -305,6 +317,7 @@ def create_draft(floor_id: int, body: DraftIn, admin: CurrentAdmin, request: Req
         published = next((p for p in plans if p["status"] == "PUBLISHED"), None)
         width, height = (published["width_m"], published["height_m"]) if published else DEFAULT_SIZE
         base_id = published["id"] if published else None
+        version = max((p["version"] for p in plans), default=0) + 1
 
         if body.source == "published":
             if published is None:
@@ -326,15 +339,24 @@ def create_draft(floor_id: int, body: DraftIn, admin: CurrentAdmin, request: Req
             width, height = source["width_m"], source["height_m"]
             geometry = _v1_from_plan(conn, source, floor_id, link=True)
             base_id = source["id"]
-        else:
+        elif body.source == "floor":
             other = _floor(conn, body.floor_id or 0)
             source = next((p for p in _plans(conn, other["id"]) if p["status"] == "PUBLISHED"), None)
             if source is None:
                 raise HTTPException(status_code=422, detail={"code": "PLAN_NOT_FOUND"})
             width, height = source["width_m"], source["height_m"]
             geometry = _rename_ids(_v1_from_plan(conn, source, other["id"], link=False), f"f{other['id']}-")
+        else:  # import
+            if body.width_m is None or body.height_m is None or body.geometry is None:
+                raise HTTPException(status_code=422, detail={"code": "IMPORT_SIZE"})
+            width, height = body.width_m, body.height_m
+            try:
+                geometry = geo.validate(body.geometry, width, height)
+            except geo.GeometryError as error:
+                raise HTTPException(status_code=422, detail={"code": "BAD_GEOMETRY", "where": str(error)}) from None
+            # 파일에서 찾은 책상이 우연히 지금 좌석 키와 같아 엉뚱한 사람이 이어지지 않게 ID를 새로 붙인다
+            geometry = _rename_ids(geometry, f"i{version}-")
 
-        version = max((p["version"] for p in plans), default=0) + 1
         plan_id = conn.execute(
             """
             INSERT INTO floor_plans (floor_id, version, status, width_m, height_m, geometry, base_plan_id,
@@ -349,7 +371,11 @@ def create_draft(floor_id: int, body: DraftIn, admin: CurrentAdmin, request: Req
             admin["employee_id"],
             "PLAN_DRAFT_CREATE",
             plan_id,
-            {"source": body.source, "version": version},
+            {
+                "source": body.source,
+                "version": version,
+                **({"elements": len(geometry["elements"])} if body.source == "import" else {}),
+            },
             client_info(request)[0],
         )
         return _editor_data(conn, admin, floor)
@@ -464,6 +490,170 @@ def discard_draft(plan_id: int, admin: CurrentAdmin, request: Request) -> None:
         conn.execute("DELETE FROM floor_plans WHERE id = %s", (plan_id,))
         ip = client_info(request)[0]
         _audit(conn, admin["employee_id"], "PLAN_DRAFT_DISCARD", plan_id, {"version": plan["version"]}, ip)
+
+
+# 밑그림 (도면 파일 그림) -----------------------------------------------------------
+
+
+def _background(conn: Connection, floor_id: int) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT x_m::float8 AS x_m, y_m::float8 AS y_m, w_m::float8 AS w_m, h_m::float8 AS h_m,
+               opacity::float8 AS opacity, visible, source_name, octet_length(image) AS bytes, updated_at
+        FROM floor_plan_backgrounds WHERE floor_id = %s
+        """,
+        (floor_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    version = int(row["updated_at"].timestamp() * 1000)
+    return {
+        "url": f"/api/admin/floors/{floor_id}/plan/background?v={version}",
+        "x_m": row["x_m"],
+        "y_m": row["y_m"],
+        "w_m": row["w_m"],
+        "h_m": row["h_m"],
+        "opacity": row["opacity"],
+        "visible": row["visible"],
+        "name": row["source_name"],
+        "bytes": row["bytes"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _plan_floor(conn: Connection, floor_id: int, admin: dict[str, Any]) -> dict[str, Any]:
+    floor = _floor(conn, floor_id)
+    _plan_access(admin, floor)
+    return floor
+
+
+def _place_number(value: float | None, name: str, low: float, high: float) -> float | None:
+    if value is not None and not low <= value <= high:
+        raise HTTPException(status_code=422, detail={"code": "BAD_PLACE", "field": name})
+    return value
+
+
+@router.put("/floors/{floor_id}/plan/background")
+async def put_background(
+    floor_id: int,
+    admin: CurrentAdmin,
+    request: Request,
+    w_m: float,
+    h_m: float,
+    x_m: float = 0,
+    y_m: float = 0,
+    opacity: float = 0.5,
+    name: str | None = None,
+) -> dict[str, Any]:
+    """밑그림 올리기 (있으면 바꾼다). 본문이 그림 파일 그대로 (image/jpeg·png·webp, 8MB까지).
+    w_m·h_m·x_m·y_m: 도면 위에 깔 자리 (m)"""
+    content_type = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
+    if content_type not in IMAGE_MAGIC:
+        raise HTTPException(status_code=415, detail={"code": "IMAGE_TYPE"})
+    length = request.headers.get("content-length")
+    if length and length.isdigit() and int(length) > MAX_BACKGROUND_BYTES:
+        raise HTTPException(status_code=413, detail={"code": "IMAGE_TOO_BIG", "max": MAX_BACKGROUND_BYTES})
+    for value, field, low, high in (
+        (w_m, "w_m", 0.5, geo.MAX_SIZE * 2),
+        (h_m, "h_m", 0.5, geo.MAX_SIZE * 2),
+        (x_m, "x_m", -geo.MAX_SIZE, geo.MAX_SIZE),
+        (y_m, "y_m", -geo.MAX_SIZE, geo.MAX_SIZE),
+        (opacity, "opacity", 0.05, 1),
+    ):
+        _place_number(value, field, low, high)
+    data = await request.body()
+    if len(data) > MAX_BACKGROUND_BYTES:
+        raise HTTPException(status_code=413, detail={"code": "IMAGE_TOO_BIG", "max": MAX_BACKGROUND_BYTES})
+    if not any(data.startswith(m) for m in IMAGE_MAGIC[content_type]) or (
+        content_type == "image/webp" and data[8:12] != b"WEBP"
+    ):
+        raise HTTPException(status_code=415, detail={"code": "IMAGE_TYPE"})
+    source_name = (name or "").strip()[:200] or None
+    with pool.connection() as conn:
+        _plan_floor(conn, floor_id, admin)
+        conn.execute(
+            """
+            INSERT INTO floor_plan_backgrounds
+                (floor_id, image, content_type, x_m, y_m, w_m, h_m, opacity, visible, source_name, updated_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, true, %s, %s)
+            ON CONFLICT (floor_id) DO UPDATE
+            SET image = EXCLUDED.image, content_type = EXCLUDED.content_type, x_m = EXCLUDED.x_m,
+                y_m = EXCLUDED.y_m, w_m = EXCLUDED.w_m, h_m = EXCLUDED.h_m, opacity = EXCLUDED.opacity,
+                visible = true, source_name = EXCLUDED.source_name, updated_by = EXCLUDED.updated_by,
+                updated_at = now()
+            """,
+            (floor_id, data, content_type, x_m, y_m, w_m, h_m, opacity, source_name, admin["employee_id"]),
+        )
+        _audit_floor(
+            conn,
+            admin["employee_id"],
+            "PLAN_BACKGROUND_SET",
+            floor_id,
+            {"bytes": len(data), "type": content_type, "name": source_name, "w_m": w_m, "h_m": h_m},
+            client_info(request)[0],
+        )
+        return {"background": _background(conn, floor_id)}
+
+
+class BackgroundIn(BaseModel):
+    x_m: float | None = Field(default=None, ge=-geo.MAX_SIZE, le=geo.MAX_SIZE)
+    y_m: float | None = Field(default=None, ge=-geo.MAX_SIZE, le=geo.MAX_SIZE)
+    w_m: float | None = Field(default=None, ge=0.5, le=geo.MAX_SIZE * 2)
+    h_m: float | None = Field(default=None, ge=0.5, le=geo.MAX_SIZE * 2)
+    opacity: float | None = Field(default=None, ge=0.05, le=1)
+    visible: bool | None = None
+
+
+@router.patch("/floors/{floor_id}/plan/background")
+def patch_background(floor_id: int, body: BackgroundIn, admin: CurrentAdmin) -> dict[str, Any]:
+    """밑그림 자리·진하기·보이기 (보낸 것만 바꾼다). 그림을 바꾸지 않아 기록은 남기지 않는다"""
+    changes = body.model_dump(exclude_none=True)
+    with pool.connection() as conn:
+        _plan_floor(conn, floor_id, admin)
+        if changes:
+            sets = ", ".join(f"{key} = %({key})s" for key in changes)
+            done = conn.execute(
+                f"UPDATE floor_plan_backgrounds SET {sets} WHERE floor_id = %(floor_id)s",
+                {**changes, "floor_id": floor_id},
+            ).rowcount
+            if not done:
+                raise HTTPException(status_code=404, detail={"code": "NO_BACKGROUND"})
+        background = _background(conn, floor_id)
+        if background is None:
+            raise HTTPException(status_code=404, detail={"code": "NO_BACKGROUND"})
+        return {"background": background}
+
+
+@router.delete("/floors/{floor_id}/plan/background", status_code=204)
+def delete_background(floor_id: int, admin: CurrentAdmin, request: Request) -> Response:
+    with pool.connection() as conn:
+        _plan_floor(conn, floor_id, admin)
+        gone = conn.execute("DELETE FROM floor_plan_backgrounds WHERE floor_id = %s", (floor_id,)).rowcount
+        if gone:
+            _audit_floor(conn, admin["employee_id"], "PLAN_BACKGROUND_DELETE", floor_id, {}, client_info(request)[0])
+    return Response(status_code=204)
+
+
+@router.get("/floors/{floor_id}/plan/background")
+def get_background(floor_id: int, admin: CurrentAdmin, request: Request, v: int | None = None) -> Response:
+    """밑그림 그림. 주소에 v(바꾼 시각)가 있으면 브라우저가 하루 동안 다시 묻지 않는다"""
+    with pool.connection() as conn:
+        _plan_floor(conn, floor_id, admin)
+        row = conn.execute(
+            "SELECT image, content_type, updated_at FROM floor_plan_backgrounds WHERE floor_id = %s",
+            (floor_id,),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail={"code": "NO_BACKGROUND"})
+    etag = f'"{int(row["updated_at"].timestamp() * 1000)}"'
+    headers = {
+        "ETag": etag,
+        "Cache-Control": "private, max-age=86400" if v is not None else "private, no-cache",
+        "X-Content-Type-Options": "nosniff",
+    }
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    return Response(content=bytes(row["image"]), media_type=row["content_type"], headers=headers)
 
 
 # 게시 전 점검 · 게시 -------------------------------------------------------------
@@ -1117,4 +1307,16 @@ def _audit(conn: Connection, actor_id: int, action: str, plan_id: int, data: dic
         VALUES (%s, %s, 'floor_plan', %s, %s, %s)
         """,
         (actor_id, action, plan_id, _json(data), ip),
+    )
+
+
+def _audit_floor(
+    conn: Connection, actor_id: int, action: str, floor_id: int, data: dict[str, Any], ip: str | None
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO audit_logs (actor_id, action, target_type, target_id, after_data, ip_address)
+        VALUES (%s, %s, 'floor', %s, %s, %s)
+        """,
+        (actor_id, action, floor_id, _json(data), ip),
     )

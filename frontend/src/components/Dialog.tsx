@@ -8,8 +8,8 @@ type Props = {
   open: boolean;
   onClose: () => void;
   title: ReactNode;
-  /** wide: 예약 폼처럼 넓은 화면에서 두 단으로 펼치는 팝업, narrow: 상세 보기 */
-  size?: "wide" | "narrow";
+  /** wide: 예약 폼처럼 넓은 화면에서 두 단으로 펼치는 팝업, narrow: 상세 보기, full: 화면 가득 (도면 파일 가져오기) */
+  size?: "wide" | "narrow" | "full";
   children: ReactNode;
   footer?: ReactNode;
 };

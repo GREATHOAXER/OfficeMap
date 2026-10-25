@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Image from "next/image";
-import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import styles from "@/app/login/login.module.css";
@@ -100,10 +99,6 @@ export default async function AdminLoginPage({ searchParams }: PageProps<"/admin
               관리자 화면은 {info.admin_idle_minutes}분간 사용하지 않으면 자동 로그아웃됩니다.
             </p>
           </aside>
-
-          <Link href="/login" className={own.back}>
-            ← 직원 화면 로그인으로
-          </Link>
         </div>
       </main>
     </div>
