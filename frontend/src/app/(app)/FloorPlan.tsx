@@ -146,22 +146,27 @@ export default function FloorPlan(props: Props) {
     setHoverSeatId(null);
   }
 
-  // 트랙패드 핀치 확대·축소
-  // - Chrome·Edge·Firefox: 핀치가 ctrlKey가 붙은 wheel 이벤트로 온다 (Ctrl+마우스 휠도 같은 이벤트)
-  // - Safari: gesturestart/gesturechange 의 scale 로 온다
-  // 브라우저 화면 전체가 확대되지 않도록 도면 영역에서만 막는다. 두 손가락 이동은 그대로 스크롤
+  // 핀치 확대·축소
+  // - 트랙패드 (Chrome·Edge·Firefox): 핀치가 ctrlKey가 붙은 wheel 이벤트로 온다 (Ctrl+마우스 휠도 같은 이벤트)
+  // - 트랙패드 (Safari): gesturestart/gesturechange 의 scale 로 온다
+  // - 휴대폰·태블릿: 두 손가락 터치. 손가락 사이가 벌어진 비율만큼 키우고, 두 손가락을 같이 움직이면 도면을 옮긴다
+  // 브라우저 화면 전체가 확대되지 않도록 도면 영역에서만 막는다 (CSS touch-action). 한 손가락은 원래대로 스크롤
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     let gestureBase: number | null = null;
     let drag: { id: number; x: number; y: number; left: number; top: number; moved: boolean } | null = null;
     let suppressClick = false;
+    let pinch: { dist: number; zoom: number; x: number; y: number } | null = null;
+    let pinchEndedAt = 0;
 
     function zoomAt(next: number, clientX: number, clientY: number) {
+      const zoom = clampZoom(next, fitRef.current.zoom);
+      if (zoom === zoomRef.current) return;
       const rect = el!.getBoundingClientRect();
       anchorRef.current = { x: clientX - rect.left, y: clientY - rect.top };
-      zoomRef.current = clampZoom(next, fitRef.current.zoom);
-      onZoomRef.current(zoomRef.current);
+      zoomRef.current = zoom;
+      onZoomRef.current(zoom);
     }
     function onWheel(event: WheelEvent) {
       if (!event.ctrlKey || gestureBase !== null) return;
@@ -169,14 +174,15 @@ export default function FloorPlan(props: Props) {
       const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY; // 줄 단위면 픽셀로
       zoomAt(zoomRef.current * Math.exp(-Math.max(-50, Math.min(50, delta)) * 0.01), event.clientX, event.clientY);
     }
+    // iPhone·iPad Safari는 두 손가락 터치에도 gesture* 이벤트를 같이 보낸다: 터치로 처리 중이면 두 번 키우지 않는다
     function onGestureStart(event: Event) {
       event.preventDefault();
-      gestureBase = zoomRef.current;
+      gestureBase = pinch ? null : zoomRef.current;
     }
     function onGestureChange(event: Event) {
       event.preventDefault();
       const g = event as GestureLike;
-      if (gestureBase !== null) zoomAt(gestureBase * g.scale, g.clientX, g.clientY);
+      if (gestureBase !== null && !pinch) zoomAt(gestureBase * g.scale, g.clientX, g.clientY);
     }
     function onGestureEnd(event: Event) {
       event.preventDefault();
@@ -222,10 +228,47 @@ export default function FloorPlan(props: Props) {
       delete el!.dataset.panning;
     }
     function onClickCapture(event: MouseEvent) {
-      if (!suppressClick) return;
+      // 끌기를 마친 손, 핀치를 마치고 남은 손가락이 떨어질 때 그 아래 자리가 눌리지 않게
+      if (!suppressClick && Date.now() - pinchEndedAt > 400) return;
       suppressClick = false;
       event.stopPropagation();
       event.preventDefault();
+    }
+
+    /** 도면 위에 있는 두 손가락의 가운데와 사이 거리 */
+    function twoFingers(event: TouchEvent) {
+      const [a, b] = Array.from(event.touches).filter((t) => el!.contains(t.target as Node));
+      if (!a || !b || event.touches.length !== 2) return null;
+      return {
+        x: (a.clientX + b.clientX) / 2,
+        y: (a.clientY + b.clientY) / 2,
+        dist: Math.max(1, Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)),
+      };
+    }
+    function onTouchStart(event: TouchEvent) {
+      const f = twoFingers(event);
+      if (!f) return;
+      pinch = { dist: f.dist, zoom: zoomRef.current, x: f.x, y: f.y };
+      clearTimeout(hoverTimer.current);
+    }
+    function onTouchMove(event: TouchEvent) {
+      const f = pinch && twoFingers(event);
+      if (!pinch || !f) return;
+      // 브라우저가 두 손가락 스크롤을 하지 않게 막고, 가운데가 움직인 만큼 직접 옮긴다
+      // (이미 스크롤 중이라 막을 수 없으면 브라우저가 옮기니 두 번 옮기지 않는다)
+      if (event.cancelable) {
+        event.preventDefault();
+        el!.scrollLeft -= f.x - pinch.x;
+        el!.scrollTop -= f.y - pinch.y;
+      }
+      pinch.x = f.x;
+      pinch.y = f.y;
+      zoomAt(pinch.zoom * (f.dist / pinch.dist), f.x, f.y);
+    }
+    function onTouchEnd(event: TouchEvent) {
+      if (!pinch || event.touches.length >= 2) return;
+      pinch = null;
+      pinchEndedAt = Date.now();
     }
 
     el.addEventListener("wheel", onWheel, { passive: false });
@@ -237,6 +280,10 @@ export default function FloorPlan(props: Props) {
     el.addEventListener("pointerup", onPointerUp);
     el.addEventListener("pointercancel", onPointerUp);
     el.addEventListener("click", onClickCapture, true);
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd);
+    el.addEventListener("touchcancel", onTouchEnd);
     return () => {
       el.removeEventListener("wheel", onWheel);
       el.removeEventListener("gesturestart", onGestureStart);
@@ -247,6 +294,10 @@ export default function FloorPlan(props: Props) {
       el.removeEventListener("pointerup", onPointerUp);
       el.removeEventListener("pointercancel", onPointerUp);
       el.removeEventListener("click", onClickCapture, true);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("touchcancel", onTouchEnd);
     };
   }, [hasPlan]);
 
