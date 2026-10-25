@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useId } from "react";
+import { type FormEvent, useId, useRef } from "react";
 import DatePicker from "@/components/DatePicker";
 import { SparkleIcon } from "@/components/icons";
 import type { RoomsDay } from "@/lib/api";
@@ -10,7 +10,6 @@ import AttendeePicker from "./AttendeePicker";
 import {
   defaultRepeatUntil,
   type Draft,
-  freeRoomsFor,
   headcount,
   isFree,
   isPast,
@@ -20,6 +19,7 @@ import {
   occurrenceCount,
   type Repeat,
   slotStarts,
+  suggestRooms,
   timeIsFree,
   whenOf,
 } from "./slots";
@@ -48,10 +48,15 @@ type Props = {
   checking: boolean;
   /** 이미 있는 예약을 고치는 중 (반복은 못 바꾼다) */
   editing: boolean;
-  /** 앞에서 쓰던 제목·참석자를 새 칸에 이어서 쓰는 중 */
+  /** 고치는 예약이 반복 예약의 한 회차인가 */
+  editingSeries: boolean;
+  /** 고치는 예약의 ID (참석자 일정 확인에서 자기 자신과는 겹치지 않게) */
+  editingId: number | null;
   /** 반복 예약 중 겹치는 날이 있을 때: 그날만 빼고 예약하기 */
   skipDates: string[] | null;
   onSkipConflicts: () => void;
+  /** 다른 탭·창에서 먼저 고쳐서 저장하지 못했을 때: 최신 내용 다시 불러오기 */
+  onReloadEdit: (() => void) | null;
 };
 
 /** 예약 폼이 다 채워졌나 (팝업 아래 "예약 확정" 버튼을 켜고 끈다) */
@@ -64,8 +69,11 @@ export const isReady = (draft: Draft) =>
  */
 export default function ReservationForm(props: Props) {
   const { formId, day, draft, onDraftChange, onDateChange, onSubmit, error, conflicts, checking } = props;
-  const { editing, skipDates, onSkipConflicts } = props;
+  const { editing, editingSeries, editingId, skipDates, onSkipConflicts, onReloadEdit } = props;
   const ids = useId();
+  const roomRef = useRef<HTMLSelectElement>(null);
+  const startRef = useRef<HTMLSelectElement>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
   const room = day.rooms.find((r) => r.id === draft.roomId) ?? null;
   const set = (patch: Partial<Draft>) => onDraftChange((d) => ({ ...d, ...patch }));
   const { slot, open_start: open, open_end: close } = day.policy;
@@ -86,7 +94,7 @@ export default function ReservationForm(props: Props) {
   const people = headcount(draft); // 실제로 회의에 들어가는 사람 (나도 참석하면 나까지)
   const overCapacity = room && people > room.capacity;
   const taken = room !== null && !timeIsFree(day, room, draft);
-  const alternatives = taken ? freeRoomsFor(day, draft).slice(0, 4) : [];
+  const alternatives = taken ? suggestRooms(day, draft, people).slice(0, 4) : [];
   const occurrences = occurrenceCount(day.date, draft.repeat, draft.repeatUntil);
   const timeChosen = room !== null && draft.start !== null && draft.end !== null;
 
@@ -147,10 +155,19 @@ export default function ReservationForm(props: Props) {
     return result;
   }
 
-  // 빠진 칸이 있어도 버튼을 막지 않고, 누르면 무엇이 빠졌는지 알려 준다 (화면이 판단)
+  // 빠진 칸이 있어도 버튼을 막지 않고, 누르면 무엇이 빠졌는지 알려 준다 (화면이 판단).
+  // 빠진 칸이 있으면 오류 문구와 같은 순서로 첫 칸에 포커스를 옮긴다
   function submit(event: FormEvent) {
     event.preventDefault();
     onSubmit();
+    const missing = !room
+      ? roomRef
+      : draft.start === null || draft.end === null
+        ? startRef
+        : !draft.title.trim()
+          ? titleRef
+          : null;
+    missing?.current?.focus();
   }
 
   return (
@@ -182,6 +199,7 @@ export default function ReservationForm(props: Props) {
           <label className={styles.field}>
             회의실
             <select
+              ref={roomRef}
               value={draft.roomId ?? ""}
               onChange={(event) => changeRoom(Number(event.target.value))}
               data-autofocus={!timeChosen || undefined}
@@ -204,6 +222,7 @@ export default function ReservationForm(props: Props) {
             <label className={styles.timeField}>
               <span className="visually-hidden">시작 시각</span>
               <select
+                ref={startRef}
                 value={draft.start ?? ""}
                 disabled={!room}
                 onChange={(event) => changeStart(Number(event.target.value))}
@@ -315,6 +334,7 @@ export default function ReservationForm(props: Props) {
               회의 제목 <span className={styles.required}>(필수)</span>
             </span>
             <input
+              ref={titleRef}
               value={draft.title}
               maxLength={200}
               placeholder="예: 주간 업무 점검"
@@ -324,7 +344,9 @@ export default function ReservationForm(props: Props) {
           </label>
 
           {editing ? (
-            <p className={styles.policy}>예약을 고치면 이 회차만 바뀌어요. 반복 설정은 바꿀 수 없어요.</p>
+            editingSeries && (
+              <p className={styles.policy}>반복 예약은 고치면 이 회차만 바뀌어요. 반복 설정은 바꿀 수 없어요.</p>
+            )
           ) : (
             <div className={styles.fieldRow}>
               <label className={styles.field}>
@@ -366,7 +388,7 @@ export default function ReservationForm(props: Props) {
             </div>
           )}
 
-          {multiDay && (
+          {multiDay && !editing && (
             <p id={`${ids}-repeat-note`} className={styles.policy}>
               여러 날에 걸친 예약은 반복할 수 없어요.
             </p>
@@ -409,6 +431,7 @@ export default function ReservationForm(props: Props) {
               meAttends={draft.meAttends}
               onMeAttendsChange={(meAttends) => set({ meAttends })}
               when={when}
+              exclude={editingId}
             />
           </div>
         </div>
@@ -420,6 +443,11 @@ export default function ReservationForm(props: Props) {
           {skipDates && skipDates.length > 0 && (
             <button type="button" className={styles.skipButton} onClick={onSkipConflicts}>
               겹치는 날 {skipDates.length}일 빼고 예약
+            </button>
+          )}
+          {onReloadEdit && (
+            <button type="button" className={styles.skipButton} onClick={onReloadEdit}>
+              최신 내용 불러오기
             </button>
           )}
         </div>

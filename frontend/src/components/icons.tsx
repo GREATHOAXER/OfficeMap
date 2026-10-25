@@ -322,3 +322,13 @@ export function OrgIcon(props: IconProps) {
     </Svg>
   );
 }
+
+/** 사업장 (건물) */
+export function BuildingIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="5" y="3" width="14" height="18" rx="1" />
+      <path d="M9 7h2M13 7h2M9 11h2M13 11h2M9 15h2M13 15h2M11 21v-3h2v3" />
+    </Svg>
+  );
+}

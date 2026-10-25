@@ -6,9 +6,10 @@ import type { PlanEditorData } from "@/lib/api";
 import { agoText, kstDate } from "@/lib/dates";
 import { MAX_SIZE, MIN_SIZE } from "@/lib/planGeometry";
 import { useNow } from "@/lib/useNow";
+import { adminExpiredUrl } from "@/lib/loginRedirect";
 import ui from "../seating/seating.module.css";
 import ImportWizard from "./ImportWizard";
-import { EXPIRED, Header, json, type ScreenProps } from "./shared";
+import { Header, json, type ScreenProps } from "./shared";
 import styles from "./plans.module.css";
 
 // 시작 화면 --------------------------------------------------------------------
@@ -22,7 +23,11 @@ export default function StartScreen({ admin, data, setData, reload, showToast, g
   const now = useNow();
   const pub = data.published;
   // 빈 도면의 크기 (m): 실제 사무실 크기를 넣으면 책상·회의실이 그 크기에 맞는 비율로 그려진다
-  const [blank, setBlank] = useState({ w: String(data.size.width_m), h: String(data.size.height_m) });
+  // 넣는 값은 사무실(바깥 벽) 크기. 도면은 벽 둘레로 1.5 m씩 여유를 두고 만든다 (처음 값은 지금 도면에서 여유를 뺀 크기)
+  const [blank, setBlank] = useState({
+    w: String(Math.max(MIN_SIZE, data.size.width_m - 3)),
+    h: String(Math.max(MIN_SIZE, data.size.height_m - 3)),
+  });
   const blankW = Number(blank.w);
   const blankH = Number(blank.h);
   const sizeOk = [blankW, blankH].every((v) => Number.isFinite(v) && v >= MIN_SIZE && v <= MAX_SIZE);
@@ -42,7 +47,7 @@ export default function StartScreen({ admin, data, setData, reload, showToast, g
         body: JSON.stringify(body),
       });
       if (res.status === 401) {
-        router.replace(EXPIRED);
+        router.replace(adminExpiredUrl());
         return;
       }
       const out = await res.json().catch(() => null);
@@ -69,7 +74,7 @@ export default function StartScreen({ admin, data, setData, reload, showToast, g
     <>
       <Header admin={admin} data={data} goFloor={goFloor} />
       <p className={ui.infoBar}>
-        {data.floor.name}에는 편집 중인 초안이 없어요. 어디서 시작할지 고르세요. 초안은 게시하기 전까지 직원 화면에
+        {data.floor.site.name} {data.floor.name}에는 편집 중인 초안이 없어요. 어디서 시작할지 고르세요. 초안은 게시하기 전까지 직원 화면에
         보이지 않고, 게시하면 좌석·회의실이 초안에 맞춰져요.
       </p>
       {notice && <p className={ui.notice}>{notice}</p>}
@@ -115,7 +120,8 @@ export default function StartScreen({ admin, data, setData, reload, showToast, g
           <section className={styles.startCard}>
             <h3>빈 도면</h3>
             <p>
-              바깥 벽만 있어요. 실제 사무실 크기를 넣으면 책상(기본 2.665 × 1.668 m)이 그 크기에 맞게 그려져요.
+              바깥 벽만 있어요. 실제 사무실(바깥 벽) 크기를 넣으면 벽이 그 크기로, 책상(기본 1.6 × 0.8 m)이 그에 맞는
+              비율로 그려져요. 도면은 벽 둘레로 1.5 m씩 여유를 둬요.
               {pub && " 게시하면 지금 좌석은 모두 없어지고, 앉은 사람은 게시할 때 새 자리를 고르거나 미배치가 돼요."}
             </p>
             <div className={styles.numbers}>
@@ -220,7 +226,7 @@ export default function StartScreen({ admin, data, setData, reload, showToast, g
             mode="start"
             data={data}
             onClose={() => setImporting(false)}
-            onExpired={() => router.replace(EXPIRED)}
+            onExpired={() => router.replace(adminExpiredUrl())}
             onCreated={(floors) => {
               const names = floors.map((f) => f.name).join(", ");
               const here = floors.some((f) => f.id === data.floor.id);

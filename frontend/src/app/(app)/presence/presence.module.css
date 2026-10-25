@@ -317,3 +317,14 @@
     font-size: 19px;
   }
 }
+
+/* 상태를 정하지 않은 사람: 빈 회색 원 (도면 범례와 같은 모양) */
+.noMark {
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid #8a8a85;
+  border-radius: 50%;
+  background: var(--surface);
+}

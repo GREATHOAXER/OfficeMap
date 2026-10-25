@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   type CSSProperties,
@@ -19,6 +19,7 @@ import { hasPlanRole } from "@/lib/admin";
 import type { Admin, SiteSummary, User } from "@/lib/api";
 import { SIDEBAR_COOKIE } from "@/lib/sidebar";
 import {
+  BuildingIcon,
   CalendarIcon,
   CheckIcon,
   ChecklistIcon,
@@ -45,9 +46,10 @@ import styles from "./AppShell.module.css";
 type MenuItem = { label: string; icon: ReactNode; href?: string; badge?: string };
 type MenuGroup = { title?: string; items: MenuItem[] };
 
-// href가 없는 메뉴는 아직 화면이 없어서 "준비 중" 표시를 붙인 버튼만 둔다
+// href가 없는 메뉴는 아직 화면이 없어서 "준비 중" 표시를 붙인 버튼만 둔다.
+// AI 도우미는 아직 준비 중이지만, 자리·재실 현황 오른쪽에 안내 패널을 연다 (머리글의 AI 도우미 단추와 같다)
 const MAIN_MENU: MenuItem[] = [
-  { label: "AI 도우미", icon: <SparkleIcon /> },
+  { label: "AI 도우미", icon: <SparkleIcon />, href: "/?ai=1", badge: "준비 중" },
   { label: "자리·재실 현황", icon: <GridIcon />, href: "/" },
   { label: "회의실 확인·예약", icon: <CalendarIcon />, href: "/rooms" },
   { label: "내 예약", icon: <ChecklistIcon />, href: "/reservations" },
@@ -219,7 +221,9 @@ export default function AppShell(props: Props) {
             <span>관리자 페이지</span>
           </p>
         ) : (
-          props.sites.length > 0 && <SiteSelect sites={props.sites} defaultSiteId={props.defaultSiteId} />
+          props.sites.length > 0 && (
+            <SiteSelect sites={props.sites} defaultSiteId={props.defaultSiteId} collapsed={collapsed} />
+          )
         )}
 
         {groups.map((group, i) => (
@@ -263,12 +267,22 @@ export default function AppShell(props: Props) {
   );
 }
 
-// 사업장 고르기. OS 기본 선택창 대신 서비스 모양에 맞춘 목록 (listbox 패턴: 방향키·Enter·Esc 지원)
-function SiteSelect({ sites, defaultSiteId }: { sites: SiteSummary[]; defaultSiteId: number | null }) {
+// 사업장 고르기. OS 기본 선택창 대신 서비스 모양에 맞춘 목록 (listbox 패턴: 방향키·Enter·Esc 지원).
+// 메뉴를 접으면 건물 아이콘만 남기고, 목록은 메뉴 밖(body)에 아이콘 오른쪽으로 띄운다 (접힌 메뉴는 넘치는 부분을 자른다)
+function SiteSelect({
+  sites,
+  defaultSiteId,
+  collapsed,
+}: {
+  sites: SiteSummary[];
+  defaultSiteId: number | null;
+  collapsed: boolean;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
   const [open, setOpen] = useState(false);
+  const [railPosition, setRailPosition] = useState<CSSProperties>({});
   const [active, setActive] = useState(0);
   const boxRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -290,7 +304,8 @@ function SiteSelect({ sites, defaultSiteId }: { sites: SiteSummary[]; defaultSit
   useEffect(() => {
     if (!open) return;
     function onPointerDown(event: PointerEvent) {
-      if (!boxRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!boxRef.current?.contains(target) && !listRef.current?.contains(target)) setOpen(false);
     }
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
@@ -298,6 +313,10 @@ function SiteSelect({ sites, defaultSiteId }: { sites: SiteSummary[]; defaultSit
 
   function openList() {
     setActive(Math.max(0, sites.indexOf(current)));
+    if (collapsed && buttonRef.current) {
+      const box = buttonRef.current.getBoundingClientRect();
+      setRailPosition({ position: "fixed", left: box.right + 8, top: box.top, right: "auto", width: 240 });
+    }
     setOpen(true);
   }
 
@@ -310,6 +329,9 @@ function SiteSelect({ sites, defaultSiteId }: { sites: SiteSummary[]; defaultSit
     close();
     if (site.id !== current.id) router.push(`${pathname}?site=${site.id}`); // 지금 화면 그대로 사업장만 바꾼다
   }
+
+  /** 접힌 메뉴에서는 목록을 메뉴 밖(body)에 띄운다 */
+  const portal = (node: ReactNode) => (collapsed ? createPortal(node, document.body) : node);
 
   function onButtonKeyDown(event: KeyboardEvent) {
     if (["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) {
@@ -351,13 +373,17 @@ function SiteSelect({ sites, defaultSiteId }: { sites: SiteSummary[]; defaultSit
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-labelledby="site-label site-button"
+        title={collapsed ? `사업장: ${current.name}` : undefined}
         onClick={() => (open ? setOpen(false) : openList())}
         onKeyDown={onButtonKeyDown}
       >
+        <span className={styles.siteIcon} aria-hidden="true">
+          <BuildingIcon size={20} />
+        </span>
         <span className={styles.siteName}>{current.name}</span>
         <ChevronDownIcon size={18} />
       </button>
-      {open && (
+      {open && portal(
         <ul
           ref={listRef}
           role="listbox"
@@ -365,6 +391,7 @@ function SiteSelect({ sites, defaultSiteId }: { sites: SiteSummary[]; defaultSit
           aria-labelledby="site-label"
           aria-activedescendant={`site-option-${sites[active].id}`}
           className={styles.siteList}
+          style={collapsed ? railPosition : undefined}
           onKeyDown={onListKeyDown}
         >
           {sites.map((site, i) => (
@@ -384,7 +411,7 @@ function SiteSelect({ sites, defaultSiteId }: { sites: SiteSummary[]; defaultSit
               <span className={styles.siteOptionMeta}>{site.floors.length}개 층</span>
             </li>
           ))}
-        </ul>
+        </ul>,
       )}
     </div>
   );
@@ -424,6 +451,7 @@ function MenuEntry({ item, active, collapsed }: { item: MenuItem; active: boolea
         title={collapsed ? item.label : undefined}
       >
         {body}
+        <NavPending />
       </Link>
     );
   }
@@ -438,6 +466,12 @@ function MenuEntry({ item, active, collapsed }: { item: MenuItem; active: boolea
       {body}
     </button>
   );
+}
+
+/** 메뉴를 누른 뒤 다음 화면이 뜨기 전까지 항목 아래에 움직이는 줄. 늘 자리를 차지하고 보이기만 바꿔서 메뉴가 들썩이지 않는다 */
+function NavPending() {
+  const { pending } = useLinkStatus();
+  return <span aria-hidden="true" className={styles.navPending} data-pending={pending || undefined} />;
 }
 
 function UserCard({ account: user }: { account: Account }) {

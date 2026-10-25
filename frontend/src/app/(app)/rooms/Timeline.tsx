@@ -21,9 +21,12 @@ type Props = {
 /** 표 안에서 방향키로 옮겨 다닐 칸: 행·시작 열·칸 수 */
 type NavCell = { el: HTMLElement; r: number; c: number; span: number };
 
+const EDGE_PX = 48; // 끄는 동안 손이 표의 왼쪽·오른쪽 끝에서 이만큼 안에 들어오면 표를 그쪽으로 민다
+
 /**
  * 예약 현황표. 회의실마다 한 줄, 칸 하나 = 30분. 빈 칸을 누르면 그 시간부터 1시간, 마우스로 끌면 끈 만큼 고른다.
- * 예약은 칸 여러 개를 이어 붙인 블록 하나로 그리고, 누르면 자세한 내용을 띄운다 (내 예약은 검정).
+ * 예약은 칸 여러 개를 이어 붙인 블록 하나로 그리고, 누르면 자세한 내용을 띄운다
+ * (내가 예약했거나 참석하는 회의는 검정. 글자로 "내 예약"과 "참석"을 구별한다).
  * 키보드: 표 전체가 Tab 한 번이고, 안에서는 방향키·Home·End로 옮긴다 (칸 수백 개를 Tab으로 지나가지 않게)
  */
 export default function Timeline({ day, rooms, draft, onPick, onPickRange, onOpenBooking }: Props) {
@@ -39,11 +42,13 @@ export default function Timeline({ day, rooms, draft, onPick, onPickRange, onOpe
   // 마우스로 끌어서 시간 고르기: 누른 칸(from)부터 지금 포인터가 있는 칸(to)까지, 같은 회의실 줄 안에서만
   const [drag, setDrag] = useState<{ room: RoomDay; from: number; to: number } | null>(null);
   const dragRef = useRef(drag);
+  const roomsRef = useRef(rooms);
   const suppressClick = useRef(false);
   const dragSel = drag ? dragRange(day, drag.room, drag.from, drag.to) : null;
 
   useEffect(() => {
     dragRef.current = drag;
+    roomsRef.current = rooms;
   });
 
   // 손을 떼면(표 밖에서 떼도) 고른 시간으로 예약 팝업을 연다. 한 칸에서 누르고 떼기만 했으면 그 칸부터 1시간. Esc는 그만두기
@@ -72,6 +77,51 @@ export default function Timeline({ day, rooms, draft, onPick, onPickRange, onOpe
       window.removeEventListener("keydown", onKey);
     };
   }, [dragging, day, onPick, onPickRange]);
+
+  // 끄는 동안 손이 표의 왼쪽·오른쪽 끝에 가면 표를 그쪽으로 밀어서, 지금 보이는 시간 밖까지 끌 수 있게 한다.
+  // 표가 손 밑에서 움직이면 칸의 pointerenter가 오지 않으므로, 민 다음 손 위치의 칸을 직접 찾아 끈 범위를 늘린다
+  useEffect(() => {
+    if (!dragging) return;
+    let pointerX = -1;
+    let frame = 0;
+    function track(event: PointerEvent) {
+      pointerX = event.clientX;
+    }
+    function tick() {
+      const el = scrollRef.current;
+      const d = dragRef.current;
+      if (el && d && pointerX >= 0) {
+        const rect = el.getBoundingClientRect();
+        const left = rect.left + (el.querySelector<HTMLElement>(`.${styles.ttCorner}`)?.offsetWidth ?? 0);
+        const speed =
+          pointerX > rect.right - EDGE_PX
+            ? Math.ceil((pointerX - (rect.right - EDGE_PX)) / 4)
+            : pointerX < left + EDGE_PX
+              ? -Math.ceil((left + EDGE_PX - pointerX) / 4)
+              : 0;
+        const before = el.scrollLeft;
+        if (speed) el.scrollLeft += speed;
+        if (el.scrollLeft !== before) {
+          const r = roomsRef.current.findIndex((x) => x.id === d.room.id);
+          const rowCell = gridRef.current?.querySelector<HTMLElement>(`[data-r="${r}"]`)?.getBoundingClientRect();
+          const x = Math.min(Math.max(pointerX, left + 1), rect.right - 1);
+          const target = rowCell && document.elementFromPoint(x, rowCell.top + rowCell.height / 2);
+          const cell = target instanceof Element ? target.closest<HTMLElement>("[data-c]") : null;
+          if (cell && Number(cell.dataset.r) === r) {
+            const s = open + (Number(cell.dataset.c) - 2) * slot;
+            if (s !== d.to) setDrag({ ...d, to: s });
+          }
+        }
+      }
+      frame = requestAnimationFrame(tick);
+    }
+    window.addEventListener("pointermove", track);
+    frame = requestAnimationFrame(tick);
+    return () => {
+      window.removeEventListener("pointermove", track);
+      cancelAnimationFrame(frame);
+    };
+  }, [dragging, open, slot]);
 
   // 표가 옆으로 넘치면 알려 주고, 오늘이면 지금 시각이 보이게 처음에 옆으로 밀어 둔다
   useEffect(() => {
@@ -261,14 +311,14 @@ export default function Timeline({ day, rooms, draft, onPick, onPickRange, onOpe
                     title={`${b.title} · ${b.department} ${b.organizer} · ${when}`}
                     aria-haspopup="dialog"
                     aria-label={`${room.name} ${when} ${b.title}, ${b.department} ${b.organizer}${
-                      b.mine ? ", 내 예약" : ""
+                      b.organized ? ", 내 예약" : b.mine ? ", 내가 참석하는 회의" : ""
                     }. 누르면 자세히`}
                     onClick={() => onOpenBooking(b.id)}
                   >
                     <strong>{b.title}</strong>
                     <span>
                       {days ? `${days}일 예약 · ` : ""}
-                      {b.mine ? "내 예약" : b.department}
+                      {b.organized ? "내 예약" : b.mine ? `참석 · ${b.department}` : b.department}
                     </span>
                   </button>
                 );

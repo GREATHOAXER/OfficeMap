@@ -39,8 +39,14 @@ type Props = {
 
 /** 팀 구역 추가 · 고치기 · 없애기 (층 관리자 이상). 좌석을 구역에 넣는 것은 배치 화면의 "팀 구역 지정" 도구로 한다 */
 export default function ZoneDialog(props: Props) {
-  const { state, floorId, floorName, zones, departments, statsOf, onClose, onDone, onExpired } = props;
+  const { state, floorId, floorName, zones, statsOf, onClose, onDone, onExpired } = props;
   const editing = state.mode === "edit" ? state.zone : null;
+  // 고르는 목록은 아래 부서가 없는 팀이다. 고치는 구역의 지금 부서가 목록에 없으면(아래 부서가 생겼거나 없어진 부서)
+  // 그 부서도 넣어 둔다: 안 그러면 "공용 (부서 없음)"으로 보이고, 그대로 저장하면 공용 구역이 된다
+  const departments =
+    editing?.department_id && editing.department && !props.departments.some((d) => d.id === editing.department_id)
+      ? [...props.departments, { id: editing.department_id, name: editing.department, parent: "지금 부서" }]
+      : props.departments;
   const others = zones.filter((z) => z.id !== editing?.id);
   const usedColors = new Set(others.map((z) => z.color_key));
   const [departmentId, setDepartmentId] = useState<string>(editing?.department_id ? String(editing.department_id) : "");

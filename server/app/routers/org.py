@@ -28,6 +28,7 @@ router = APIRouter(prefix="/api/admin", tags=["org"])
 SITE_KINDS = ("HQ", "CENTER")
 EMP_NO_RE = re.compile(r"^[0-9A-Za-z]{4,20}$")
 FLOOR_NAME_RE = re.compile(r"^[0-9A-Za-z가-힣 .\-]{1,20}$")
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def _is_company(admin: dict[str, Any]) -> bool:
@@ -77,6 +78,20 @@ def _clean(value: str | None) -> str | None:
     return value or None
 
 
+def _check_email(value: str | None) -> str | None:
+    value = _clean(value)
+    if value is not None and not EMAIL_RE.match(value):
+        raise ValueError("이메일 형식이 아니에요 (예: hong@kftc.or.kr)")
+    return value
+
+
+def _free_name(conn: Connection, table: str, row_id: int, name: str, limit: int) -> None:
+    """없앤(is_active = false) 사업장·층이 쥐고 있던 이름을 풀어 준다: 그 행 이름 뒤에 ~번호를 붙인다.
+    이름은 UNIQUE라 없앤 행이 이름을 계속 쥐면, 살아 있는 행을 그 이름으로 바꿀 수 없다"""
+    tail = f"~{row_id}"
+    conn.execute(f"UPDATE {table} SET name = %s WHERE id = %s", (name[: limit - len(tail)] + tail, row_id))
+
+
 # 사업장 ------------------------------------------------------------------------------------------
 
 
@@ -112,6 +127,24 @@ def _site_row(conn: Connection, site_id: int) -> dict[str, Any]:
 def create_site(body: SiteIn, admin: CurrentAdmin, request: Request) -> dict[str, Any]:
     _require_company(admin)
     with pool.connection() as conn:
+        same = conn.execute(
+            "SELECT id, is_active FROM sites WHERE lower(name) = lower(%s) FOR UPDATE", (body.name,)
+        ).fetchone()
+        if same and same["is_active"]:
+            raise HTTPException(status_code=409, detail={"code": "SITE_NAME_TAKEN"})
+        if same:
+            # 예전에 닫은 같은 이름의 사업장은 다시 연다 (층을 같은 이름으로 다시 만들 때와 같다). 맨 뒤에 둔다
+            site = conn.execute(
+                """
+                UPDATE sites SET kind = %s, name = %s, address = %s, is_active = true, updated_at = now(),
+                       sort_order = (SELECT coalesce(max(sort_order), 0) + 1 FROM sites)
+                WHERE id = %s
+                RETURNING id, kind, name, address
+                """,
+                (body.kind, body.name, body.address, same["id"]),
+            ).fetchone()
+            _audit(conn, admin, request, "SITE_REOPEN", "site", site["id"], after=site)
+            return {"site": site, "reopened": True}
         try:
             site = conn.execute(
                 """
@@ -132,6 +165,14 @@ def update_site(site_id: int, body: SiteIn, admin: CurrentAdmin, request: Reques
     _require_company(admin)
     with pool.connection() as conn:
         before = _site_row(conn, site_id)
+        same = conn.execute(
+            "SELECT id, is_active FROM sites WHERE lower(name) = lower(%s) AND id <> %s FOR UPDATE",
+            (body.name, site_id),
+        ).fetchone()
+        if same and same["is_active"]:
+            raise HTTPException(status_code=409, detail={"code": "SITE_NAME_TAKEN"})
+        if same:
+            _free_name(conn, "sites", same["id"], body.name, 100)
         try:
             site = conn.execute(
                 """
@@ -215,7 +256,7 @@ def create_floor(site_id: int, body: FloorIn, admin: CurrentAdmin, request: Requ
     with pool.connection() as conn:
         _site_row(conn, site_id)
         if conn.execute(
-            "SELECT 1 FROM floors WHERE site_id = %s AND name = %s AND is_active", (site_id, body.name)
+            "SELECT 1 FROM floors WHERE site_id = %s AND lower(name) = lower(%s) AND is_active", (site_id, body.name)
         ).fetchone():
             raise HTTPException(status_code=409, detail={"code": "FLOOR_NAME_TAKEN"})
         # 예전에 없앤 같은 이름의 층이 있으면 다시 살린다 (UNIQUE (site_id, name))
@@ -249,11 +290,15 @@ def update_floor(floor_id: int, body: FloorIn, admin: CurrentAdmin, request: Req
         before = _floor_row(conn, floor_id)
         if not _can_site(admin, before["site_id"]):
             raise HTTPException(status_code=403, detail={"code": "NOT_IN_SCOPE"})
-        if conn.execute(
-            "SELECT 1 FROM floors WHERE site_id = %s AND name = %s AND id <> %s",
+        same = conn.execute(
+            "SELECT id, is_active FROM floors WHERE site_id = %s AND lower(name) = lower(%s) AND id <> %s",
             (before["site_id"], body.name, floor_id),
-        ).fetchone():
+        ).fetchone()
+        if same and same["is_active"]:
             raise HTTPException(status_code=409, detail={"code": "FLOOR_NAME_TAKEN"})
+        if same:
+            # 없앤 층이 쥐고 있던 이름이면 풀어 주고 그 이름을 쓴다
+            _free_name(conn, "floors", same["id"], body.name, 20)
         floor = conn.execute(
             """
             UPDATE floors SET name = %s, description = %s, updated_at = now() WHERE id = %s
@@ -384,6 +429,21 @@ class DeptIn(BaseModel):
         return v
 
 
+def _check_dept_name(conn: Connection, name: str, dept_id: int | None = None) -> None:
+    """살아 있는 부서끼리 이름이 같으면 막는다 (대소문자·앞뒤 공백 무시).
+    구역·팀 이사 화면이 부서를 이름으로만 보여 주므로 같은 이름이 둘이면 고를 수 없다"""
+    same = conn.execute(
+        """
+        SELECT d.name, p.name AS parent FROM departments d LEFT JOIN departments p ON p.id = d.parent_id
+        WHERE d.is_active AND lower(d.name) = lower(%s) AND d.id IS DISTINCT FROM %s
+        LIMIT 1
+        """,
+        (name, dept_id),
+    ).fetchone()
+    if same:
+        raise HTTPException(status_code=409, detail={"code": "DEPT_NAME_TAKEN", "parent": same["parent"]})
+
+
 def _descendants(conn: Connection, dept_id: int) -> set[int]:
     rows = conn.execute(
         """
@@ -403,6 +463,7 @@ def create_department(body: DeptIn, admin: CurrentAdmin, request: Request) -> di
     with pool.connection() as conn:
         if body.parent_id is not None:
             _dept(conn, body.parent_id)
+        _check_dept_name(conn, body.name)
         code = (
             _clean(body.code)
             or conn.execute(
@@ -439,6 +500,7 @@ def update_department(dept_id: int, body: DeptIn, admin: CurrentAdmin, request: 
             _dept(conn, body.parent_id)
             if body.parent_id in _descendants(conn, dept_id):
                 raise HTTPException(status_code=422, detail={"code": "PARENT_CYCLE"})
+        _check_dept_name(conn, body.name, dept_id)
         code = _clean(body.code) or before["code"]
         try:
             dept = conn.execute(
@@ -552,10 +614,15 @@ class EmployeeIn(BaseModel):
             raise ValueError("이름을 넣어 주세요")
         return v
 
-    @field_validator("rank", "position", "email", "extension", "hired_on")
+    @field_validator("rank", "position", "extension", "hired_on")
     @classmethod
     def strip_optional(cls, v: str | None) -> str | None:
         return _clean(v)
+
+    @field_validator("email")
+    @classmethod
+    def check_email(cls, v: str | None) -> str | None:
+        return _check_email(v)
 
 
 def _temp_password() -> str:
@@ -619,6 +686,11 @@ class EmployeeUpdate(BaseModel):
     email: str | None = Field(default=None, max_length=100)
     extension: str | None = Field(default=None, max_length=20)
     status: Literal["ACTIVE", "LEAVE", "RETIRED"] | None = None
+
+    @field_validator("email")
+    @classmethod
+    def check_email(cls, v: str | None) -> str | None:
+        return _check_email(v)
 
 
 @router.put("/org/employees/{emp_no}")
@@ -699,7 +771,7 @@ def reset_password(emp_no: str, admin: CurrentAdmin, request: Request) -> dict[s
         )
         conn.execute(
             """
-            UPDATE user_sessions SET revoked_at = now()
+            UPDATE user_sessions SET revoked_at = now(), revoked_reason = 'PASSWORD_RESET'
             WHERE employee_id = %s AND kind = 'USER' AND revoked_at IS NULL
             """,
             (emp["id"],),

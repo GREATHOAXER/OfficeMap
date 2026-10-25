@@ -1,7 +1,7 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import AppShell from "@/components/AppShell";
-import { fetchMe, fetchSites, SESSION_COOKIE, type SiteSummary } from "@/lib/api";
+import { fetchLogoutReason, fetchMe, fetchSites, SESSION_COOKIE, type SiteSummary } from "@/lib/api";
 import { loginUrl } from "@/lib/loginRedirect";
 import { SIDEBAR_COOKIE } from "@/lib/sidebar";
 
@@ -11,12 +11,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const cookieHeader = headerList.get("cookie");
   const user = await fetchMe(cookieHeader);
   if (!user) {
-    // 로그인 쿠키가 남아 있는데 안 되면 오래 쓰지 않아 로그아웃된 것. 로그인 후 보던 화면으로 돌아오게 한다
-    const expired = (await cookies()).has(SESSION_COOKIE);
-    redirect(loginUrl("/login", headerList.get("x-pathname"), expired ? "expired" : null));
+    // 로그인 쿠키가 남아 있는데 안 되면 끊긴 것: 왜 끊겼는지(오래 쓰지 않음, 비밀번호 초기화 …) 알려 주고
+    // 로그인 후 보던 화면으로 돌아오게 한다
+    const ended = (await cookies()).has(SESSION_COOKIE);
+    const reason = ended ? ((await fetchLogoutReason(cookieHeader)) ?? "expired") : null;
+    redirect(loginUrl("/login", headerList.get("x-pathname"), reason));
   }
-  // 임시 비밀번호 상태면 새 비밀번호를 정하기 전에는 다른 화면에 못 간다
-  if (user.must_change_password) redirect("/password");
+  // 임시 비밀번호 상태면 새 비밀번호를 정하기 전에는 다른 화면에 못 간다. 정하고 나면 가려던 화면으로
+  if (user.must_change_password) {
+    const back = headerList.get("x-pathname");
+    redirect(back && back !== "/" ? `/password?next=${encodeURIComponent(back)}` : "/password");
+  }
 
   let sites: SiteSummary[] = [];
   let myFloorId: number | null = null;

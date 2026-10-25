@@ -3,10 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Admin, PlanEditorData } from "@/lib/api";
+import { adminExpiredUrl } from "@/lib/loginRedirect";
 import ui from "../seating/seating.module.css";
 import DraftEditor from "./DraftEditor";
 import ScheduledView from "./ScheduledView";
-import { EXPIRED } from "./shared";
 import StartScreen from "./StartScreen";
 
 type Toast = { text: string; tone?: "error" } | null;
@@ -30,7 +30,7 @@ export default function PlanEditor({ admin, initial, notice }: Props) {
   const reload = useCallback(async (): Promise<PlanEditorData | null> => {
     const res = await fetch(`/api/admin/floors/${floorId}/plan`, { cache: "no-store" }).catch(() => null);
     if (res?.status === 401) {
-      router.replace(EXPIRED);
+      router.replace(adminExpiredUrl());
       return null;
     }
     if (!res?.ok) return null;
@@ -42,7 +42,7 @@ export default function PlanEditor({ admin, initial, notice }: Props) {
   const goFloor = useCallback((id: number) => router.push(`/admin/plans?floor=${id}`), [router]);
 
   return (
-    <div className={ui.page}>
+    <main className={ui.page}>
       {data.draft?.status === "SCHEDULED" ? (
         <ScheduledView
           key={`scheduled-${data.draft.id}`}
@@ -81,6 +81,6 @@ export default function PlanEditor({ admin, initial, notice }: Props) {
           {toast.text}
         </div>
       )}
-    </div>
+    </main>
   );
 }

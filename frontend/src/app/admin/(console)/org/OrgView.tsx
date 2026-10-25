@@ -4,11 +4,12 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Dialog from "@/components/Dialog";
 import type { Admin, OrgDepartment, OrgMember } from "@/lib/api";
+import { adminExpiredUrl } from "@/lib/loginRedirect";
 import ui from "../seating/seating.module.css";
+import { validationText } from "../validation";
 import styles from "./org.module.css";
 
 const json = { "content-type": "application/json" };
-const EXPIRED = "/admin/login?reason=expired&next=/admin/org";
 
 type Org = { departments: OrgDepartment[]; can_edit: boolean };
 type Person = { emp_no: string; name: string; rank: string | null; department_id: number; department: string };
@@ -24,10 +25,16 @@ type Open =
   | null;
 
 /** API 오류 코드 → 글 */
-function errorText(code: string | undefined, detail: Record<string, number> | undefined): string {
+function errorText(code: string | undefined, detail: Record<string, unknown> | undefined): string {
   switch (code) {
     case "DEPT_NOT_EMPTY":
       return `사람 ${detail?.members ?? 0}명 · 아래 부서 ${detail?.children ?? 0}개가 남아 있어요. 먼저 옮기거나 없애세요`;
+    case "DEPT_NAME_TAKEN":
+      return `같은 이름의 부서가 이미 있어요${detail?.parent ? ` (${detail.parent} 아래)` : ""} · 다른 이름을 쓰세요`;
+    case "NAME_REQUIRED":
+      return "이름을 넣어 주세요";
+    case "DEPARTMENT_REQUIRED":
+      return "부서를 고르세요";
     case "PARENT_CYCLE":
       return "자기 아래 부서 밑으로는 옮길 수 없어요";
     case "DEPT_CODE_TAKEN":
@@ -41,7 +48,7 @@ function errorText(code: string | undefined, detail: Record<string, number> | un
     case "EMPLOYEE_NOT_FOUND":
       return "그 직원을 찾지 못했어요 (그새 바뀌었을 수 있어요)";
     default:
-      return "저장하지 못했어요. 입력을 확인하고 다시 해 보세요";
+      return validationText(detail) ?? "저장하지 못했어요. 입력을 확인하고 다시 해 보세요";
   }
 }
 
@@ -65,7 +72,10 @@ function treeOf(departments: OrgDepartment[]) {
     const d = byId.get(id);
     return d ? [...(d.parent_id !== null ? path(d.parent_id) : []), d.name] : [];
   };
-  return { children, order, byId, path };
+  // 아래 부서까지 합친 사람 수 (본부는 바로 속한 사람이 없어 0명으로 보이지 않게)
+  const total = (id: number): number =>
+    (byId.get(id)?.members ?? 0) + (children.get(id) ?? []).reduce((n, c) => n + total(c.id), 0);
+  return { children, order, byId, path, total };
 }
 
 export default function OrgView({
@@ -87,6 +97,8 @@ export default function OrgView({
   const [members, setMembers] = useState<OrgMember[] | null>(null);
   const [folded, setFolded] = useState<Set<number>>(new Set());
   const [open, setOpen] = useState<Open>(null);
+  // 임시 비밀번호 창을 Esc·바깥 누르기로 닫으면 다시 띄운다 (새로 그리려고 key를 바꾼다)
+  const [passwordKey, setPasswordKey] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const dept = selected !== null ? (tree.byId.get(selected) ?? null) : null;
@@ -109,7 +121,7 @@ export default function OrgView({
         cache: "no-store",
       });
       if (res.status === 401) {
-        router.replace(EXPIRED);
+        router.replace(adminExpiredUrl());
         throw new Error("로그인이 끝났어요");
       }
       const out = res.status === 204 ? null : await res.json().catch(() => null);
@@ -137,11 +149,13 @@ export default function OrgView({
       .then((res) => (res.ok ? (res.json() as Promise<{ members: OrgMember[] }>) : null))
       .then((out) => alive && setMembers(out?.members ?? []))
       .catch(() => alive && setMembers([]));
-    router.replace(`/admin/org?dept=${selected}`, { scroll: false });
+    // 주소만 바꾼다 (router로 바꾸면 서버가 조직도 전체를 다시 그려 보낸다)
+    const url = `/admin/org?dept=${selected}`;
+    if (window.location.pathname + window.location.search !== url) window.history.replaceState(null, "", url);
     return () => {
       alive = false;
     };
-  }, [selected, router]);
+  }, [selected]);
 
   async function after(text: string, deptId?: number | null) {
     await reloadOrg();
@@ -175,7 +189,7 @@ export default function OrgView({
   };
 
   return (
-    <div className={ui.page}>
+    <main className={ui.page}>
       <header className={ui.header}>
         <div className={ui.titleRow}>
           <h1 className={ui.title}>조직도</h1>
@@ -262,7 +276,12 @@ export default function OrgView({
                       >
                         {d.name}
                         {!d.is_active && <span className={styles.badge}>없앰</span>}
-                        <span className={styles.count}>{d.members}</span>
+                        <span
+                          className={styles.count}
+                          title={tree.children.has(d.id) ? `아래 부서 포함 · 바로 속한 사람 ${d.members}명` : undefined}
+                        >
+                          {tree.total(d.id)}
+                        </span>
                       </button>
                     </div>
                   </li>
@@ -285,6 +304,7 @@ export default function OrgView({
                   </h2>
                   <p className={ui.hint}>
                     {dept.members}명
+                    {tree.children.has(dept.id) && ` · 아래 부서 포함 ${tree.total(dept.id)}명`}
                     {dept.zones.length > 0 && ` · 팀 구역 ${dept.zones.map((z) => `${z.floor} ${z.code}`).join(", ")}`}
                   </p>
                 </div>
@@ -365,7 +385,11 @@ export default function OrgView({
                           </td>
                           <td className="mono">{m.emp_no}</td>
                           <td>
-                            {m.seat_code ? `${m.floor_name} ${m.seat_code}` : <span className={ui.muted}>없음</span>}
+                            {m.seat_code ? (
+                              `${m.site_name ?? ""} ${m.floor_name} ${m.seat_code}`.trim()
+                            ) : (
+                              <span className={ui.muted}>없음</span>
+                            )}
                           </td>
                           <td className="mono">{m.extension ?? "—"}</td>
                           <td className={styles.rowActions}>
@@ -418,7 +442,10 @@ export default function OrgView({
           deptSelect={deptSelect}
           call={call}
           onDone={(name, password, deptId) => {
-            void after(`${name} 님을 등록했어요`, deptId).then(() => setOpen({ kind: "password", name, password }));
+            void after(`${name} 님을 등록했어요`, deptId).then(() => {
+              setPasswordKey(0);
+              setOpen({ kind: "password", name, password });
+            });
           }}
           onClose={() => setOpen(null)}
         />
@@ -432,18 +459,22 @@ export default function OrgView({
           myEmpNo={admin.emp_no}
           call={call}
           onDone={(text) => void after(text)}
-          onPassword={(password) => setOpen({ kind: "password", name: open.member.name, password })}
+          onPassword={(password) => {
+            setPasswordKey(0);
+            setOpen({ kind: "password", name: open.member.name, password });
+          }}
           onClose={() => setOpen(null)}
         />
       )}
       {open?.kind === "password" && (
         <Dialog
+          key={passwordKey}
           open
-          onClose={() => setOpen(null)}
+          onClose={() => setPasswordKey((k) => k + 1)}
           title="임시 비밀번호"
           footer={
             <button type="button" className={`${ui.btn} ${ui.pri}`} onClick={() => setOpen(null)}>
-              확인
+              적어 두었어요
             </button>
           }
         >
@@ -462,6 +493,11 @@ export default function OrgView({
               </button>
             </p>
             <p className={ui.hint}>첫 로그인 때 새 비밀번호를 정하게 돼요. 메신저·메일로 본인에게만 전해 주세요.</p>
+            {passwordKey > 0 && (
+              <p className={styles.warn} role="status">
+                잘못 닫지 않도록 이 창은 &ldquo;적어 두었어요&rdquo;를 눌러야 닫혀요.
+              </p>
+            )}
           </div>
         </Dialog>
       )}
@@ -470,7 +506,7 @@ export default function OrgView({
           {toast}
         </div>
       )}
-    </div>
+    </main>
   );
 }
 
@@ -915,6 +951,7 @@ function PersonDialog({
   const [dept, setDept] = useState<number | null>(deptId);
   const [status, setStatus] = useState<"ACTIVE" | "LEAVE">(member.status);
   const [retiring, setRetiring] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const { busy, error, run } = useBusy();
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm({ ...form, [k]: e.target.value });
@@ -1011,7 +1048,7 @@ function PersonDialog({
         {deptSelect(dept, setDept, "부서 (옮기면 고정석 배정이 끝나요)")}
         {moved && member.seat_code && (
           <p className={styles.warn}>
-            지금 자리 {member.floor_name} {member.seat_code}의 고정석 배정이 끝나고, {deptName(dept!)}의 미배치 인원이
+            지금 자리 {member.site_name} {member.floor_name} {member.seat_code}의 고정석 배정이 끝나고, {deptName(dept!)}의 미배치 인원이
             돼요.
           </p>
         )}
@@ -1026,11 +1063,21 @@ function PersonDialog({
           </label>
         </fieldset>
         <p className={ui.hint}>
-          <button type="button" className={ui.linkButton} disabled={busy} onClick={() => void resetPassword()}>
-            직원 화면 비밀번호 초기화
+          <button
+            type="button"
+            className={ui.linkButton}
+            disabled={busy}
+            onClick={() => (resetting ? void resetPassword() : setResetting(true))}
+          >
+            {resetting ? "정말 비밀번호 초기화" : "직원 화면 비밀번호 초기화"}
           </button>{" "}
           (잠금도 풀리고, 임시 비밀번호가 한 번 보여요)
         </p>
+        {resetting && (
+          <p className={styles.warn}>
+            지금 비밀번호로는 더 로그인할 수 없고, 로그인해 있던 직원 화면도 끝나요. 한 번 더 누르면 초기화해요.
+          </p>
+        )}
         {retiring && (
           <p className={styles.warn}>
             퇴사 처리하면 자리 배정이 끝나고, 로그인·관리자 권한이 모두 막혀요. 되돌리려면 새로 등록해야 해요.

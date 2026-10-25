@@ -20,7 +20,8 @@ type Props = {
   onExpired: () => void;
 };
 
-const mb = (bytes: number) => `${(bytes / 1_000_000).toFixed(1)}MB`;
+const mb = (bytes: number) =>
+  bytes < 1_000_000 ? `${Math.max(1, Math.round(bytes / 1000))}KB` : `${(bytes / 1_000_000).toFixed(1)}MB`;
 
 /** 밑그림 자리·크기·진하기 고치기, 다른 파일로 바꾸기, 지우기 */
 export default function BackgroundDialog({
@@ -169,6 +170,11 @@ export default function BackgroundDialog({
             />
           </label>
         </div>
+        {!ok && (
+          <p className={ui.conflictText} role="alert">
+            왼쪽·위는 숫자로, 폭·높이는 0.5~{MAX_SIZE * 2} m 사이로 넣어 주세요
+          </p>
+        )}
         <label className={ui.check}>
           <input
             type="checkbox"

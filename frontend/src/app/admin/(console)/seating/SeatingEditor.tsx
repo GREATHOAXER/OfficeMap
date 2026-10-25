@@ -19,11 +19,14 @@ import type {
   SeatingZone,
   UnassignedPerson,
 } from "@/lib/api";
+import { type Columns, columnsFor } from "@/lib/columns";
 import { addDays, kstDate, shortDate } from "@/lib/dates";
+import { placeOf } from "../place";
 import { openEventStream } from "@/lib/eventStream";
 import { drawingFromSeating } from "@/lib/floorDrawing";
 import { useNow } from "@/lib/useNow";
 import { autoRects, zoneRects } from "@/lib/zoneShape";
+import { adminExpiredUrl } from "@/lib/loginRedirect";
 import {
   baseMode,
   baseOccupant,
@@ -66,7 +69,6 @@ const ZOOM_STEPS = [0.75, 1, 1.25, 1.5, 2];
 const SAVE_DELAY_MS = 800; // 마지막으로 바꾸고 이만큼 쉬면 자동 저장
 const HISTORY_MAX = 50;
 const MAX_SCHEDULE_DAYS = 365;
-const EXPIRED = "/admin/login?reason=expired&next=/admin/seating";
 // 화면 폭(왼쪽 메뉴를 뺀 본문)에 따라 단 수를 정한다. 세 단: 도구·미배치 | 도면 | 좌석·변경,
 // 두 단: 도면 | 좌석·미배치·변경·도구 (미배치 인원이 도면 옆에 오게), 한 단: 위에서 아래로
 const THREE_COLUMNS_PX = 1240;
@@ -97,8 +99,13 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
 
   const [draft, setDraft] = useState<SeatDraft>(() => draftFromChangeSet(initial.draft, initial.seats));
   const [history, setHistory] = useState<SeatDraft[]>([]);
+  const [future, setFuture] = useState<SeatDraft[]>([]); // 되돌린 것 (다시 하기)
   const [draftId, setDraftId] = useState<number | null>(initial.draft?.id ?? null);
+  // 저장 직후(같은 클릭 안에서) 읽을 최신 초안 번호. 상태(draftId)는 다음 렌더에야 바뀐다
+  const draftIdRef = useRef(draftId);
   const [effective, setEffective] = useState<Effective>(() => effectiveOf(initial.draft));
+  // 날짜 칸에 직접 친 날짜가 고를 수 있는 범위(내일 ~ 1년)를 벗어났을 때 알리는 글
+  const [dateNote, setDateNote] = useState<string | null>(null);
   const [note, setNote] = useState(initial.draft?.note ?? "");
   const [save, setSave] = useState<SaveState>({ state: initial.draft ? "saved" : "clean" });
   const [serverConflicts, setServerConflicts] = useState<Map<number, string>>(() => new Map());
@@ -127,7 +134,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
   const pageRef = useRef<HTMLDivElement>(null);
-  const [cols, setCols] = useState<1 | 2 | 3>(2);
+  const [cols, setCols] = useState<Columns>(2);
   const wide = cols === 3;
 
   useEffect(() => {
@@ -135,7 +142,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
     if (!el) return;
     const observer = new ResizeObserver(([entry]) => {
       const width = entry.contentRect.width;
-      setCols(width >= THREE_COLUMNS_PX ? 3 : width >= TWO_COLUMNS_PX ? 2 : 1);
+      setCols((prev) => columnsFor(width, prev, THREE_COLUMNS_PX, TWO_COLUMNS_PX));
     });
     observer.observe(el);
     return () => observer.disconnect();
@@ -269,7 +276,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
           }),
         });
         if (res.status === 401) {
-          router.replace(EXPIRED);
+          router.replace(adminExpiredUrl());
           return false;
         }
         if (!res.ok) {
@@ -279,7 +286,8 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
           return false;
         }
         const out = await res.json();
-        setDraftId(out.draft?.id ?? null);
+        draftIdRef.current = out.draft?.id ?? null;
+        setDraftId(draftIdRef.current);
         setSave({ state: out.draft ? "saved" : "clean" });
         return true;
       } catch {
@@ -315,6 +323,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
   function commit(next: SeatDraft) {
     if (next === draft) return;
     setHistory((h) => [...h.slice(-(HISTORY_MAX - 1)), draft]);
+    setFuture([]);
     setDraft(next);
     setServerConflicts(new Map());
     // 유형·구역 변경이 생기면 날짜 지정을 쓸 수 없다
@@ -328,17 +337,52 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
     const prev = history.at(-1);
     if (!prev) return;
     setHistory((h) => h.slice(0, -1));
+    setFuture((f) => [...f, draft]);
     setDraft(prev);
     setServerConflicts(new Map());
     markDirty();
     showToast("방금 바꾼 것을 되돌렸어요");
   }
 
+  function redo() {
+    const next = future.at(-1);
+    if (!next) return;
+    setFuture((f) => f.slice(0, -1));
+    setHistory((h) => [...h.slice(-(HISTORY_MAX - 1)), draft]);
+    setDraft(next);
+    setServerConflicts(new Map());
+    markDirty();
+    showToast("되돌린 것을 다시 했어요");
+  }
+
+  // 키보드: Ctrl(⌘)+Z 되돌리기, Ctrl(⌘)+Shift+Z·Ctrl+Y 다시 하기 (도면 편집과 같다). 되돌리기 단추를 쓸 수 있을 때만
+  const keysRef = useRef({ undo, redo, on: false });
+  useEffect(() => {
+    keysRef.current = { undo, redo, on: !review && !pending && !preview };
+  });
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey) || (event.target as Element).closest("input, textarea, select, dialog")) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      const keys = keysRef.current;
+      if (!keys.on || (key !== "z" && key !== "y")) return;
+      event.preventDefault();
+      if (key === "z" && !event.shiftKey) keys.undo();
+      else keys.redo();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   // 서버에서 다시 읽기 --------------------------------------------------------
   const resetFrom = useCallback((next: SeatingData) => {
     setDraft(draftFromChangeSet(next.draft, next.seats));
     setHistory([]);
-    setDraftId(next.draft?.id ?? null);
+    setFuture([]);
+    draftIdRef.current = next.draft?.id ?? null;
+    setDraftId(draftIdRef.current);
     setEffective(effectiveOf(next.draft));
     setNote(next.draft?.note ?? "");
     dirtyRef.current = false;
@@ -352,7 +396,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
     async (reset: boolean) => {
       const res = await fetch(`/api/admin/floors/${floorId}/seating`, { cache: "no-store" });
       if (res.status === 401) {
-        router.replace(EXPIRED);
+        router.replace(adminExpiredUrl());
         return;
       }
       if (!res.ok) return;
@@ -405,7 +449,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
       onRejected: async () => {
         const res = await fetch("/api/admin/auth/session").catch(() => null);
         if (res?.status === 401) {
-          router.replace(EXPIRED);
+          router.replace(adminExpiredUrl());
           return false;
         }
         return true;
@@ -579,6 +623,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
     }
     return map;
   }, [data.seats]);
+  const siteName = data.floor.site.name;
   const panel = useMemo(() => {
     const out: (Person & { tag: string })[] = [];
     const seen = new Set<string>();
@@ -589,9 +634,9 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
     };
     for (const p of data.unassigned) push(people.get(p.emp_no), people.get(p.emp_no)?.note ?? "");
     for (const [emp, code] of baseSeatCode) push(people.get(emp), `${code}에서 뺌`);
-    for (const p of staged) push(people.get(p.emp_no), p.seat ? `지금 ${p.seat.floor} ${p.seat.code}` : "자리 없음");
+    for (const p of staged) push(people.get(p.emp_no), p.seat ? `지금 ${placeOf(p.seat, siteName)}` : "자리 없음");
     return out;
-  }, [data.unassigned, people, baseSeatCode, staged, layout]);
+  }, [data.unassigned, people, baseSeatCode, staged, layout, siteName]);
 
   function onPanelDrop() {
     const emp = dragging;
@@ -621,7 +666,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
       headers: body === undefined ? undefined : json,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-    if (res.status === 401) router.replace(EXPIRED);
+    if (res.status === 401) router.replace(adminExpiredUrl());
     return { ok: res.ok, status: res.status, data: await res.json().catch(() => null) };
   }
 
@@ -633,7 +678,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
 
   async function applyNow() {
     if (changeCount === 0) {
-      showToast("바꾼 것이 없어요. 사람을 끌어 자리에 놓아 보세요", "error");
+      showToast("바꾼 것이 없어요. 사람을 자리에 놓아 보세요", "error");
       return;
     }
     if (conflicts.size > 0) {
@@ -642,12 +687,15 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
     }
     setBusy(true);
     try {
-      if (!(await flush()) || !draftId) {
+      // 첫 변경 직후에 누르면 자동 저장이 아직이라 flush가 초안을 처음 만든다: 그 번호는 ref로 읽는다
+      const saved = await flush();
+      const id = draftIdRef.current;
+      if (!saved || !id) {
         showToast("저장하지 못해서 반영하지 않았어요. 다시 시도하세요", "error");
         return;
       }
       const verb = needsApproval ? "submit" : "apply";
-      const res = await post(`/api/admin/change-sets/${draftId}/${verb}`);
+      const res = await post(`/api/admin/change-sets/${id}/${verb}`);
       if (res.ok && verb === "submit") {
         showToast(`승인을 요청했어요 · 층 관리자가 승인하면 반영돼요`);
         await reload(true);
@@ -707,7 +755,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
   async function openReview(row: ChangeRequestRow) {
     const res = await fetch(`/api/admin/change-sets/${row.id}`, { cache: "no-store" });
     if (res.status === 401) {
-      router.replace(EXPIRED);
+      router.replace(adminExpiredUrl());
       return;
     }
     if (!res.ok) {
@@ -1104,7 +1152,12 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
           })}
         </ul>
       )}
-      {!readOnly && <PeopleSearch floorId={floorId} zoneOnly={perms.mode === "ZONE"} onPick={addStaged} />}
+      {!readOnly && <PeopleSearch
+          floorId={floorId}
+          siteName={data.floor.site.name}
+          zoneOnly={perms.mode === "ZONE"}
+          onPick={addStaged}
+        />}
       <p className={styles.hint}>
         {perms.mode === "ZONE"
           ? "조직도 기준 우리 팀 인원만 보여요."
@@ -1133,6 +1186,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
       zoneName={zoneName(layout.zoneOf(selectedSeat))}
       editable={editable(selectedSeat)}
       zoneId={layout.zoneOf(selectedSeat)}
+      teamZone={data.zones.find((z) => z.id === layout.zoneOf(selectedSeat))?.department_id != null}
       zoneChoices={
         perms.mode === "FLOOR"
           ? [
@@ -1235,13 +1289,33 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
                 max={addDays(todayKst(), MAX_SCHEDULE_DAYS)}
                 disabled={hasTypes}
                 aria-label="반영할 날짜"
+                // 날짜 칸에 들어가면 "날짜 지정"을 고른 것 (보이는 날짜 그대로 쓰려는 사람도 있다)
+                onFocus={() => {
+                  if (effective.on) return;
+                  setEffective((e) => ({ ...e, on: true }));
+                  markDirty();
+                }}
                 onChange={(event) => {
-                  if (!event.target.value) return;
-                  setEffective({ on: true, date: event.target.value });
+                  const date = event.target.value;
+                  if (!date) return;
+                  // 달력은 범위 밖을 막지만, 직접 치면 지난 날짜도 들어온다: 받지 않고 알린다
+                  const first = addDays(todayKst(), 1);
+                  const last = addDays(todayKst(), MAX_SCHEDULE_DAYS);
+                  if (date < first || date > last) {
+                    setDateNote(`${shortDate(`${first}T00:00:00+09:00`)}부터 1년 안의 날짜만 고를 수 있어요`);
+                    return;
+                  }
+                  setDateNote(null);
+                  setEffective({ on: true, date });
                   markDirty();
                 }}
               />
             </label>
+            {dateNote && (
+              <p className={styles.conflictText} role="alert">
+                {dateNote}
+              </p>
+            )}
             <p className={styles.hint}>
               {hasTypes
                 ? "좌석 유형·구역 변경이 있으면 날짜를 정할 수 없어요 (바로 바뀌어요)."
@@ -1304,9 +1378,26 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
         </div>
         <div className={styles.headerActions}>
           {!review && !pending && (
-            <button type="button" className={styles.btn} onClick={undo} disabled={history.length === 0 || preview}>
-              되돌리기
-            </button>
+            <>
+              <button
+                type="button"
+                className={styles.btn}
+                title="Ctrl(⌘)+Z"
+                onClick={undo}
+                disabled={history.length === 0 || preview}
+              >
+                되돌리기
+              </button>
+              <button
+                type="button"
+                className={styles.btn}
+                title="Ctrl(⌘)+Shift+Z · Ctrl+Y"
+                onClick={redo}
+                disabled={future.length === 0 || preview}
+              >
+                다시 하기
+              </button>
+            </>
           )}
           {!review && (
             <button type="button" className={styles.btn} aria-pressed={preview} onClick={() => setPreview((p) => !p)}>
@@ -1347,7 +1438,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
                 ? "반영하기를 누르면 바로 직원 화면에 보여요."
                 : "바꾼 내용은 층 관리자가 승인하면 반영돼요."
             }`
-          : "사람을 끌어 자리에 놓고(사람 위에 놓으면 자리 교환), 모아서 한 번에 반영해요. 반영하기 전에는 직원 화면에 보이지 않아요."}
+          : "사람을 자리에 끌어 놓고(휴대폰은 사람을 누른 뒤 자리를 누르기 · 사람 위에 놓으면 자리 교환), 모아서 한 번에 반영해요. 반영하기 전에는 직원 화면에 보이지 않아요."}
       </p>
       {notice && <p className={styles.notice}>{notice}</p>}
       {data.plan_scheduled && (
@@ -1538,7 +1629,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
         <FloorExportDialog
           drawing={exportDrawing}
           title={`${data.floor.site.name} ${data.floor.name} 좌석 배치도`}
-          fileBase={`${data.floor.name}-좌석배치`}
+          fileBase={`${data.floor.site.name}-${data.floor.name}-좌석배치`}
           onClose={() => setExporting(false)}
         />
       )}
@@ -1552,7 +1643,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
           departments={data.departments}
           statsOf={zoneStats}
           onClose={() => setZoneDialog(null)}
-          onExpired={() => router.replace(EXPIRED)}
+          onExpired={() => router.replace(adminExpiredUrl())}
           onDone={async ({ message, zoneId }) => {
             setZoneDialog(null);
             showToast(message);
@@ -1658,6 +1749,8 @@ type DetailsProps = {
   zoneName: string;
   editable: boolean;
   zoneId: number | null;
+  /** 팀 구역 안의 자리 (아니면 자율석은 "팀 내"가 아니라 누구나 쓰는 자율석) */
+  teamZone: boolean;
   /** 층 관리자 이상: 이 좌석의 구역 고르기 */
   zoneChoices: { id: number | null; label: string }[] | null;
   onZone: (zoneId: number | null) => void;
@@ -1764,7 +1857,7 @@ function SeatDetails(props: DetailsProps) {
               disabled={scheduled && m !== baseMode(seat)}
               onChange={() => props.onMode(m)}
             />
-            {MODE_LABEL[m]}
+            {m === "FLEX" && !props.teamZone ? "자율석 (누구나)" : MODE_LABEL[m]}
             {m === "OUT_OF_SERVICE" && " (고장·수리)"}
           </label>
         ))}
@@ -2024,10 +2117,13 @@ function ReviewPanel({
 
 function PeopleSearch({
   floorId,
+  siteName,
   zoneOnly,
   onPick,
 }: {
   floorId: number;
+  /** 이 층의 사업장 (다른 사업장 자리면 사업장 이름을 붙인다) */
+  siteName: string;
   zoneOnly: boolean;
   onPick: (hit: SeatingSearchHit) => void;
 }) {
@@ -2083,7 +2179,7 @@ function PeopleSearch({
               >
                 <strong>{h.name}</strong> {h.rank}
                 <span>
-                  {h.department} · {h.seat ? `${h.seat.floor} ${h.seat.code}` : "자리 없음"}
+                  {h.department} · {h.seat ? placeOf(h.seat, siteName) : "자리 없음"}
                   {h.locked && " · 변경 예정"}
                 </span>
               </button>

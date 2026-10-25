@@ -326,7 +326,9 @@ export default function PublishDialog({
                     onChange={(e) => setPeople({ ...people, [p.emp_no]: e.target.value })}
                   >
                     <option value={UNASSIGNED}>미배치로 두기</option>
-                    {check.seat_targets
+                    {/* 좌석 번호 순 (A-2가 A-10보다 앞) */}
+                    {[...check.seat_targets]
+                      .sort((a, b) => a.code.localeCompare(b.code, "ko", { numeric: true }))
                       .filter((t) => !chosen.has(t.key) || chosen.get(t.key) === p.emp_no)
                       .map((t) => (
                         <option key={t.key} value={t.key}>
@@ -433,6 +435,8 @@ export default function PublishDialog({
               min={addDays(todayKst(), 1)}
               max={addDays(todayKst(), MAX_SCHEDULE_DAYS)}
               onChange={(e) => setWhen({ later: true, date: e.target.value })}
+              // 날짜 칸에 들어가면 "날짜 지정"을 고른 것 (보이는 날짜 그대로 쓰려는 사람도 있다)
+              onFocus={() => !when.later && setWhen({ ...when, later: true })}
             />
             <span className={ui.muted}>그날 0시</span>
           </label>

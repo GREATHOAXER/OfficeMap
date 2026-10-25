@@ -395,6 +395,23 @@
   gap: 6px;
 }
 
+/* 표가 화면보다 넓으면(1024px 등) 오른쪽 끝 작업 단추가 밀려나 표 안에서 옆으로 밀어야 보였다.
+   층 칸처럼 작업 칸도 오른쪽에 붙여 둔다 (휴대폰 카드 모양에서는 쓰지 않는다) */
+@media (min-width: 721px) {
+  .tableScroll .table td.actions,
+  .tableScroll .table thead th:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 1;
+    background: var(--surface);
+    box-shadow: inset 1px 0 0 var(--divider);
+  }
+
+  .tableScroll .table thead th:last-child {
+    background: var(--surface-sunken);
+  }
+}
+
 /* 권한 체계 */
 .section {
   display: flex;

@@ -14,6 +14,7 @@ type LoginError =
   | { code: "INVALID_CREDENTIALS" }
   | { code: "LOCKED"; maxFailedCount: number }
   | { code: "NOT_ACTIVE" }
+  | { code: LoginCheck }
   | { code: "NETWORK" };
 
 type Props = {
@@ -67,9 +68,15 @@ export default function LoginForm({ ssoEnabled, supportContact, maxFailedCount, 
         body: JSON.stringify({ emp_no: empNo, password }),
       });
       if (res.ok) {
-        writeRememberedEmpNo(rememberRef.current?.checked ? empNo : null);
-        router.replace(next); // 임시 비밀번호면 화면이 비밀번호 변경으로 보낸다
-        router.refresh();
+        const check = await confirmLogin(res, "user", "/api/auth/session");
+        if (check === "OK") {
+          writeRememberedEmpNo(rememberRef.current?.checked ? empNo : null);
+          router.replace(next); // 임시 비밀번호면 화면이 비밀번호 변경으로 보낸다
+          router.refresh();
+          return;
+        }
+        setError({ code: check });
+        setSubmitting(false);
         return;
       }
       const body = await res.json().catch(() => ({}));
@@ -194,6 +201,26 @@ export function checkInput(empNo: string, password: string): InputError | null {
   return null;
 }
 
+type LoginCheck = "NOT_OUR_SERVER" | "COOKIE_NOT_KEPT";
+
+/** 로그인 응답이 성공(2xx)이어도 정말 로그인됐는지 확인한다 (관리자 로그인도 같이 쓴다).
+ *  안 그러면 다음 화면이 아무 말 없이 로그인 화면으로 돌려보낸다.
+ *  - 본문이 이 서버의 답(key가 있는 JSON)이 아니다: 중간의 프록시·터널(ngrok 안내 화면 등)이 대신 답했다
+ *  - 다음 요청에 로그인 쿠키가 안 실린다(sessionUrl이 401): 브라우저가 쿠키를 막았거나, 서버의 COOKIE_SECURE가 주소와 안 맞는다 */
+export async function confirmLogin(res: Response, key: "user" | "admin", sessionUrl: string): Promise<"OK" | LoginCheck> {
+  const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!body?.[key]) return "NOT_OUR_SERVER";
+  const session = await fetch(sessionUrl, { cache: "no-store" }).catch(() => null);
+  return session?.status === 401 ? "COOKIE_NOT_KEPT" : "OK";
+}
+
+export const LOGIN_CHECK_MESSAGE: Record<LoginCheck, string> = {
+  NOT_OUR_SERVER:
+    "로그인 서버가 아닌 곳에서 응답이 왔습니다 (중간의 프록시·터널 안내 화면 등). 페이지를 새로 고친 뒤 다시 로그인하세요.",
+  COOKIE_NOT_KEPT:
+    "로그인은 됐지만 브라우저가 로그인 쿠키를 저장하지 않았습니다. 이 사이트의 쿠키 차단을 풀고 다시 시도하세요 (https가 아닌 주소인데 서버의 COOKIE_SECURE가 true여도 이렇습니다).",
+};
+
 function toLoginError(body: Record<string, unknown>): LoginError {
   switch (body.code) {
     case "INVALID_CREDENTIALS":
@@ -225,6 +252,9 @@ function errorMessage(error: LoginError, contact: string, max: number): string {
       return `비밀번호를 ${error.maxFailedCount}회 잘못 입력해 계정이 잠겼습니다. 잠금 해제 문의: ${contact}`;
     case "NOT_ACTIVE":
       return `로그인할 수 없는 계정입니다. 문의: ${contact}`;
+    case "NOT_OUR_SERVER":
+    case "COOKIE_NOT_KEPT":
+      return LOGIN_CHECK_MESSAGE[error.code];
     case "NETWORK":
       return "서버에 연결하지 못했습니다. 잠시 후 다시 시도하세요.";
   }

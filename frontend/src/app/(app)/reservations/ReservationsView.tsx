@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PlusIcon } from "@/components/icons";
 import ReservationDetail from "@/components/ReservationDetail";
 import type { MyReservation } from "@/lib/api";
 import { addDays, formatShortDay, kstDate } from "@/lib/dates";
-import { hhmm, spanDays } from "@/lib/rooms";
+import { hhmm, seoulNow, spanDays } from "@/lib/rooms";
+import { useNow } from "@/lib/useNow";
 import styles from "./reservations.module.css";
 
 type Tab = "upcoming" | "past";
@@ -24,8 +25,19 @@ const STATUS_TAG = { CANCELLED: "취소됨", RELEASED: "자동 반납" } as cons
 type Props = { upcoming: MyReservation[]; past: MyReservation[]; today: string };
 
 /** 내 예약 (초안). 예정·지난 예약을 날짜별로 묶어 보여 주고, 누르면 자세히 보기 팝업 (만든 사람은 거기서 취소) */
-export default function ReservationsView({ upcoming, past, today }: Props) {
+export default function ReservationsView({ upcoming: fetchedUpcoming, past, today: fetchedToday }: Props) {
   const router = useRouter();
+  // 화면을 열어 둔 동안에도 "오늘·내일"과 오늘 남은 회의가 시계를 따라간다. 끝난 회의는 예정에서 뺀다
+  const now = useNow();
+  const today = now ? seoulNow(now).date : fetchedToday;
+  const upcoming = now ? fetchedUpcoming.filter((r) => Date.parse(r.ends_at) > now) : fetchedUpcoming;
+  // 자정이 지나면 목록을 다시 읽는다 (지난 예약으로 옮겨 가게)
+  const lastToday = useRef(fetchedToday);
+  useEffect(() => {
+    if (today === lastToday.current) return;
+    lastToday.current = today;
+    router.refresh();
+  }, [today, router]);
   const [tab, setTab] = useState<Tab>("upcoming");
   const [role, setRole] = useState<Role>("all");
   const [detailId, setDetailId] = useState<number | null>(null);
@@ -168,6 +180,8 @@ export default function ReservationsView({ upcoming, past, today }: Props) {
                           </span>
                         </span>
                         <span className={styles.meta}>
+                          {/* 다른 사업장에도 같은 이름의 층이 있으면 사업장 이름까지 */}
+                          {r.floor_ambiguous && `${r.site} `}
                           {r.floor} {r.room} · {r.attendees}명 참석
                           {!r.is_organizer && ` · 예약 ${r.organizer_department} ${r.organizer}`}
                           {r.is_organizer && !r.attending && " · 나는 예약만 (회의에는 안 들어감)"}

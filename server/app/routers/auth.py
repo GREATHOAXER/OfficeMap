@@ -11,7 +11,14 @@ from pydantic import BaseModel, Field
 from app.config import settings
 from app.db import get_setting, pool
 from app.security import hash_password, new_session_token, verify_password
-from app.session import IS_ADMIN_SQL, CurrentUserAllowTemporary, end_other_identity, end_sessions, load_session
+from app.session import (
+    IS_ADMIN_SQL,
+    CurrentUserAllowTemporary,
+    end_other_identity,
+    end_sessions,
+    load_session,
+    session_end_reason,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -135,13 +142,17 @@ def login(body: LoginRequest, request: Request) -> JSONResponse:
 
 @router.get("/me")
 def me(request: Request) -> JSONResponse:
+    """로그인한 사람. 끊겼으면 401과 왜 끊겼는지(reason, session_end_reason)를 준다"""
     token = request.cookies.get(settings.session_cookie_name)
     user = None
+    reason = None
     if token:
         with pool.connection() as conn:
             user = load_session(conn, token)
+            if user is None:
+                reason = session_end_reason(conn, token)
     if user is None:
-        response = error_response(401, "NOT_LOGGED_IN")
+        response = error_response(401, "NOT_LOGGED_IN", reason=reason)
         response.delete_cookie(settings.session_cookie_name, path="/")
         return response
     return JSONResponse({"user": _user_out(user)})
@@ -154,8 +165,9 @@ def session_status(request: Request) -> JSONResponse:
     with pool.connection() as conn:
         user = load_session(conn, token, touch=False) if token else None
         idle_minutes = int(get_setting(conn, "session.idle_minutes", 30))
+        reason = session_end_reason(conn, token) if token and user is None else None
     if user is None:
-        return error_response(401, "NOT_LOGGED_IN")
+        return error_response(401, "NOT_LOGGED_IN", reason=reason)
     return JSONResponse({"idle_left": max(0, user["idle_left"]), "idle_minutes": idle_minutes})
 
 
@@ -189,14 +201,28 @@ def password_problems(password: str, emp_no: str) -> list[str]:
 def change_password(body: PasswordChange, user: CurrentUserAllowTemporary) -> Response:
     """비밀번호 변경. 임시 비밀번호 상태에서도 쓸 수 있는 유일한 API.
 
+    현재 비밀번호를 틀리면 로그인과 같은 실패 횟수를 올리고, 같은 횟수에서 잠근다 (잠기면 이 로그인도 끝난다).
     바꾸면 이 브라우저 말고 다른 곳에 로그인해 있던 직원 화면 세션은 끝낸다."""
     with pool.connection() as conn:
         account = conn.execute(
-            "SELECT password_hash FROM user_accounts WHERE employee_id = %s FOR UPDATE",
+            "SELECT password_hash, failed_login_count FROM user_accounts WHERE employee_id = %s FOR UPDATE",
             (user["employee_id"],),
         ).fetchone()
         if not verify_password(body.current_password, account["password_hash"]):
-            return error_response(400, "WRONG_CURRENT")
+            max_failed = int(get_setting(conn, "login.max_failed_count", 5))
+            failed = account["failed_login_count"] + 1
+            locked = failed >= max_failed
+            conn.execute(
+                """
+                UPDATE user_accounts
+                SET failed_login_count = %s, locked_at = CASE WHEN %s THEN now() END, updated_at = now()
+                WHERE employee_id = %s
+                """,
+                (failed, locked, user["employee_id"]),
+            )
+            if locked:
+                return error_response(423, "LOCKED", max_failed_count=max_failed)
+            return error_response(400, "WRONG_CURRENT", max_failed_count=max_failed)
         problems = password_problems(body.new_password, user["emp_no"])
         if problems:
             return error_response(422, "WEAK_PASSWORD", problems=problems)
@@ -213,7 +239,7 @@ def change_password(body: PasswordChange, user: CurrentUserAllowTemporary) -> Re
         )
         conn.execute(
             """
-            UPDATE user_sessions SET revoked_at = now()
+            UPDATE user_sessions SET revoked_at = now(), revoked_reason = 'PASSWORD_CHANGED'
             WHERE employee_id = %s AND kind = 'USER' AND token_hash <> %s AND revoked_at IS NULL
             """,
             (user["employee_id"], user["token_hash"]),

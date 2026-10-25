@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { loginUrl } from "@/lib/loginRedirect";
+import { loginUrl, type LogoutReason, toLogoutReason } from "@/lib/loginRedirect";
 import styles from "./SessionWatch.module.css";
 
 const WARN_SECONDS = 60; // 자동 로그아웃 이만큼 전에 알려 준다
@@ -32,11 +32,11 @@ export default function SessionWatch({ kind }: { kind: "user" | "admin" }) {
   const base = kind === "admin" ? "/admin/login" : "/login";
 
   const goLogin = useCallback(
-    (reason: "expired" | "logout") => {
+    (reason: LogoutReason) => {
       router.replace(
         reason === "logout"
           ? `${base}?reason=logout`
-          : loginUrl(base, window.location.pathname + window.location.search, "expired"),
+          : loginUrl(base, window.location.pathname + window.location.search, reason),
       );
     },
     [router, base],
@@ -69,7 +69,9 @@ export default function SessionWatch({ kind }: { kind: "user" | "admin" }) {
         const res = await fetch(statusUrl, { cache: "no-store" });
         if (stopped) return;
         if (res.status === 401) {
-          goLogin("expired");
+          // 직원 화면은 왜 끊겼는지(비밀번호 초기화 등)도 받는다
+          const body = kind === "user" ? await res.json().catch(() => null) : null;
+          goLogin(toLogoutReason(body?.reason));
           return;
         }
         if (!res.ok) return;

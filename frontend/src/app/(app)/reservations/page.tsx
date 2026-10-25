@@ -1,8 +1,11 @@
+import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
 import { ApiError, fetchMyReservations } from "@/lib/api";
 import { kstDate } from "@/lib/dates";
+import { redirectToLogin } from "@/lib/expiredRedirect";
 import ReservationsView from "./ReservationsView";
+
+export const metadata: Metadata = { title: "내 예약 · 오피스 안내" };
 
 /** 서버 기준 오늘 (서울) */
 const todayInSeoul = () => kstDate(new Date().toISOString());
@@ -18,7 +21,7 @@ export default async function ReservationsPage() {
     ]);
     data = { upcoming, past };
   } catch (error) {
-    if (error instanceof ApiError && error.status === 401) redirect("/login?reason=expired");
+    if (error instanceof ApiError && error.status === 401) return redirectToLogin();
     throw error;
   }
   return <ReservationsView upcoming={data.upcoming} past={data.past} today={todayInSeoul()} />;

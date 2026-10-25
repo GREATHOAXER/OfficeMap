@@ -5,12 +5,13 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import FloorSvg from "@/components/FloorSvg";
 import type { Admin, MoveOptions, SeatingData, SeatingSeat, TeamMember } from "@/lib/api";
+import { placeOf } from "../place";
 import { addDays, kstDate, shortDate } from "@/lib/dates";
 import { type DrawingSeat, drawingFromSeating } from "@/lib/floorDrawing";
+import { adminExpiredUrl } from "@/lib/loginRedirect";
 import ui from "../seating/seating.module.css";
 import styles from "./moves.module.css";
 
-const EXPIRED = "/admin/login?reason=expired&next=/admin/moves";
 const MAX_SCHEDULE_DAYS = 365;
 const STAY = "stay"; // 옮기지 않음
 const UNASSIGN = "unassign"; // 미배치로 (지금 자리만 끝낸다)
@@ -61,7 +62,7 @@ export default function MoveWizard({ admin, options }: Props) {
   async function get<T>(path: string): Promise<T | null> {
     const res = await fetch(path, { cache: "no-store" }).catch(() => null);
     if (res?.status === 401) {
-      router.replace(EXPIRED);
+      router.replace(adminExpiredUrl());
       return null;
     }
     if (!res?.ok) {
@@ -105,6 +106,8 @@ export default function MoveWizard({ admin, options }: Props) {
     if (out) setDest(out);
   }
 
+  // 사업장마다 같은 이름의 층(1F·7F 등)이 있을 수 있어 사업장 이름을 붙인다
+  const destName = dest ? `${dest.floor.site.name} ${dest.floor.name}` : (result?.to_floor ?? "");
   const seatById = useMemo(() => new Map((dest?.seats ?? []).map((s) => [s.id, s])), [dest]);
   const freeSeats = useMemo(() => (dest?.seats ?? []).filter(isFree).sort(byCode), [dest]);
   const movable = useMemo(() => (members ?? []).filter((m) => !m.locked).sort(bySeat), [members]);
@@ -201,7 +204,7 @@ export default function MoveWizard({ admin, options }: Props) {
         }),
       });
       if (res.status === 401) {
-        router.replace(EXPIRED);
+        router.replace(adminExpiredUrl());
         return;
       }
       const body = await res.json().catch(() => null);
@@ -223,7 +226,7 @@ export default function MoveWizard({ admin, options }: Props) {
   const sources = [...new Set(moving.flatMap((m) => (m.seat ? [m.seat.floor_id] : [])))];
 
   return (
-    <div className={ui.page}>
+    <main className={ui.page}>
       <header className={ui.header}>
         <div className={ui.titleRow}>
           <h1 className={ui.title}>팀 이사</h1>
@@ -241,7 +244,7 @@ export default function MoveWizard({ admin, options }: Props) {
         <div className={styles.done}>
           <section className={`${ui.card} ${ui.selected}`} aria-live="polite">
             <h2 className={ui.cardTitle}>
-              {result.department} → {result.to_floor}:{" "}
+              {result.department} → {destName}:{" "}
               {result.scheduled ? `${shortDate(result.effective_at)} 0시에 옮겨요` : "옮겼어요"}
             </h2>
             <p className={ui.hint}>
@@ -251,7 +254,7 @@ export default function MoveWizard({ admin, options }: Props) {
             </p>
             <div className={ui.rowButtons}>
               <Link className={`${ui.btn} ${ui.pri}`} href={`/admin/seating?floor=${dest?.floor.id ?? ""}`}>
-                {result.to_floor} 배치 화면으로
+                {destName} 배치 화면으로
               </Link>
               {sources
                 .filter((id) => id !== dest?.floor.id)
@@ -330,13 +333,17 @@ export default function MoveWizard({ admin, options }: Props) {
                   </p>
                   <ul className={styles.zoneChips}>
                     {[...dest.zones, null].map((z) => {
-                      const free = freeSeats.filter((s) => s.zone_id === (z?.id ?? null)).length;
+                      const zoneFree = freeSeats.filter((s) => s.zone_id === (z?.id ?? null));
+                      const free = zoneFree.length;
                       if (!z && free === 0) return null;
+                      // 이 구역의 빈 자리를 그대로 고른 상태면 눌린 칩 (화면 낭독기에도 알린다)
+                      const picked = free > 0 && free === targets.length && zoneFree.every((s) => targets.includes(s.id));
                       return (
                         <li key={z?.id ?? "none"}>
                           <button
                             type="button"
                             data-color={z?.color_key ?? "t0"}
+                            aria-pressed={picked}
                             disabled={free === 0}
                             onClick={() => takeZone(z?.id ?? null)}
                           >
@@ -371,7 +378,7 @@ export default function MoveWizard({ admin, options }: Props) {
                         <span>
                           {m.name} {m.rank}
                           <small>
-                            지금 {m.seat ? `${m.seat.floor} ${m.seat.code}` : "미배치"}
+                            지금 {m.seat ? placeOf(m.seat, dest?.floor.site.name) : "미배치"}
                             {m.locked && " · 날짜를 정한 변경이 있어 옮길 수 없어요"}
                           </small>
                         </span>
@@ -444,6 +451,8 @@ export default function MoveWizard({ admin, options }: Props) {
                       min={addDays(todayKst(), 1)}
                       max={addDays(todayKst(), MAX_SCHEDULE_DAYS)}
                       onChange={(e) => setWhen({ later: true, date: e.target.value })}
+                      // 날짜 칸에 들어가면 "날짜 지정"을 고른 것 (보이는 날짜 그대로 쓰려는 사람도 있다)
+                      onFocus={() => !when.later && setWhen({ ...when, later: true })}
                     />
                     <span className={ui.muted}>그날 0시</span>
                   </label>
@@ -538,7 +547,7 @@ export default function MoveWizard({ admin, options }: Props) {
           </section>
         </div>
       )}
-    </div>
+    </main>
   );
 }
 

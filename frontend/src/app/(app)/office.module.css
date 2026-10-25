@@ -99,11 +99,6 @@
   background: var(--info-bg);
 }
 
-.searchOption[aria-disabled="true"] {
-  cursor: default;
-  color: var(--muted);
-}
-
 .searchMark {
   display: flex;
   flex: none;
@@ -415,6 +410,13 @@
   gap: 6px;
 }
 
+/* 휴대폰: 네 칸이면 "퇴근 시 (18:00)"이 두 줄로 꺾여서 두 칸씩 */
+@media (max-width: 480px) {
+  .durations div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .durations label {
   position: relative;
   display: flex;
@@ -509,7 +511,12 @@
   top: 16px;
 }
 
-/* 층 버튼: 넘치면 옆으로 민다 (얇은 스크롤 막대가 보여서 더 있다는 걸 안다) */
+/* 층 버튼: 넘치면 옆으로 민다. 넘친 쪽 끝에 ‹ › 단추를 띄워 아직 안 보이는 층이 있다는 걸 알린다 */
+.floorsWrap {
+  position: relative;
+  min-width: 0;
+}
+
 .floors {
   display: flex;
   gap: 6px;
@@ -518,13 +525,45 @@
   scrollbar-width: thin;
 }
 
+.floorsMore {
+  position: absolute;
+  top: 0;
+  bottom: 6px;
+  z-index: 1;
+  display: none;
+  align-items: center;
+  width: 36px;
+  padding: 0;
+  border: 0;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.floorsMore[data-side="left"] {
+  left: 0;
+  justify-content: flex-start;
+  background: linear-gradient(to right, var(--bg) 55%, transparent);
+}
+
+.floorsMore[data-side="right"] {
+  right: 0;
+  justify-content: flex-end;
+  background: linear-gradient(to left, var(--bg) 55%, transparent);
+}
+
+.floorsWrap[data-more-left="true"] .floorsMore[data-side="left"],
+.floorsWrap[data-more-right="true"] .floorsMore[data-side="right"] {
+  display: flex;
+}
+
 .floor {
+  position: relative;
   flex: none;
   display: flex;
   flex-direction: column;
   gap: 1px;
-  min-width: 76px;
-  padding: 6px 10px;
+  min-width: 72px;
+  padding: 6px 9px;
   border: 1px solid var(--divider);
   border-radius: 6px;
   background: var(--surface);
@@ -545,6 +584,9 @@
 }
 
 .floor span {
+  max-width: 104px; /* 팀이 많은 층의 긴 설명은 줄여서, 층 버튼 줄이 한 화면에 더 들어오게 (전체는 title) */
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 10px;
   color: var(--muted);
   white-space: nowrap;
@@ -726,6 +768,8 @@
   /* 위아래는 도면 끝에 닿으면 페이지가 이어서 스크롤된다 (막으면 좁은 창에서 아래 내용에 못 내려간다).
      좌우만 막아서 트랙패드로 옆으로 밀 때 브라우저 '뒤로 가기'가 되지 않게 한다 */
   overscroll-behavior-x: contain;
+  /* 휴대폰에서 두 손가락은 브라우저 화면 확대 대신 도면 배율을 바꾼다 (FloorPlan.tsx). 한 손가락 스크롤은 그대로 */
+  touch-action: pan-x pan-y;
 }
 
 .noPlan {
@@ -756,16 +800,16 @@
   cursor: grabbing;
 }
 
-/* 자리 정보 카드: 마우스를 0.7초 올려 두면 뜨고, 좁은 화면에서는 누르면 고정해서 띄운다 */
+/* 자리 정보 카드: 마우스를 0.7초 올려 두면 뜨고, 좁은 화면에서는 누르면 고정해서 띄운다.
+   화면(body)에 띄우고 위치(left·top, px)는 FloorPlan.tsx SeatCard가 자리에 맞춰 정한다 */
 .popover {
-  --tx: -50%;
-  --ty: calc(-100% - 10px);
-  position: absolute;
-  z-index: 20;
+  position: fixed;
+  z-index: 60;
   display: flex;
   flex-direction: column;
   gap: 6px;
   width: 232px;
+  max-width: calc(100vw - 16px);
   padding: 10px 12px;
   border: 1px solid var(--ink);
   border-radius: 8px;
@@ -774,21 +818,9 @@
   font-size: 13px;
   line-height: 1.4;
   white-space: normal;
+  overflow-wrap: anywhere; /* 띄어쓰기 없는 긴 상태 메시지도 카드 안에서 줄을 바꾼다 */
   user-select: text;
   pointer-events: none;
-  transform: translate(var(--tx), var(--ty));
-}
-
-.popover[data-align="start"] {
-  --tx: 0;
-}
-
-.popover[data-align="end"] {
-  --tx: -100%;
-}
-
-.popover[data-place="below"] {
-  --ty: 10px;
 }
 
 .popover[data-pinned="true"] {
@@ -870,6 +902,18 @@
   z-index: 1;
   background: var(--surface);
   padding: 0 4px;
+}
+
+/* 직원 화면·좌석 배치의 회의실·공간 이름표: 도면을 줄여도 칸 밖으로 넘치지 않게 칸 크기에 맞춰 줄인다.
+   칸이 크기 기준(container)이라 아래 cqw·cqh는 칸의 폭·높이. --k는 이름표 크기(%) (PlanShapes.fitLabelStyle) */
+.fitLabel {
+  container-type: size;
+  overflow: hidden;
+}
+
+.fitLabel > span {
+  font-size: min(calc(var(--k, 1) * 1em), 12cqw, 30cqh);
+  overflow-wrap: anywhere;
 }
 
 .space[data-kind="core"],
@@ -1064,6 +1108,21 @@
   padding: 2px 0;
 }
 
+/* 세로쓰기에서는 글꼴에 따라 글자가 제자리보다 조금 아래에 그려져, 이름 칸 끝에서 마지막 글자 아랫부분이 잘렸다.
+   칸 끝에 여유를 둔다 (글자 크기는 세로 글자 길이를 넉넉히 잡아 정해서 좌석 안에 들어간다) */
+.seat[data-vertical] .seatName {
+  padding-inline: 0.1em 0.8em;
+}
+
+/* 이 자리만 이름 글자가 읽을 수 없을 만큼 작다 (FloorPlan의 markTinySeats): 이름은 숨기고 재실 표시만 */
+.seat[data-tiny] .seatName {
+  display: none;
+}
+
+.seat[data-tiny] .seatMark {
+  margin-right: 0;
+}
+
 .seatEmpty {
   border: 1.5px dashed #8a8a85;
   border-top: 3px solid var(--tc);
@@ -1096,8 +1155,13 @@
   border-radius: 0.4em;
   background: var(--link);
   color: #fff;
-  font-size: 0.75em;
+  font-size: max(9px, 0.75em); /* 책상이 작은 층에서도 읽히는 크기 */
   line-height: 1.5;
+}
+
+/* 이름을 숨길 만큼 줄이면 "나" 표시도 숨긴다 (내 자리는 굵은 테두리로 보인다) */
+.plan[data-compact="true"] .seatMeTag {
+  display: none;
 }
 
 .seatSelected {
@@ -1264,7 +1328,8 @@
   background: var(--surface);
   box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.18);
   font-size: 14px;
-  color: var(--muted);
+  color: var(--ink); /* 데스크톱 카드와 같이 이름은 진하게 (흐린 글은 칸마다 따로 정함) */
+  overflow-wrap: anywhere;
 }
 
 .freshness {
@@ -1392,6 +1457,13 @@
   margin: 0;
   font-size: 18px;
   padding-right: 32px;
+  overflow-wrap: anywhere; /* 띄어쓰기 없는 긴 이름도 닫기 단추를 덮지 않게 줄을 바꾼다 */
+}
+
+/* 사진 옆 글자 칸: 줄어들 수 있어야 긴 글이 칸 안에서 줄을 바꾼다 */
+.person > div {
+  flex: 1;
+  min-width: 0;
 }
 
 .person .personName {
@@ -1416,6 +1488,7 @@
   background: var(--bg);
   font-size: 12px;
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .statusBox strong {
@@ -1461,15 +1534,25 @@
   gap: 8px;
 }
 
-.roomList li {
+.roomList a {
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding: 10px;
+  border: 1px solid transparent;
   border-radius: 6px;
   background: var(--bg);
   font-size: 12px;
   color: var(--muted);
+  text-decoration: none;
+}
+
+.roomList a:hover {
+  border-color: var(--ink);
+}
+
+.roomList a:hover strong {
+  text-decoration: underline;
 }
 
 .roomList strong {
@@ -1721,6 +1804,7 @@
   margin: 4px 0 0;
   font-size: 12.5px;
   line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .duties {
@@ -1798,4 +1882,38 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 층 탭을 눌러 그 층을 받는 동안 (FloorPending). 늘 자리를 차지하고 보이기만 바꿔서 탭이 들썩이지 않는다 */
+.floor .floorPending {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 2px;
+  height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0;
+  transform-origin: left center;
+  pointer-events: none;
+}
+
+.floor .floorPending[data-pending] {
+  opacity: 0.55;
+  animation: floorPending 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes floorPending {
+  from {
+    transform: scaleX(0.15);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .floor .floorPending[data-pending] {
+    animation: none;
+  }
 }

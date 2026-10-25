@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { type LogoutReason, toLogoutReason } from "./loginRedirect";
 
 // 서버 컴포넌트에서 FastAPI를 직접 부를 때 쓰는 함수들.
 // 브라우저(클라이언트 컴포넌트)에서는 상대 경로 /api/... 를 쓴다 (next.config.ts 참고)
@@ -57,21 +58,29 @@ const DEFAULT_LOGIN_INFO: LoginInfo = {
   max_failed_count: 5,
 };
 
-/** 쿠키로 로그인한 사람을 확인한다. 로그인 안 했거나 API가 꺼져 있으면 null.
- *  레이아웃과 페이지가 같은 요청 안에서 한 번만 부르도록 cache로 감싼다 */
-export const fetchMe = cache(async (cookieHeader: string | null): Promise<User | null> => {
-  if (!cookieHeader) return null;
-  try {
-    const res = await fetch(`${API_URL}/api/auth/me`, {
-      headers: { cookie: cookieHeader },
-      cache: "no-store",
-    });
-    if (!res.ok) return null;
-    return (await res.json()).user as User;
-  } catch {
-    return null;
-  }
-});
+/** 쿠키로 로그인한 사람과, 로그인이 끊겼으면 그 이유. 레이아웃과 페이지가 같은 요청 안에서 한 번만 부르도록 cache로 감싼다 */
+const fetchSession = cache(
+  async (cookieHeader: string | null): Promise<{ user: User | null; reason: LogoutReason | null }> => {
+    if (!cookieHeader) return { user: null, reason: null };
+    try {
+      const res = await fetch(`${API_URL}/api/auth/me`, {
+        headers: { cookie: cookieHeader },
+        cache: "no-store",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) return { user: body.user as User, reason: null };
+      return { user: null, reason: res.status === 401 && body.reason ? toLogoutReason(body.reason) : null };
+    } catch {
+      return { user: null, reason: null };
+    }
+  },
+);
+
+/** 쿠키로 로그인한 사람을 확인한다. 로그인 안 했거나 API가 꺼져 있으면 null */
+export const fetchMe = async (cookieHeader: string | null) => (await fetchSession(cookieHeader)).user;
+
+/** 로그인 쿠키가 남아 있는데 로그인이 안 될 때, 왜 끊겼는지 (모르면 null) */
+export const fetchLogoutReason = async (cookieHeader: string | null) => (await fetchSession(cookieHeader)).reason;
 
 /** 로그인 화면의 공지·문의처. API가 꺼져 있어도 화면은 기본값으로 뜬다 */
 export async function fetchLoginInfo(): Promise<LoginInfo> {
@@ -96,6 +105,7 @@ export type FloorSummary = {
   name: string;
   description: string | null; // 사무실이 아닌 층의 용도 (로비, 대강당 …)
   teams: string[];
+  has_plan: boolean; // 게시된 도면이 있다
 };
 export type SiteSummary = { id: number; name: string; floors: FloorSummary[] };
 /** my_floor_id: 내 자리가 있는 층. team_floor_id: 우리 팀 구역이 있는 층 (자리가 아직 없는 사람에게 먼저 보여 준다) */
@@ -260,6 +270,7 @@ export type EmployeeHit = {
   department: string;
   division: string | null; // 위 부서 (본부)
   extension: string | null;
+  email: string | null;
   is_me: boolean;
   seat: {
     id: number;
@@ -295,6 +306,7 @@ export type Booking = {
   organizer: string;
   department: string;
   mine: boolean; // 내가 만들었거나 참석하는 예약
+  organized: boolean; // 내가 만든 예약 (참석만 하는 회의는 false)
 };
 
 export type RoomDay = {
@@ -332,6 +344,8 @@ export type MyReservation = {
   room: string;
   floor_id: number;
   floor: string;
+  site: string;
+  floor_ambiguous: boolean; // 다른 사업장에도 같은 이름의 층이 있다 (사업장 이름을 붙여 보여 준다)
   is_organizer: boolean; // 내가 예약했다
   attending: boolean; // 내가 회의에 들어간다 (예약만 해 줬으면 false)
   organizer: string;
@@ -346,6 +360,7 @@ export type ReservationDetail = {
   ends_at: string;
   status: ReservationStatus;
   created_at: string;
+  updated_at: string; // 고칠 때 돌려보낸다 (그사이 다른 곳에서 고쳤으면 서버가 막는다)
   checked_in_at: string | null;
   cancelled_at: string | null;
   room: {
@@ -355,6 +370,7 @@ export type ReservationDetail = {
     equipment: string[];
     floor_id: number;
     floor: string;
+    site_id: number;
     site: string;
   };
   organizer: {
@@ -455,6 +471,7 @@ export type AdminFloor = {
   seats: number; // 개인석(고정석)
   flex: number; // 자율석 (배정하지 않음)
   occupied: number; // 배정된 개인석
+  out_of_service: number; // 사용 중지(고장·수리) 자리. seats·flex에는 들어 있지 않다
   rooms: number;
   zones: { code: string; name: string; color_key: string; department: string | null; department_active: boolean }[];
   floor_admins: string[];
@@ -486,6 +503,7 @@ export type AdminOverview = {
     seats: number;
     flex: number;
     occupied: number;
+    out_of_service: number;
     rooms: number;
     reservations_today: number;
     pending_requests: number;
@@ -549,7 +567,7 @@ export function fetchOrg(cookieHeader: string | null) {
 export type SeatMode = "FIXED" | "FLEX" | "OUT_OF_SERVICE";
 
 /** 자리 위치 (층 이름 + 좌석 번호) */
-export type SeatRef = { id: number; code: string; floor_id: number; floor: string };
+export type SeatRef = { id: number; code: string; floor_id: number; floor: string; site?: string | null };
 
 export type SeatingPerson = {
   emp_no: string;

@@ -1,17 +1,18 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SparkleIcon } from "@/components/icons";
+import { ChevronLeftIcon, ChevronRightIcon, SparkleIcon } from "@/components/icons";
 import type { EmployeeHit, FloorMap, FloorSummary, MyPresenceInfo } from "@/lib/api";
-import { useLivePresence, useRefreshAtExpiry, withLiveMine, withLivePresence } from "@/lib/livePresence";
+import { useLivePresence, withLiveMine, withLivePresence } from "@/lib/livePresence";
+import { useRefreshAt } from "@/lib/useRefreshAt";
 import { NO_STATUS_LABEL, PRESENCE_LABEL, STATUS_FILTERS, type StatusFilter } from "@/lib/presence";
 import AiPanel from "./AiPanel";
 import EmployeeSearch from "./EmployeeSearch";
 import FloorPlan, { clampZoom, ZOOM_MAX, ZOOM_MIN, ZOOM_STEPS } from "./FloorPlan";
 import MyStatus from "./MyStatus";
-import SeatPanel from "./SeatPanel";
+import SeatPanel, { NoSeatCard } from "./SeatPanel";
 import { useFloorUpdates } from "./useFloorUpdates";
 import styles from "./office.module.css";
 
@@ -24,6 +25,22 @@ type Props = {
   myPresence: MyPresenceInfo;
   map: FloorMap;
 };
+
+/** 화면을 다시 그리지 않고 주소의 물음표 뒤만 바꾼다 (null이면 지운다). Next.js가 useSearchParams에 반영한다 */
+/** 층 탭을 누른 뒤 그 층을 받아 오는 동안 탭 아래에 움직이는 줄 (느린 망에서도 눌린 것을 바로 알게) */
+function FloorPending() {
+  const { pending } = useLinkStatus();
+  return <span aria-hidden="true" className={styles.floorPending} data-pending={pending || undefined} />;
+}
+
+function replaceQuery(changes: Record<string, string | null>) {
+  const url = new URL(window.location.href);
+  for (const [key, value] of Object.entries(changes)) {
+    if (value === null) url.searchParams.delete(key);
+    else url.searchParams.set(key, value);
+  }
+  if (url.href !== window.location.href) window.history.replaceState(null, "", url);
+}
 
 /** − / + 버튼: 지금 배율 다음(앞) 단계로. min: 가장 작은 배율 ("전체 보기"가 0.5보다 작으면 그만큼) */
 const stepZoom = (zoom: number, dir: 1 | -1, min: number) =>
@@ -38,12 +55,25 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
   const live = useLivePresence(updates.onFloor);
   const map = useMemo(() => withLivePresence(fetchedMap, live), [fetchedMap, live]);
   const mine = withLiveMine(myPresence.presence, live.get(myEmpNo), fetchedMap.fetched_at);
-  useRefreshAtExpiry([mine?.expires_at, ...map.seats.map((s) => s.occupant?.presence?.expires_at)]);
+  // 화면의 상태가 바뀌는 시각에 다시 읽는다: 재실 상태 자동 해제(알림이 따로 오지 않는다), 회의실 사용 끝·다음 예약 시작, 자정
+  useRefreshAt([
+    mine?.expires_at,
+    ...map.seats.map((s) => s.occupant?.presence?.expires_at),
+    ...map.rooms.flatMap((r) => [r.busy_until, r.next_start]),
+  ]);
 
   const floorId = map.floor.id;
-  const [aiOpen, setAiOpen] = useState(false);
-  // 배율은 층마다 100%에서 시작한다 (층마다 도면 크기가 달라 "전체 보기" 배율도 다르다)
+  const searchParams = useSearchParams();
+  // AI 도우미: 머리글 단추로 열고, 왼쪽 메뉴의 "AI 도우미"는 주소(?ai=1)로 연다
+  const [aiState, setAiState] = useState(false);
+  const aiOpen = aiState || searchParams.get("ai") === "1";
+  const setAiOpen = (open: boolean) => {
+    setAiState(open);
+    if (!open && searchParams.has("ai")) replaceQuery({ ai: null });
+  };
+  // 배율은 층을 바꿀 때마다(뒤로 가기 포함) 100%에서 시작한다 (층마다 도면 크기가 달라 "전체 보기" 배율도 다르다)
   const [zoomState, setZoomState] = useState({ floorId, zoom: 1 });
+  if (zoomState.floorId !== floorId) setZoomState({ floorId, zoom: 1 });
   const setZoom = (zoom: number) => setZoomState({ floorId, zoom });
   // 도면 전체가 들어오는 배율. 사람이 많아 책상이 작은 층은 100%에서도 이름이 읽히게 도면이 영역보다 크다
   const [fitZoom, setFitZoom] = useState(1);
@@ -69,7 +99,9 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
   const pinnedSeatId = picked.pinned ? selectedSeatId : null;
 
   const router = useRouter();
-  const seatParam = Number(useSearchParams().get("seat")) || null;
+  const seatParam = Number(searchParams.get("seat")) || null;
+  // 검색에서 고른, 자리가 아직 없는 사람 (오른쪽 패널에 연락처를 보여 준다)
+  const [noSeatHit, setNoSeatHit] = useState<EmployeeHit | null>(null);
   const mainRef = useRef<HTMLElement>(null);
   const sideRef = useRef<HTMLDivElement>(null);
   const floorsRef = useRef<HTMLElement>(null);
@@ -82,13 +114,15 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
   }, []);
 
   const selectSeat = useCallback(
-    (seatId: number | null) =>
+    (seatId: number | null) => {
+      if (seatId !== null) setNoSeatHit(null);
       setPicked((p) => ({
         floorId,
         zoneId: p.floorId === floorId ? p.zoneId : null,
         seatId,
         pinned: seatId !== null && sideIsBelow(),
-      })),
+      }));
+    },
     [floorId, sideIsBelow],
   );
   const unpin = useCallback(() => selectSeat(null), [selectSeat]);
@@ -117,6 +151,16 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
     return () => cancelAnimationFrame(frame);
   }, [seatParam, floorId, fetchedMap, revealSeat]);
 
+  // 주소의 ?seat= 는 지금 고른 자리를 따라간다 (새로 고치거나 주소를 보내면 같은 자리가 열린다).
+  // 다른 자리를 누르거나 Esc로 풀면 바꾸거나 지운다. 화면을 다시 그리지 않게 주소만 바꾼다
+  useEffect(() => {
+    const pending = seatParam && fetchedMap.seats.some((s) => s.id === seatParam);
+    if (pending && revealedRef.current !== `${floorId}:${seatParam}`) return; // 주소의 자리를 아직 보여 주기 전
+    if (seatParam === selectedSeatId) return;
+    if (selectedSeatId) revealedRef.current = `${floorId}:${selectedSeatId}`; // 이미 보고 있는 자리라 다시 옮기지 않는다
+    replaceQuery({ seat: selectedSeatId ? String(selectedSeatId) : null });
+  }, [selectedSeatId, seatParam, floorId, fetchedMap]);
+
   // 층 버튼 줄이 화면보다 길면 지금 층 버튼이 보이게 옆으로 민다 (페이지는 위아래로 움직이지 않게)
   useEffect(() => {
     const nav = floorsRef.current;
@@ -124,6 +168,28 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
     if (!nav || !current) return;
     nav.scrollTo({ left: current.offsetLeft - (nav.clientWidth - current.offsetWidth) / 2, behavior: "smooth" });
   }, [floorId]);
+
+  // 층 버튼 줄이 넘치면 양 끝에 ‹ › 를 보여 준다 (아직 안 보이는 층이 있다는 표시이자 넘기는 단추)
+  const [floorsMore, setFloorsMore] = useState({ left: false, right: false });
+  useEffect(() => {
+    const nav = floorsRef.current;
+    if (!nav) return;
+    const update = () => {
+      const left = nav.scrollLeft > 1;
+      const right = nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 1;
+      setFloorsMore((prev) => (prev.left === left && prev.right === right ? prev : { left, right }));
+    };
+    update();
+    nav.addEventListener("scroll", update, { passive: true });
+    const observer = new ResizeObserver(update);
+    observer.observe(nav);
+    return () => {
+      nav.removeEventListener("scroll", update);
+      observer.disconnect();
+    };
+  }, []);
+  const scrollFloors = (dir: 1 | -1) =>
+    floorsRef.current?.scrollBy({ left: dir * floorsRef.current.clientWidth * 0.6, behavior: "smooth" });
 
   // 오른쪽 패널에 고른 자리는 Esc로 해제한다 (입력 칸·팝업 안에서 누른 Esc는 그쪽이 처리)
   useEffect(() => {
@@ -138,7 +204,14 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
   }, [selectedSeatId, pinnedSeatId, selectSeat]);
 
   function goToPerson(hit: EmployeeHit) {
-    if (!hit.seat) return;
+    setAiState(false);
+    if (!hit.seat) {
+      // 도면에 보여 줄 곳이 없으니 오른쪽 패널에 연락처를 보여 준다
+      selectSeat(null);
+      setNoSeatHit(hit);
+      return;
+    }
+    setNoSeatHit(null);
     if (hit.seat.floor_id === floorId) revealSeat(hit.seat.id);
     else router.push(`/?floor=${hit.seat.floor_id}&seat=${hit.seat.id}`, { scroll: false });
   }
@@ -176,7 +249,7 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
           aria-expanded={aiOpen}
           aria-controls="ai-panel"
           aria-label="AI 도우미 (준비 중)"
-          onClick={() => setAiOpen((open) => !open)}
+          onClick={() => setAiOpen(!aiOpen)}
         >
           <SparkleIcon size={18} />
           <span className={styles.aiButtonText}>AI 도우미</span>
@@ -203,29 +276,57 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
 
       <div className={styles.body}>
         <main ref={mainRef} className={styles.main}>
-          <nav ref={floorsRef} aria-label="층 선택" className={styles.floors}>
-            {[...floors].reverse().map((floor) => {
-              const current = floor.id === floorId;
-              return (
-                <Link
-                  key={floor.id}
-                  href={`/?floor=${floor.id}`}
-                  className={`${styles.floor} ${current ? styles.floorOn : ""}`}
-                  aria-current={current ? "page" : undefined}
-                  scroll={false}
-                >
-                  <strong className="mono">
-                    {floor.name}
-                    {floor.id === myFloorId && <span className={styles.mine}>내 자리</span>}
-                    {seatless && floor.id === teamFloorId && <span className={styles.mine}>우리 팀</span>}
-                  </strong>
-                  <span>
-                    {floor.description ?? (floor.teams.map((t) => t.replace(/팀$/, "")).join("·") || "공용 공간")}
-                  </span>
-                </Link>
-              );
-            })}
-          </nav>
+          <div className={styles.floorsWrap} data-more-left={floorsMore.left} data-more-right={floorsMore.right}>
+            {/* 마우스용 넘기기 단추. 키보드는 층 링크를 차례로 지나가면 저절로 보이게 밀린다 */}
+            <button
+              type="button"
+              className={styles.floorsMore}
+              data-side="left"
+              tabIndex={-1}
+              aria-hidden="true"
+              onClick={() => scrollFloors(-1)}
+            >
+              <ChevronLeftIcon size={18} />
+            </button>
+            <nav ref={floorsRef} aria-label="층 선택" className={styles.floors}>
+              {[...floors].reverse().map((floor) => {
+                const current = floor.id === floorId;
+                // 층 버튼 아래 작은 글씨: 용도(로비 등) 또는 입주 팀. 둘 다 없으면 도면이 없는 층만 알린다
+                const caption =
+                  floor.description ??
+                  (floor.teams.map((t) => t.replace(/팀$/, "")).join("·") || (floor.has_plan ? "" : "도면 없음"));
+                return (
+                  <Link
+                    key={floor.id}
+                    href={`/?floor=${floor.id}`}
+                    // 층마다 그때의 자리·재실을 서버가 그려야 해서 미리 받아 둘 것이 없다 (미리 받기 요청만 층 수만큼 늘어난다)
+                    prefetch={false}
+                    className={`${styles.floor} ${current ? styles.floorOn : ""}`}
+                    aria-current={current ? "page" : undefined}
+                    scroll={false}
+                  >
+                    <strong className="mono">
+                      {floor.name}
+                      {floor.id === myFloorId && <span className={styles.mine}>내 자리</span>}
+                      {seatless && floor.id === teamFloorId && <span className={styles.mine}>우리 팀</span>}
+                    </strong>
+                    <span title={caption || undefined}>{caption || "\u00a0"}</span>
+                    <FloorPending />
+                  </Link>
+                );
+              })}
+            </nav>
+            <button
+              type="button"
+              className={styles.floorsMore}
+              data-side="right"
+              tabIndex={-1}
+              aria-hidden="true"
+              onClick={() => scrollFloors(1)}
+            >
+              <ChevronRightIcon size={18} />
+            </button>
+          </div>
 
           <div className={styles.toolbar}>
             <span className={styles.crumb}>
@@ -379,6 +480,8 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
         <div ref={sideRef} className={styles.side}>
           {aiOpen ? (
             <AiPanel onClose={() => setAiOpen(false)} />
+          ) : noSeatHit && !selectedSeat ? (
+            <NoSeatCard hit={noSeatHit} onClose={() => setNoSeatHit(null)} />
           ) : (
             <SeatPanel map={map} seat={selectedSeat} myEmpNo={myEmpNo} onClear={unpin} />
           )}

@@ -5,9 +5,19 @@ import { useState } from "react";
 import { GridIcon } from "@/components/icons";
 import type { EmployeeHit, MyPresenceInfo, MyReservation, MyTeam, PresenceStatus } from "@/lib/api";
 import { kstDate } from "@/lib/dates";
-import { useLivePresence, useRefreshAtExpiry, withLiveMine } from "@/lib/livePresence";
-import { NO_STATUS_LABEL, PRESENCE_HINT, PRESENCE_LABEL, PRESENCE_ORDER } from "@/lib/presence";
+import { useLivePresence, withLiveMine } from "@/lib/livePresence";
+import {
+  NO_STATUS_LABEL,
+  PRESENCE_HINT,
+  PRESENCE_LABEL,
+  PRESENCE_ORDER,
+  presenceMessage,
+  STATUS_FILTERS,
+  type StatusFilter,
+} from "@/lib/presence";
 import { hhmm, rangeText } from "@/lib/rooms";
+import { useNow } from "@/lib/useNow";
+import { useRefreshAt } from "@/lib/useRefreshAt";
 import PresenceForm from "../PresenceForm";
 import styles from "./presence.module.css";
 
@@ -29,8 +39,9 @@ const rank = (status: PresenceStatus | undefined) => (status ? PRESENCE_ORDER.in
 export default function PresenceView({ myEmpNo, info, team, upcoming, today }: Props) {
   const live = useLivePresence();
   const mine = withLiveMine(info.presence, live.get(myEmpNo), team.fetched_at);
-  useRefreshAtExpiry([mine?.expires_at]);
-  const [filter, setFilter] = useState<PresenceStatus | null>(null);
+  // 내 상태 자동 해제 시각·자정에 다시 읽는다 (해제는 알림이 따로 오지 않는다)
+  useRefreshAt([mine?.expires_at]);
+  const [filter, setFilter] = useState<StatusFilter | null>(null);
 
   // 팀 사람들에게도 읽은 뒤에 온 상태 변경을 덮어쓴다
   const fetchedAt = Date.parse(team.fetched_at);
@@ -40,17 +51,25 @@ export default function PresenceView({ myEmpNo, info, team, upcoming, today }: P
     return { ...m, presence: change.presence && { status: change.presence.status, message: change.presence.message } };
   });
   const me = members.find((m) => m.is_me);
-  const counts = PRESENCE_ORDER.map((status) => ({
+  // 상태 4가지 + 상태를 정하지 않은 사람
+  const counts = STATUS_FILTERS.map((status) => ({
     status,
-    count: members.filter((m) => m.presence?.status === status).length,
+    count: members.filter((m) => (m.presence?.status ?? "NONE") === status).length,
   }));
   const shown = members
-    .filter((m) => !filter || m.presence?.status === filter)
+    .filter((m) => !filter || (m.presence?.status ?? "NONE") === filter)
     .sort((a, b) => rank(a.presence?.status) - rank(b.presence?.status) || a.name.localeCompare(b.name, "ko"));
 
-  // 오늘 남은 일정: 내가 실제로 들어가는 회의만 (취소된 회의, 예약만 해 준 회의는 빼고)
+  // 오늘 남은 일정: 내가 실제로 들어가는 회의만 (취소된 회의, 예약만 해 준 회의는 빼고). 끝난 회의는 열어 둔 채로도 빠지고,
+  // 날짜가 바뀌면 다시 읽는다
+  const now = useNow();
   const todays = upcoming.filter(
-    (r) => r.status === "CONFIRMED" && r.attending && kstDate(r.starts_at) <= today && today <= kstDate(r.ends_at),
+    (r) =>
+      r.status === "CONFIRMED" &&
+      r.attending &&
+      kstDate(r.starts_at) <= today &&
+      today <= kstDate(r.ends_at) &&
+      (now === 0 || Date.parse(r.ends_at) > now),
   );
 
   return (
@@ -78,7 +97,7 @@ export default function PresenceView({ myEmpNo, info, team, upcoming, today }: P
                     <span className={`mk ${styles.bigMark}`} data-status={mine.status} aria-hidden="true" />
                     <span className={styles.nowText}>
                       <strong>{PRESENCE_LABEL[mine.status]}</strong>
-                      <span>{mine.message ?? PRESENCE_HINT[mine.status]}</span>
+                      <span>{presenceMessage(mine) ?? PRESENCE_HINT[mine.status]}</span>
                     </span>
                   </>
                 ) : (
@@ -165,8 +184,12 @@ export default function PresenceView({ myEmpNo, info, team, upcoming, today }: P
                     aria-pressed={filter === status}
                     onClick={() => setFilter(filter === status ? null : status)}
                   >
-                    <span className="mk" data-status={status} aria-hidden="true" />
-                    {PRESENCE_LABEL[status]}
+                    {status === "NONE" ? (
+                      <span className={styles.noMark} aria-hidden="true" />
+                    ) : (
+                      <span className="mk" data-status={status} aria-hidden="true" />
+                    )}
+                    {status === "NONE" ? NO_STATUS_LABEL : PRESENCE_LABEL[status]}
                     <strong className="mono">{count}</strong>
                   </button>
                 ))}
@@ -184,9 +207,7 @@ export default function PresenceView({ myEmpNo, info, team, upcoming, today }: P
                       </span>
                       <span className={styles.muted}>
                         {m.presence ? PRESENCE_LABEL[m.presence.status] : NO_STATUS_LABEL}
-                        {m.presence?.message &&
-                          m.presence.message !== PRESENCE_LABEL[m.presence.status] &&
-                          ` · ${m.presence.message}`}
+                        {presenceMessage(m.presence) && ` · ${presenceMessage(m.presence)}`}
                       </span>
                     </span>
                     <span className={`${m.seat ? "mono" : ""} ${styles.seat}`}>

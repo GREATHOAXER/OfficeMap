@@ -8,6 +8,12 @@ export const hhmm = new Intl.DateTimeFormat("ko-KR", {
   timeZone: "Asia/Seoul",
 });
 
+/** 지금 시각(ms) → 서울 기준 날짜와 그날 0시부터 분. 한국은 서머타임이 없어 +9시간 고정 (서버와 같다) */
+export function seoulNow(now: number): { date: string; min: number } {
+  const k = new Date(now + 9 * 3_600_000);
+  return { date: k.toISOString().slice(0, 10), min: k.getUTCHours() * 60 + k.getUTCMinutes() };
+}
+
 /** 시각(ISO) → "13:30", 오늘이 아니면 "10-28 13:30" */
 function timeOrDate(timestamp: string): string {
   const time = hhmm.format(new Date(timestamp));

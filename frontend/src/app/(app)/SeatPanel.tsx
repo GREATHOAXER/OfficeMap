@@ -3,9 +3,9 @@
 import Link from "next/link";
 import Avatar from "@/components/Avatar";
 import { CloseIcon } from "@/components/icons";
-import type { FloorMap, Occupant, Seat } from "@/lib/api";
+import type { EmployeeHit, FloorMap, Occupant, Seat } from "@/lib/api";
 import { agoText } from "@/lib/dates";
-import { NO_STATUS_LABEL, PRESENCE_LABEL, PRESENCE_ORDER } from "@/lib/presence";
+import { NO_STATUS_LABEL, PRESENCE_LABEL, PRESENCE_ORDER, presenceMessage } from "@/lib/presence";
 import { hhmm, roomStatusText } from "@/lib/rooms";
 import { useNow } from "@/lib/useNow";
 import styles from "./office.module.css";
@@ -58,7 +58,7 @@ export default function SeatPanel({ map, seat, myEmpNo, onClear }: Props) {
                   <span className="mk" data-status={occupant.presence.status} aria-hidden="true" />
                   {PRESENCE_LABEL[occupant.presence.status]}
                 </strong>
-                {occupant.presence.message && <span>{occupant.presence.message}</span>}
+                {presenceMessage(occupant.presence) && <span>{presenceMessage(occupant.presence)}</span>}
               </>
             ) : (
               <span>재실 상태를 정하지 않았어요</span>
@@ -123,6 +123,8 @@ function FloorSummaryCard({ map }: { map: FloorMap }) {
   if (map.seats.length === 0) return <SharedFloorCard map={map} />;
   const seated = map.seats.filter((s) => s.occupant);
   const flex = map.seats.filter((s) => s.seat_type === "FLEX").length;
+  // 사용 중지 좌석은 빈 자리로 세지 않는다
+  const offline = map.seats.filter((s) => s.status === "OUT_OF_SERVICE" && !s.occupant).length;
   const counts = new Map(PRESENCE_ORDER.map((status) => [status, 0]));
   let noStatus = 0;
   for (const seat of seated) {
@@ -147,7 +149,7 @@ function FloorSummaryCard({ map }: { map: FloorMap }) {
         </div>
         <div>
           <dt>빈 자리</dt>
-          <dd className="mono">{map.seats.length - seated.length}</dd>
+          <dd className="mono">{map.seats.length - seated.length - offline}</dd>
         </div>
       </dl>
       <ul className={styles.presenceList}>
@@ -167,6 +169,7 @@ function FloorSummaryCard({ map }: { map: FloorMap }) {
       <p className={styles.cardHint}>
         자리를 누르면 앉은 사람의 재실 상태와 연락처가 여기에 보여요.
         {flex > 0 && ` 이 층에는 자율석이 ${flex}석 있어요.`}
+        {offline > 0 && ` 사용 중지 좌석 ${offline}석은 빈 자리에 넣지 않았어요.`}
       </p>
     </section>
   );
@@ -182,12 +185,15 @@ function SharedFloorCard({ map }: { map: FloorMap }) {
       <p className={styles.cardHint}>이 층에는 개인 좌석이 없어요.</p>
       {map.rooms.length > 0 && (
         <ul className={styles.roomList}>
+          {/* 도면의 회의실처럼 누르면 이 층 예약 현황으로 */}
           {map.rooms.map((room) => (
             <li key={room.id}>
-              <strong>{room.name}</strong>
-              <span>
-                최대 {room.capacity}명 · {roomStatusText(room)}
-              </span>
+              <Link href={`/rooms?floor=${map.floor.id}`} aria-label={`${room.name}, ${roomStatusText(room)}. 예약 현황 보기`}>
+                <strong>{room.name}</strong>
+                <span>
+                  최대 {room.capacity}명 · {roomStatusText(room)}
+                </span>
+              </Link>
             </li>
           ))}
         </ul>
@@ -208,5 +214,49 @@ function Freshness({ presence }: { presence: Occupant["presence"] }) {
       {ago && " · "}
       {presence.expires_at ? `${hhmm.format(new Date(presence.expires_at))}에 자동 해제` : "직접 바꿀 때까지 유지"}
     </span>
+  );
+}
+
+/** 검색에서 고른, 아직 자리가 없는 사람 (도면에서 보여 줄 곳이 없어 연락처를 대신 보여 준다) */
+export function NoSeatCard({ hit, onClose }: { hit: EmployeeHit; onClose: () => void }) {
+  const message = presenceMessage(hit.presence);
+  return (
+    <section className={styles.card} aria-labelledby="noseat-title">
+      <button type="button" className={styles.cardClose} aria-label="닫기" onClick={onClose}>
+        <CloseIcon size={18} />
+      </button>
+      <div className={styles.person}>
+        <span className={styles.personAvatar} aria-hidden="true">
+          <Avatar name={hit.name} photo={hit.photo} size={52} />
+        </span>
+        <div>
+          <h2 id="noseat-title" className={styles.personName}>
+            {hit.name} {hit.rank}
+            {hit.display_name && <span className={styles.personAlias}>{hit.display_name}</span>}
+          </h2>
+          <p className={styles.personTeam}>{hit.division ? `${hit.division} ${hit.department}` : hit.department}</p>
+          {hit.headline && <p className={styles.personHeadline}>{hit.headline}</p>}
+        </div>
+      </div>
+      <div className={styles.statusBox}>
+        {hit.presence ? (
+          <strong>
+            <span className="mk" data-status={hit.presence.status} aria-hidden="true" />
+            {PRESENCE_LABEL[hit.presence.status]}
+          </strong>
+        ) : (
+          <span>{NO_STATUS_LABEL}</span>
+        )}
+        {message && <span>{message}</span>}
+      </div>
+      <dl className={styles.facts}>
+        <dt>위치</dt>
+        <dd>아직 배정된 자리가 없어요</dd>
+        <dt>내선</dt>
+        <dd className="mono">{hit.extension ?? "—"}</dd>
+        <dt>이메일</dt>
+        <dd className="mono">{hit.email ? <a href={`mailto:${hit.email}`}>{hit.email}</a> : "—"}</dd>
+      </dl>
+    </section>
   );
 }

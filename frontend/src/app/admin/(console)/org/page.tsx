@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
 import { ApiError, fetchAdmin, fetchOrg } from "@/lib/api";
+import { redirectToAdminLogin } from "@/lib/expiredRedirect";
 import OrgView from "./OrgView";
 
 export const metadata: Metadata = { title: "조직도 · 오피스 안내" };
@@ -13,10 +13,10 @@ export default async function OrgPage({ searchParams }: PageProps<"/admin/org">)
   let loaded;
   try {
     const [admin, org] = await Promise.all([fetchAdmin(cookieHeader), fetchOrg(cookieHeader)]);
-    if (!admin) redirect("/admin/login?reason=expired");
+    if (!admin) return redirectToAdminLogin();
     loaded = { admin, org };
   } catch (error) {
-    if (error instanceof ApiError && error.status === 401) redirect("/admin/login?reason=expired");
+    if (error instanceof ApiError && error.status === 401) return redirectToAdminLogin();
     throw error;
   }
   const wanted = Number(params.dept) || null;

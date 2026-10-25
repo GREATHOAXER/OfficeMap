@@ -5,11 +5,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Dialog from "@/components/Dialog";
 import FloorExportDialog from "@/components/FloorExportDialog";
 import type { DeskGroup, PlanEditorData, PlanElement, PlanGeometry, PlanRect, SpaceKind } from "@/lib/api";
+import { type Columns, columnsFor } from "@/lib/columns";
 import { agoText, shortDate } from "@/lib/dates";
 import { drawingFromPlan } from "@/lib/floorDrawing";
 import {
   type AlignMode,
   alignElements,
+  boxOf,
   boxOfAll,
   copyElements,
   groupSize,
@@ -17,6 +19,7 @@ import {
   MAX_SIZE,
   moveElement,
   newId,
+  overlapsExisting,
   problemsOf,
   rotateElements,
   scaleElement,
@@ -26,6 +29,7 @@ import {
 } from "@/lib/planGeometry";
 import { useNow } from "@/lib/useNow";
 import { straighten, type TidyResult } from "@/lib/wallSnap";
+import { adminExpiredUrl } from "@/lib/loginRedirect";
 import ui from "../seating/seating.module.css";
 import BackgroundDialog from "./BackgroundDialog";
 import ImportWizard, { type Background } from "./ImportWizard";
@@ -35,11 +39,11 @@ import PublishDialog, { type PublishResult, type ScheduleResult } from "./Publis
 import ResizeDialog from "./ResizeDialog";
 import SelectionToolbar from "./SelectionToolbar";
 import TidyDialog from "./TidyDialog";
-import { EXPIRED, Header, json, type ScreenProps, useFloorChanges } from "./shared";
+import { Header, json, type ScreenProps, useFloorChanges } from "./shared";
 import styles from "./plans.module.css";
 
 const SAVE_DELAY_MS = 1500; // 마지막으로 바꾸고 이만큼 쉬면 자동 저장
-const HEARTBEAT_MS = 30_000; // 편집 중 표시 (서버는 2분 소식이 없으면 잠금을 푼다)
+const HEARTBEAT_MS = 10_000; // 편집 중 표시. 다른 관리자가 넘겨받으면 다음 표시 때 알아챈다 (서버는 2분 소식이 없으면 잠금을 푼다)
 const WATCH_MS = 15_000; // 보기만 할 때 다른 사람의 편집을 다시 읽는 간격
 const COALESCE_MS = 1500; // 같은 칸을 이만큼 안에 이어서 고치면 되돌리기 한 번으로 묶는다
 const HISTORY_MAX = 100;
@@ -133,7 +137,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
   const [exporting, setExporting] = useState(false);
   const [busy, setBusy] = useState(false);
   const pageRef = useRef<HTMLDivElement>(null);
-  const [cols, setCols] = useState<1 | 2 | 3>(2);
+  const [cols, setCols] = useState<Columns>(2);
   const readOnly = lock !== null;
 
   useEffect(() => {
@@ -141,7 +145,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
     if (!el) return;
     const observer = new ResizeObserver(([entry]) => {
       const w = entry.contentRect.width;
-      setCols(w >= THREE_COLUMNS_PX ? 3 : w >= TWO_COLUMNS_PX ? 2 : 1);
+      setCols((prev) => columnsFor(w, prev, THREE_COLUMNS_PX, TWO_COLUMNS_PX));
     });
     observer.observe(el);
     return () => observer.disconnect();
@@ -190,7 +194,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
           }),
         });
         if (res.status === 401) {
-          router.replace(EXPIRED);
+          router.replace(adminExpiredUrl());
           return false;
         }
         const out = await res.json().catch(() => null);
@@ -263,7 +267,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
         body: JSON.stringify({ take_over: takeOver }),
       }).catch(() => null);
       if (res?.status === 401) {
-        router.replace(EXPIRED);
+        router.replace(adminExpiredUrl());
         return false;
       }
       if (res?.status === 404) {
@@ -280,8 +284,12 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
     [planId, router, refresh],
   );
 
+  // 보기 전용으로 다시 읽던 요청이 넘겨받은 뒤에 도착하면 버린다 (넘겨받기 전 상태로 잠금을 되돌리지 않게)
+  const watchGen = useRef(0);
+
   async function takeOver() {
     setBusy(true);
+    watchGen.current += 1;
     const ok = await claim(true);
     const fresh = ok ? await reload() : null;
     setBusy(false);
@@ -297,13 +305,17 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
   useEffect(() => {
     if (readOnly) {
       const timer = setInterval(async () => {
+        const gen = watchGen.current;
         const fresh = await reload();
-        if (!fresh?.draft || fresh.draft.id !== planId) return;
+        if (gen !== watchGen.current || !fresh?.draft || fresh.draft.id !== planId) return;
         adopt(fresh);
         const editing = fresh.draft.editing;
         setLock(editing && !editing.mine ? { by: editing.name } : { by: null });
       }, WATCH_MS);
-      return () => clearInterval(timer);
+      return () => {
+        clearInterval(timer);
+        watchGen.current += 1;
+      };
     }
     const first = setTimeout(() => void claim(false), 0);
     const timer = setInterval(() => void claim(false), HEARTBEAT_MS);
@@ -408,7 +420,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
         headers: json,
         body: JSON.stringify({ visible }),
       });
-      if (res.status === 401) router.replace(EXPIRED);
+      if (res.status === 401) router.replace(adminExpiredUrl());
     } catch {
       // 화면에서는 이미 바뀌었다. 다음에 열 때 예전 값이면 다시 고르면 된다
     }
@@ -480,8 +492,19 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
       p,
       docRef.current.geometry,
     );
+    // 가장자리 가까이 눌러도 묶음이 도면 밖으로 나가지 않게 안으로 당긴다
+    const { width: W, height: H } = docRef.current;
+    const b = boxOf(group);
+    group.x = Math.min(Math.max(group.x, 0), Math.max(W - b.w, 0));
+    group.y = Math.min(Math.max(group.y, 0), Math.max(H - b.h, 0));
+    const overlap = overlapsExisting([group], docRef.current.geometry);
     addElement(group);
-    showToast(`책상 ${group.cells.length}석을 놓았어요 (${group.cells[0].code}부터). 오른쪽에서 번호를 고칠 수 있어요`);
+    showToast(
+      `책상 ${group.cells.length}석을 놓았어요 (${group.cells[0].code}부터). ${
+        overlap ? "다른 책상·회의실과 겹쳐요 · 끌어서 옮기세요" : "오른쪽에서 번호를 고칠 수 있어요"
+      }`,
+      overlap ? "error" : undefined,
+    );
   }
 
   /** 지우면 영향 받는 것: 앉은 사람, 남은 예약 */
@@ -541,7 +564,10 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
 
   const duplicateSelected = useCallback(() => {
     const els = docRef.current.geometry.elements.filter((e) => selectedIds.includes(e.id));
-    if (els.length) placeCopies(els, 1, 1);
+    if (els.length === 0) return;
+    const copies = placeCopies(els, 1, 1);
+    if (overlapsExisting(copies, docRef.current.geometry))
+      showToast(`복제했어요: ${clipText(copies)} · 다른 책상·회의실과 겹쳐요 · 끌어서 옮기세요`, "error");
   }, [selectedIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 층 사이 복사·붙여넣기: 이 브라우저의 다른 층 도면 편집 화면에서도 붙여 넣을 수 있게 localStorage에 둔다
@@ -576,7 +602,13 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
     const x = Math.min(Math.max(box.x + offset, 0), Math.max(W - box.w, 0));
     const y = Math.min(Math.max(box.y + offset, 0), Math.max(H - box.h, 0));
     const copies = placeCopies(c.elements, x - box.x, y - box.y);
-    showToast(`붙여 넣었어요: ${clipText(copies)}${c.floorId !== data.floor.id ? ` (${c.floor}에서)` : ""}`);
+    const overlap = overlapsExisting(copies, docRef.current.geometry);
+    showToast(
+      `붙여 넣었어요: ${clipText(copies)}${c.floorId !== data.floor.id ? ` (${c.floor}에서)` : ""}${
+        overlap ? " · 다른 책상·회의실과 겹쳐요 · 끌어서 옮기세요" : ""
+      }`,
+      overlap ? "error" : undefined,
+    );
   }, [clip, data.floor.id, showToast]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** 고른 것 90도 돌리기 (R 오른쪽, Shift+R 왼쪽): 책상은 방향, 사각형은 폭·높이, 여러 개면 함께 */
@@ -724,7 +756,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
       result.reservations_cancelled && `예약 취소 ${result.reservations_cancelled}건`,
     ].filter(Boolean);
     showToast(
-      `${data.floor.name} 도면을 게시했어요 (v${result.version})${parts.length ? ` · ${parts.join(" · ")}` : ""}`,
+      `${data.floor.site.name} ${data.floor.name} 도면을 게시했어요 (v${result.version})${parts.length ? ` · ${parts.join(" · ")}` : ""}`,
     );
     await reload();
   }
@@ -745,7 +777,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
     setBusy(false);
     setDiscarding(false);
     if (res?.status === 401) {
-      router.replace(EXPIRED);
+      router.replace(adminExpiredUrl());
       return;
     }
     if (res?.status === 423) {
@@ -1087,7 +1119,10 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
             )}
             <ZoomControls zoom={zoom} onZoom={setZoom} />
           </div>
-          <p className={ui.modeBar} data-tone={tool !== "select" && !readOnly ? "zone" : undefined}>
+          <p
+            className={`${ui.modeBar} ${styles.hintBar}`}
+            data-tone={tool !== "select" && !readOnly ? "zone" : undefined}
+          >
             {hint}
           </p>
           <div className={ui.canvasCard}>
@@ -1160,7 +1195,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
             setTool("select");
             setSelectedIds([id]);
           }}
-          onExpired={() => router.replace(EXPIRED)}
+          onExpired={() => router.replace(adminExpiredUrl())}
         />
       )}
 
@@ -1178,7 +1213,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
           mode="draft"
           data={{ ...data, size: { width_m: width, height_m: height } }}
           onClose={() => setImporting(false)}
-          onExpired={() => router.replace(EXPIRED)}
+          onExpired={() => router.replace(adminExpiredUrl())}
           onApply={applyImport}
         />
       )}
@@ -1194,7 +1229,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
             setBgEditing(false);
             setImporting(true);
           }}
-          onExpired={() => router.replace(EXPIRED)}
+          onExpired={() => router.replace(adminExpiredUrl())}
         />
       )}
 
@@ -1211,7 +1246,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
         <FloorExportDialog
           drawing={drawingFromPlan(geometry, width, height, data.live)}
           title={`${data.floor.site.name} ${data.floor.name} 도면 초안 v${draft.version}`}
-          fileBase={`${data.floor.name}-도면초안-v${draft.version}`}
+          fileBase={`${data.floor.site.name}-${data.floor.name}-도면초안-v${draft.version}`}
           onClose={() => setExporting(false)}
         />
       )}

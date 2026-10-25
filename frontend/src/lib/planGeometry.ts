@@ -7,6 +7,8 @@ export const GRID_M = 0.5;
 
 // 책상 기본 크기와 책상 사이 간격 (m). 서버(server/app/plan_geometry.py)와 같아야 한다.
 // 직원 화면은 좌석을 "책상 크기 ÷ 도면 크기" 비율로 그린다. 기본 책상을 50 × 30 m 도면에 두면 0.0533 × 0.0556
+// 보통 사무용 책상 (빈 도면·도면 파일로 만든 초안의 "새 책상 기본 크기")
+export const OFFICE_DESK = { w: 1.6, h: 0.8 };
 const DESK_W = 2.665;
 const DESK_H = 1.668;
 const GAP_X = 0.085; // 옆 책상 사이
@@ -420,6 +422,25 @@ export function problemsOf(geometry: PlanGeometry, width: number, height: number
     }
   }
   return out;
+}
+
+// 겹치면 안 되는 요소. 벽·선 벽·출입구는 원래 다른 것에 맞닿아 있어 빼고 본다
+const SOLID: PlanElement["type"][] = ["desk_group", "room", "space", "pillar"];
+
+/** 새로 넣은 요소(added)가 이미 있는 책상·회의실·공간·기둥과 겹치나 (5 cm 넘게) */
+export function overlapsExisting(added: PlanElement[], geometry: PlanGeometry): boolean {
+  const ids = new Set(added.map((e) => e.id));
+  const others = geometry.elements.filter((e) => !ids.has(e.id) && SOLID.includes(e.type)).map(boxOf);
+  return added
+    .filter((e) => SOLID.includes(e.type))
+    .map(boxOf)
+    .some((a) =>
+      others.some(
+        (b) =>
+          Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 0.05 &&
+          Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > 0.05,
+      ),
+    );
 }
 
 /** 요약: 책상(좌석)·회의실·출입구 수 */

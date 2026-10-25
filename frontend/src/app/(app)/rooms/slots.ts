@@ -1,5 +1,6 @@
 import type { EmployeeHit, RoomDay, RoomsDay } from "@/lib/api";
 import { addDays, daysBetween, weekdayOf } from "@/lib/dates";
+import { seoulNow } from "@/lib/rooms";
 import type { SearchWhen } from "@/lib/useEmployeeSearch";
 
 // 예약 현황표의 칸 계산. 시간은 모두 그날 0시부터 분, 칸 하나 = policy.slot분
@@ -42,6 +43,20 @@ export const EMPTY_DRAFT: Draft = {
   repeatUntil: null,
   notify: true,
 };
+
+/**
+ * 화면을 열어 둔 동안에도 시간이 흐르게: 서버가 읽어 온 때의 "오늘·지금"을 브라우저 시계로 바꾼다.
+ * 지난 칸·"지금" 선·오늘 단추가 따라 움직이고, 자정이 지나면 보던 날이 지난 날이 된다.
+ * now가 0(서버에서 그릴 때·화면이 붙기 전)이면 서버 값 그대로
+ */
+export function liveDay(day: RoomsDay, now: number): RoomsDay {
+  if (!now) return day;
+  const { date: today, min } = seoulNow(now);
+  const now_min = day.date === today ? min : null;
+  const past = day.date < today;
+  if (today === day.today && now_min === day.now_min && past === day.past) return day;
+  return { ...day, today, now_min, past };
+}
 
 export function slotStarts(day: RoomsDay): number[] {
   const { open_start, open_end, slot } = day.policy;
@@ -150,6 +165,23 @@ export function timeIsFree(day: RoomsDay, room: RoomDay, d: Draft): boolean {
 export function freeRoomsFor(day: RoomsDay, d: Draft): RoomDay[] {
   if (d.start === null || d.end === null || d.endDays > 0) return [];
   return day.rooms.filter((r) => r.id !== d.roomId && timeIsFree(day, r, d));
+}
+
+/**
+ * 고른 회의실이 차 있을 때 권할 빈 회의실 순서: 인원이 들어가는 곳 먼저, 그다음 고른 회의실과 같은 층·가까운 층,
+ * 그다음 작은 방 (2명 회의에 200석 대강당을 먼저 권하지 않게)
+ */
+export function suggestRooms(day: RoomsDay, d: Draft, people: number): RoomDay[] {
+  const floorOrder = [...new Set(day.rooms.map((r) => r.floor.id))];
+  const chosen = day.rooms.find((r) => r.id === d.roomId);
+  const at = chosen ? floorOrder.indexOf(chosen.floor.id) : 0;
+  const distance = (r: RoomDay) => Math.abs(floorOrder.indexOf(r.floor.id) - at);
+  return freeRoomsFor(day, d).sort(
+    (a, b) =>
+      Number(b.capacity >= people) - Number(a.capacity >= people) ||
+      distance(a) - distance(b) ||
+      a.capacity - b.capacity,
+  );
 }
 
 /** 고치는 예약은 현황에서 빼고 계산한다 (자기 자신과 겹친다고 막지 않게) */

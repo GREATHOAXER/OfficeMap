@@ -178,9 +178,10 @@ export default function PlanCanvas(props: Props) {
     const d = seatDims(el);
     return { w: (d.w / width) * 100, h: (d.h / width) * 100 };
   };
+  // 보통 번호 "A-01"(2.5em)에서 seatLabel의 여유(0.15em)를 뺀 값을 넘겨, 도면 편집의 글자·도면 폭은 예전 그대로 둔다
   const deskFont = baseSeatFont(
     geometry.elements.flatMap((el) => (el.type === "desk_group" ? el.cells.map(() => deskBox(el)) : [])),
-    2.5,
+    2.35,
   );
   const minW = minPlanWidth(deskFont, DESK_READABLE_PX);
   const canvasW = Math.round(Math.max(availPx, MIN_CANVAS_PX, minW) * zoom);
@@ -621,7 +622,7 @@ export default function PlanCanvas(props: Props) {
                       top: `${(((c.y - size.h / 2 - box.y) / box.h) * 100).toFixed(3)}%`,
                       width: `${((size.w / box.w) * 100).toFixed(3)}%`,
                       height: `${((size.h / box.h) * 100).toFixed(3)}%`,
-                      fontSize: `${seatFont(cellBox, cell.desk ? cell.code : "빈칸", !!seat?.occupant, deskFont).toFixed(3)}cqw`,
+                      fontSize: `${seatFont(cellBox, cell.desk ? cell.code : "빈칸", !!seat?.occupant, deskFont, "mixed").toFixed(3)}cqw`,
                     };
                     return (
                       <span

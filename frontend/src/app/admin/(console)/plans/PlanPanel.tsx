@@ -8,6 +8,7 @@ import {
   boxOfAll,
   countsOf,
   DESK,
+  OFFICE_DESK,
   DESK_RANGE,
   deskDims,
   distributeElements,
@@ -164,17 +165,11 @@ function Summary(props: Props) {
             </div>
             <p className={ui.hint}>
               새로 놓는 책상 묶음에 써요. 이미 놓은 묶음은 골라서 책상 크기를 바꿔요.
-              {geometry.desk && (
+              {(desk.w !== OFFICE_DESK.w || desk.h !== OFFICE_DESK.h) && (
                 <>
                   {" "}
-                  <button
-                    type="button"
-                    className={ui.linkButton}
-                    onClick={() =>
-                      onGeometry({ schema: geometry.schema, grid_m: geometry.grid_m, elements: geometry.elements })
-                    }
-                  >
-                    기본({DESK.w} × {DESK.h})으로
+                  <button type="button" className={ui.linkButton} onClick={() => setDesk(OFFICE_DESK)}>
+                    보통 책상({OFFICE_DESK.w} × {OFFICE_DESK.h})으로
                   </button>
                 </>
               )}
@@ -994,7 +989,8 @@ function Multi({ geometry, selected, width, readOnly, onChange, onDelete, onDupl
   );
 }
 
-/** 숫자 칸. 입력 중에는 글자 그대로 두고, 숫자가 되면 바로 반영한다 */
+/** 숫자 칸. 입력 중에는 글자 그대로 두고, 범위 안의 숫자가 되면 바로 반영한다.
+ *  범위 밖이면 반영하지 않고 범위를 알려 주며, 그 값으로 칸을 떠나면 원래 값으로 돌아갔다고 알린다 */
 function Num({
   label,
   value,
@@ -1013,6 +1009,22 @@ function Num({
   const shown = String(Math.round(value * 1000) / 1000);
   const [text, setText] = useState(shown);
   const [focused, setFocused] = useState(false);
+  const [reverted, setReverted] = useState(false);
+  const range =
+    min !== undefined && max !== undefined
+      ? `${min}~${max}`
+      : min !== undefined
+        ? `${min} 이상`
+        : max !== undefined
+          ? `${max} 이하`
+          : null;
+  const problem = (t: string): string | null => {
+    const v = Number(t);
+    if (t.trim() === "" || !Number.isFinite(v)) return "숫자를 넣으세요";
+    if ((min !== undefined && v < min) || (max !== undefined && v > max)) return `범위 ${range}`;
+    return null;
+  };
+  const bad = focused ? problem(text) : null;
   return (
     <label>
       {label}
@@ -1023,19 +1035,26 @@ function Num({
         min={min}
         max={max}
         value={focused ? text : shown}
+        aria-invalid={!!bad || undefined}
         onFocus={() => {
           setText(shown);
           setFocused(true);
+          setReverted(false);
         }}
-        onBlur={() => setFocused(false)}
+        onBlur={() => {
+          setFocused(false);
+          setReverted(problem(text) !== null);
+        }}
         onChange={(e) => {
           setText(e.target.value);
-          const v = Number(e.target.value);
-          if (e.target.value.trim() === "" || !Number.isFinite(v)) return;
-          if ((min !== undefined && v < min) || (max !== undefined && v > max)) return;
-          onChange(v);
+          if (problem(e.target.value) === null) onChange(Number(e.target.value));
         }}
       />
+      {(bad || reverted) && (
+        <span className={styles.numNote} role="status">
+          {bad ?? `${range ? `범위 ${range} · ` : ""}원래 값으로 둠`}
+        </span>
+      )}
     </label>
   );
 }

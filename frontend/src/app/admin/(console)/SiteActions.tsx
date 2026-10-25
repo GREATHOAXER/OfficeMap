@@ -3,13 +3,14 @@
 import { useRouter } from "next/navigation";
 import { type ReactNode, useState } from "react";
 import Dialog from "@/components/Dialog";
+import { adminExpiredUrl } from "@/lib/loginRedirect";
 import ui from "./seating/seating.module.css";
+import { validationText } from "./validation";
 import styles from "./admin.module.css";
 
 // 관리자 첫 화면의 사업장·층 추가·고치기 (사업장은 전사 관리자, 층은 그 사업장의 사업장 관리자 이상)
 
 const json = { "content-type": "application/json" };
-const EXPIRED = "/admin/login?reason=expired";
 const KIND_CODE: Record<string, "HQ" | "CENTER"> = { 본사: "HQ", 센터: "CENTER" };
 
 type SiteInfo = { id: number; kind: string; name: string; address: string | null };
@@ -24,13 +25,15 @@ function errorText(code: string | undefined, detail: Record<string, unknown> | u
       return `층이 남아 있어요 (${(detail?.floors as string[]).join(", ")}). 층을 먼저 없애세요`;
     case "FLOOR_NAME_TAKEN":
       return "이 사업장에 같은 이름의 층이 있어요";
+    case "BAD_POSITION":
+      return "놓을 자리로 고른 층이 없어졌어요. 놓을 자리를 다시 골라 주세요";
     case "FLOOR_IN_USE":
       return `좌석 ${detail?.seats}석 · 회의실 ${detail?.rooms}개가 남아 있어요. 도면에서 지우고 게시한 뒤 없앨 수 있어요`;
     case "COMPANY_ADMIN_ONLY":
     case "NOT_IN_SCOPE":
       return "내 관리 범위가 아니에요";
     default:
-      return "저장하지 못했어요. 입력을 확인하고 다시 해 보세요";
+      return validationText(detail) ?? "저장하지 못했어요. 입력을 확인하고 다시 해 보세요";
   }
 }
 
@@ -49,7 +52,7 @@ function useSend() {
         body: body === undefined ? undefined : JSON.stringify(body),
       });
       if (res.status === 401) {
-        router.replace(EXPIRED);
+        router.replace(adminExpiredUrl());
         return false;
       }
       if (!res.ok) {
@@ -188,7 +191,12 @@ export function SiteButton({ site }: { site?: SiteInfo }) {
               onChange={(e) => setAddress(e.target.value)}
             />
           </label>
-          {!site && <p className={ui.hint}>추가한 뒤 사업장 칸의 &ldquo;+ 층 추가&rdquo;로 층을 만들어요.</p>}
+          {!site && (
+            <p className={ui.hint}>
+              추가한 뒤 사업장 칸의 &ldquo;+ 층 추가&rdquo;로 층을 만들어요. 예전에 닫은 사업장과 이름이 같으면 그
+              사업장을 다시 열어요.
+            </p>
+          )}
           {closing && (
             <p className={ui.hint}>
               닫으면 직원 화면의 사업장 목록에서 빠지고 이 사업장 관리자 권한도 회수돼요. 층이 남아 있으면 닫을 수
@@ -211,9 +219,13 @@ export function FloorButton({ siteId, floors, floor }: { siteId: number; floors:
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(floor?.name ?? "");
   const [description, setDescription] = useState(floor?.description ?? "");
-  // 놓을 자리: 이 층 바로 아래 (""이면 맨 위). floors는 위층부터
-  const index = floor ? floors.findIndex((f) => f.id === floor.id) : -1;
-  const [under, setUnder] = useState<string>(index > 0 ? String(floors[index - 1].id) : "");
+  // 놓을 자리: 이 층 바로 아래 (""이면 맨 위). floors는 위층부터. 열 때마다 지금 층 목록으로 다시 정한다
+  // (다른 층을 없애거나 순서를 바꾼 뒤 예전 위층을 그대로 보내면 서버가 거절한다)
+  const underNow = () => {
+    const index = floor ? floors.findIndex((f) => f.id === floor.id) : -1;
+    return index > 0 ? String(floors[index - 1].id) : "";
+  };
+  const [under, setUnder] = useState<string>(underNow);
   const [closing, setClosing] = useState(false);
   const { busy, error, setError, send } = useSend();
   const others = floors.filter((f) => f.id !== floor?.id);
@@ -240,7 +252,18 @@ export function FloorButton({ siteId, floors, floor }: { siteId: number; floors:
 
   return (
     <>
-      <button type="button" className={styles.btn} onClick={() => setOpen(true)}>
+      <button
+        type="button"
+        className={styles.btn}
+        onClick={() => {
+          if (floor) {
+            setName(floor.name);
+            setDescription(floor.description ?? "");
+          }
+          setUnder(underNow());
+          setOpen(true);
+        }}
+      >
         {floor ? "층 고치기" : "+ 층 추가"}
       </button>
       <Dialog

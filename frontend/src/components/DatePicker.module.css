@@ -30,9 +30,10 @@
   cursor: default;
 }
 
+/* 위치(top·left)는 DatePicker.tsx가 버튼 자리를 보고 화면 기준으로 정한다 */
 .panel {
-  position: absolute;
-  top: calc(100% + 6px);
+  position: fixed;
+  top: 0;
   left: 0;
   z-index: 40;
   width: 296px;
@@ -42,11 +43,6 @@
   border-radius: 10px;
   background: var(--surface);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
-}
-
-.panel[data-align="end"] {
-  right: 0;
-  left: auto;
 }
 
 .header {
