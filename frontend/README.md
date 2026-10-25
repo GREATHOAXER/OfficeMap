@@ -29,13 +29,34 @@ API 서버(`server/`, uvicorn)가 `http://localhost:8000`에서 떠 있어야 �
 `npm audit`이 깨끗하도록 `package.json`의 `overrides`로 exceljs가 쓰는 `uuid`를 11.1.1로 올려 둡니다
 (exceljs 4.4.0은 uuid 8을 요구하지만 쓰는 함수 `v4`는 그대로 있습니다). 의존성을 바꾼 뒤에는 `npm audit`으로 확인하세요.
 
+## 화면 속도
+
+휴대폰·느린 망(ngrok 터널)에서도 빨리 뜨도록 한 것들입니다. 같은 조건(지연 200ms, 5Mbps, CPU 4배 느림, 첫 방문)에서
+첫 화면 로드가 8.9초 → 1.7초, 요청 235개 → 31개, 받는 양 2MB → 237KB가 됐습니다.
+
+- **글꼴**: 본문(한글)은 기기 글꼴(맑은 고딕·Apple SD 고딕 Neo·Noto Sans KR 등, `globals.css`의 `--font-body`)을 씁니다.
+  한글 웹 글꼴은 글자 묶음 파일이 200개 넘게(첫 화면 1.7MB) 받아져서 뺐습니다. 숫자용 고정폭 글꼴(IBM Plex Mono, 20KB)만
+  `next/font`로 이 서버가 제공합니다.
+- **CSS**: `next.config.ts`의 `experimental.cssChunking: "graph"`로 화면마다 쓰는 CSS만 받습니다(직원 화면이 관리자 화면 CSS를
+  받지 않음, 68KB → 11~22KB).
+- **미리 받기**: 층 탭과 도면의 회의실 상자는 `prefetch={false}`. 서버가 그때의 자리·재실을 그리는 화면이라 미리 받아 둘 것이
+  없고 요청만 늘었습니다. 왼쪽 메뉴는 미리 받습니다(로딩 자리가 바로 뜨도록).
+- **로딩 자리**: 메뉴로 옮겨 갈 때 바로 보이는 `loading.tsx`. 주소의 `?floor=`·`?date=`만 바꾸는 화면(자리 현황·회의실·
+  도면 편집·좌석 배치)에는 두지 않습니다(층·날짜를 바꿀 때마다 화면 전체가 깜빡임). 조직도는 부서를 고를 때 주소만 바꿉니다
+  (`history.replaceState`, 전에는 부서마다 서버가 조직도 전체를 다시 그림).
+- **도면 다시 그리기**: 좌석(`SeatButton`)은 `memo`라 배율을 바꾸거나 누군가의 재실이 바뀌면 바뀐 자리만 다시 그립니다
+  (핀치는 초당 수십 번 배율이 바뀜).
+- 개발 서버(`npm run dev`)는 화면을 처음 열 때마다 컴파일하고 JS도 몇 배 커서, 휴대폰·ngrok으로 볼 때는 빌드해서 띄우세요.
+- 다시 재기: 측정 스크립트(서버 렌더 시간, 페이지별 글꼴·CSS·JS, 데스크톱·휴대폰 CPU, 느린 망 첫 방문·메뉴 이동, 미리 받기)를
+  같은 조건으로 돌려 비교합니다.
+
 ## 구조
 
 ```
 src/
   proxy.ts              지금 주소를 x-pathname 헤더로 넘긴다 (로그인이 끊기면 ?next= 로 보던 화면에 돌아오게)
   app/
-    layout.tsx          공통 글꼴(IBM Plex Sans KR)·색
+    layout.tsx          공통 글꼴(본문은 기기 글꼴, 숫자는 IBM Plex Mono)·색
     globals.css         디자인 색·글꼴 기준값, 팀 색(data-color), 재실 표시(.mk)
     login/              로그인 화면. ?next=로그인 후 갈 화면, ?reason= 끊긴 이유 안내 (관리자 페이지 링크는 두지 않음)
     password/           비밀번호 변경 ( /password ). 임시 비밀번호면 다른 화면보다 먼저 여기로 온다
@@ -95,7 +116,8 @@ src/
         ReservationsView.tsx 요약 카드, 예정·지난 탭, 내 역할 필터, 날짜별 목록
   components/
     AppShell.tsx        왼쪽 메뉴와 사업장 고르기. 햄버거로 접고 펴며, 상태는 쿠키에 저장. 관리자 페이지도 같은 틀.
-                        휴대폰에서는 위쪽 막대 + 서랍 메뉴
+                        휴대폰에서는 위쪽 막대 + 서랍 메뉴. 메뉴를 누르면 다음 화면이 뜰 때까지 항목 아래에 움직이는 줄
+    PageLoading.tsx     메뉴로 옮겨 갈 때 바로 보이는 자리 (내 예약·내 재실 상태·내 정보·조직도·팀 이사의 loading.tsx)
     SessionWatch.tsx    자동 로그아웃 1분 전 알림("계속 사용"), 다른 탭 로그아웃·만료를 알아채고 로그인 화면으로
     PendingButton.tsx   아직 화면이 없는 작업 버튼 (누르면 "준비 중" 말풍선)
     DatePicker.tsx      날짜 고르기 달력 (일 → 월 → 연도 보기)

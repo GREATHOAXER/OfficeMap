@@ -149,11 +149,13 @@ export default function OrgView({
       .then((res) => (res.ok ? (res.json() as Promise<{ members: OrgMember[] }>) : null))
       .then((out) => alive && setMembers(out?.members ?? []))
       .catch(() => alive && setMembers([]));
-    router.replace(`/admin/org?dept=${selected}`, { scroll: false });
+    // 주소만 바꾼다 (router로 바꾸면 서버가 조직도 전체를 다시 그려 보낸다)
+    const url = `/admin/org?dept=${selected}`;
+    if (window.location.pathname + window.location.search !== url) window.history.replaceState(null, "", url);
     return () => {
       alive = false;
     };
-  }, [selected, router]);
+  }, [selected]);
 
   async function after(text: string, deptId?: number | null) {
     await reloadOrg();

@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   type CSSProperties,
@@ -451,6 +451,7 @@ function MenuEntry({ item, active, collapsed }: { item: MenuItem; active: boolea
         title={collapsed ? item.label : undefined}
       >
         {body}
+        <NavPending />
       </Link>
     );
   }
@@ -465,6 +466,12 @@ function MenuEntry({ item, active, collapsed }: { item: MenuItem; active: boolea
       {body}
     </button>
   );
+}
+
+/** 메뉴를 누른 뒤 다음 화면이 뜨기 전까지 항목 아래에 움직이는 줄. 늘 자리를 차지하고 보이기만 바꿔서 메뉴가 들썩이지 않는다 */
+function NavPending() {
+  const { pending } = useLinkStatus();
+  return <span aria-hidden="true" className={styles.navPending} data-pending={pending || undefined} />;
 }
 
 function UserCard({ account: user }: { account: Account }) {

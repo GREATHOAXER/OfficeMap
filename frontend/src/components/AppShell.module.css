@@ -232,6 +232,7 @@
 }
 
 .item {
+  position: relative;
   width: 100%;
   display: flex;
   align-items: center;
@@ -568,5 +569,39 @@
 @media (max-width: 720px) and (prefers-reduced-motion: reduce) {
   .sidebar {
     transition: none;
+  }
+}
+
+/* 메뉴를 누르고 다음 화면을 받는 동안 (NavPending) */
+.navPending {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 3px;
+  height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0;
+  transform-origin: left center;
+  pointer-events: none;
+}
+
+.navPending[data-pending] {
+  opacity: 0.55;
+  animation: navPending 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes navPending {
+  from {
+    transform: scaleX(0.15);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navPending[data-pending] {
+    animation: none;
   }
 }

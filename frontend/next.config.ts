@@ -42,6 +42,10 @@ async function devOrigins(): Promise<string[]> {
 export default async function config(phase: string): Promise<NextConfig> {
   return {
     allowedDevOrigins: phase === PHASE_DEVELOPMENT_SERVER ? await devOrigins() : [],
+    experimental: {
+      // CSS를 화면마다 쓰는 만큼만 묶는다 (기본은 한 덩어리로 합쳐서 직원 화면도 관리자 화면 CSS까지 받는다)
+      cssChunking: "graph",
+    },
     // 브라우저는 /api 로만 요청하고, Next.js가 FastAPI 서버로 넘겨준다.
     // 화면과 API가 같은 주소가 되어 로그인 쿠키가 그대로 동작하고 CORS 설정이 필요 없다
     async rewrites() {

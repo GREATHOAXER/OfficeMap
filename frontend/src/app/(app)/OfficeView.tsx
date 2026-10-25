@@ -287,6 +287,8 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
                   <Link
                     key={floor.id}
                     href={`/?floor=${floor.id}`}
+                    // 층마다 그때의 자리·재실을 서버가 그려야 해서 미리 받아 둘 것이 없다 (미리 받기 요청만 층 수만큼 늘어난다)
+                    prefetch={false}
                     className={`${styles.floor} ${current ? styles.floorOn : ""}`}
                     aria-current={current ? "page" : undefined}
                     scroll={false}

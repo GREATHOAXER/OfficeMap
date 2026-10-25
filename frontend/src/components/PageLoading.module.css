@@ -1,0 +1,45 @@
+.wrap {
+  display: grid;
+  gap: 14px;
+  padding: 24px clamp(16px, 3vw, 32px);
+}
+
+.title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.head,
+.block {
+  border-radius: var(--radius);
+  background: linear-gradient(90deg, var(--surface-sunken) 0%, var(--divider) 50%, var(--surface-sunken) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s linear infinite;
+}
+
+.head {
+  height: 44px;
+  max-width: 420px;
+}
+
+.block {
+  height: 120px;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .head,
+  .block {
+    animation: none;
+  }
+}

@@ -4,9 +4,12 @@ import Link from "next/link";
 import {
   type CSSProperties,
   type FocusEvent,
+  memo,
   type KeyboardEvent as ReactKeyboardEvent,
+  useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -69,11 +72,16 @@ export default function FloorPlan(props: Props) {
   const prevZoomRef = useRef(zoom);
   const anchorRef = useRef<{ x: number; y: number } | null>(null); // 확대 기준점 (스크롤 영역 안 좌표)
   const onZoomRef = useRef(onZoomChange);
+  const onSelectRef = useRef(onSelectSeat);
   const fitRef = useRef({ zoom: 1, report: onFitZoom });
   const hasPlan = map.plan !== null;
   // 좌석 이름 글자 크기 (cqw): 층의 보통 책상에 "● 가나다"가 들어가는 크기. 도면은 이 글자가 읽히는 폭보다 작아지지 않는다
   const aspect = map.plan ? map.plan.height_m / map.plan.width_m : 0.6;
-  const seatSize = map.plan ? seatRatio(map.plan.width_m, map.plan.height_m) : { w: 0, h: 0 };
+  // 자리마다 넘기는 값은 같은 층이면 같은 객체로 둔다: 배율·재실이 바뀔 때 바뀐 자리만 다시 그린다 (SeatButton은 memo)
+  const seatSize = useMemo(
+    () => (map.plan ? seatRatio(map.plan.width_m, map.plan.height_m) : { w: 0, h: 0 }),
+    [map.plan],
+  );
   const boxOf = (seat: Seat): SeatBox => seatBox(seat.w ?? seatSize.w, seat.h ?? seatSize.h, aspect);
   const baseFont = baseSeatFont(map.seats.map(boxOf));
   const baseFontRef = useRef(baseFont);
@@ -82,6 +90,7 @@ export default function FloorPlan(props: Props) {
 
   useEffect(() => {
     onZoomRef.current = onZoomChange;
+    onSelectRef.current = onSelectSeat;
     baseFontRef.current = baseFont;
     fitRef.current.report = onFitZoom;
   });
@@ -145,16 +154,17 @@ export default function FloorPlan(props: Props) {
 
   useEffect(() => () => clearTimeout(hoverTimer.current), []);
 
-  function startHover(seatId: number) {
+  const startHover = useCallback((seatId: number) => {
     clearTimeout(hoverTimer.current);
     hoverTimer.current = setTimeout(() => {
       if (!panningRef.current) setHoverSeatId(seatId);
     }, HOVER_DELAY_MS);
-  }
-  function endHover() {
+  }, []);
+  const endHover = useCallback(() => {
     clearTimeout(hoverTimer.current);
     setHoverSeatId(null);
-  }
+  }, []);
+  const selectSeat = useCallback((seatId: number) => onSelectRef.current(seatId), []);
 
   // 핀치 확대·축소
   // - 트랙패드 (Chrome·Edge·Firefox): 핀치가 ctrlKey가 붙은 wheel 이벤트로 온다 (Ctrl+마우스 휠도 같은 이벤트)
@@ -239,7 +249,8 @@ export default function FloorPlan(props: Props) {
     }
     function onClickCapture(event: MouseEvent) {
       // 끌기를 마친 손, 핀치를 마치고 남은 손가락이 떨어질 때 그 아래 자리가 눌리지 않게
-      if (!suppressClick && Date.now() - pinchEndedAt > 400) return;
+      // (핀치 뒤 새로 누른 손가락은 touchstart에서 pinchEndedAt을 지워 그대로 눌린다)
+      if (!suppressClick && Date.now() - pinchEndedAt > 600) return;
       suppressClick = false;
       event.stopPropagation();
       event.preventDefault();
@@ -256,6 +267,7 @@ export default function FloorPlan(props: Props) {
       };
     }
     function onTouchStart(event: TouchEvent) {
+      if (!pinch && event.touches.length === 1) pinchEndedAt = 0; // 핀치를 끝내고 새로 누른 것
       const f = twoFingers(event);
       if (!f) return;
       pinch = { dist: f.dist, zoom: zoomRef.current, x: f.x, y: f.y };
@@ -401,7 +413,7 @@ export default function FloorPlan(props: Props) {
             key={seat.id}
             seat={seat}
             size={seatSize}
-            box={boxOf(seat)}
+            aspect={aspect}
             baseFont={baseFont}
             zone={seat.zone_id ? zones.get(seat.zone_id) : undefined}
             dimmed={
@@ -411,7 +423,7 @@ export default function FloorPlan(props: Props) {
             mine={seat.occupant?.emp_no === myEmpNo}
             selected={seat.id === selectedSeatId}
             tabStop={seat.id === tabSeatId}
-            onSelect={onSelectSeat}
+            onSelect={selectSeat}
             onHoverStart={startHover}
             onHoverEnd={endHover}
           />
@@ -438,6 +450,7 @@ function RoomBox({ room, shape, floorId }: { room: Room; shape: Rect & ShapeStyl
   return (
     <Link
       href={`/rooms?floor=${floorId}`}
+      prefetch={false} // 서버에서 그때 그리는 화면이라 미리 받아도 쓸 것이 없다 (회의실 상자 수만큼 요청만 는다)
       className={`${styles.room} ${styles.fitLabel}`}
       style={{ ...rectStyle(shape), ...lineStyle(shape) }}
       data-busy={!!room.busy_until}
@@ -458,8 +471,8 @@ type SeatSize = { w: number; h: number };
 type SeatProps = {
   seat: Seat;
   size: SeatSize;
-  /** 좌석 폭·높이 (cqw)와 층 기본 글자 크기 */
-  box: SeatBox;
+  /** 도면 높이/폭 (좌석 폭·높이를 cqw로 바꿀 때)과 층 기본 글자 크기 */
+  aspect: number;
   baseFont: number;
   zone: Zone | undefined;
   dimmed: boolean;
@@ -472,11 +485,12 @@ type SeatProps = {
   onHoverEnd: () => void;
 };
 
-function SeatButton(props: SeatProps) {
-  const { seat, size: base, box, baseFont, zone, dimmed, mine, selected, tabStop, onSelect, onHoverStart, onHoverEnd } =
+const SeatButton = memo(function SeatButton(props: SeatProps) {
+  const { seat, size: base, aspect, baseFont, zone, dimmed, mine, selected, tabStop, onSelect, onHoverStart, onHoverEnd } =
     props;
   const { occupant } = seat;
   const size = { w: seat.w ?? base.w, h: seat.h ?? base.h };
+  const box = seatBox(size.w, size.h, aspect);
   const presence = occupant?.presence?.status;
   const outOfService = seat.status === "OUT_OF_SERVICE";
 
@@ -547,7 +561,7 @@ function SeatButton(props: SeatProps) {
       )}
     </button>
   );
-}
+});
 
 type CardProps = {
   seat: Seat;

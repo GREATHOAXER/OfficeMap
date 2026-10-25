@@ -5,7 +5,7 @@ import { type DrawingSeat, type DrawingStyle, type FloorDrawing, teamColor } fro
 import { DEFAULT_LINE, DESK } from "@/lib/planGeometry";
 
 // 내보낸 그림에서도 같은 모양이 나오게 글꼴·색을 속성으로 직접 적는다 (CSS를 쓰지 않는다)
-const FONT = "'IBM Plex Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif";
+const FONT = "-apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', 'Noto Sans CJK KR', sans-serif";
 const INK = "#1c1c1c";
 const MUTED = "#5e5e5a";
 const LINK = "#1d4ed8";
