@@ -2,6 +2,7 @@
 
 import { type CSSProperties, type DragEvent, type PointerEvent, useRef, useState } from "react";
 import office from "@/app/(app)/office.module.css";
+import PlanShapes, { labelStyle, lineStyle } from "@/app/(app)/PlanShapes";
 import type { Rect, SeatingData, SeatingSeat, SeatingZone } from "@/lib/api";
 import { shortDate } from "@/lib/dates";
 import { seatRatio } from "@/lib/planGeometry";
@@ -130,30 +131,16 @@ export default function SeatingCanvas(props: Props) {
           event.preventDefault();
         }}
       >
-        {geometry.walls?.map((wall, i) => (
-          <div key={`wall-${i}`} className={office.wall} style={rectStyle(wall)} />
-        ))}
-        {geometry.spaces?.map((space, i) => (
-          <div key={`space-${i}`} className={office.space} data-kind={space.kind} style={rectStyle(space)}>
-            <span>{space.label}</span>
-          </div>
-        ))}
-        {geometry.pillars?.map((p, i) => {
-          const w = p.w ?? 0.015;
-          const h = p.h ?? 0.025;
-          return (
-            <div
-              key={`pillar-${i}`}
-              className={office.pillar}
-              style={{ left: pct(p.x - w / 2), top: pct(p.y - h / 2), width: pct(w), height: pct(h) }}
-            />
-          );
-        })}
+        <PlanShapes geometry={geometry} width_m={plan.width_m} height_m={plan.height_m} />
         {data.rooms.map(
           (room) =>
             room.shape && (
-              <div key={room.id} className={styles.room} style={rectStyle(room.shape)}>
-                <span>{room.name}</span>
+              <div
+                key={room.id}
+                className={styles.room}
+                style={{ ...rectStyle(room.shape), ...lineStyle(room.shape) }}
+              >
+                <span style={labelStyle(room.shape)}>{room.name}</span>
               </div>
             ),
         )}
@@ -224,10 +211,10 @@ export default function SeatingCanvas(props: Props) {
               data-drop={dropState}
               data-seat-id={seat.id}
               style={{
-                left: pct(seat.x - seatSize.w / 2),
-                top: pct(seat.y - seatSize.h / 2),
-                width: pct(seatSize.w),
-                height: pct(seatSize.h),
+                left: pct(seat.x - (seat.w ?? seatSize.w) / 2),
+                top: pct(seat.y - (seat.h ?? seatSize.h) / 2),
+                width: pct(seat.w ?? seatSize.w),
+                height: pct(seat.h ?? seatSize.h),
               }}
               title={view.conflict && !plain ? `${seat.code} · ${view.conflict}` : `${seat.code} · ${text}`}
               aria-label={label}

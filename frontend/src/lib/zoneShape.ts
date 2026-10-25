@@ -18,9 +18,13 @@ export function zoneRects(shape: ZoneShape | null | undefined): Rect[] {
   return [{ x: shape.x, y: shape.y, w: shape.w, h: shape.h }];
 }
 
-/** 좌석 중심점들 → 덩어리마다 감싸는 사각형 (위에서 아래, 왼쪽에서 오른쪽 순). 크기는 도면 크기(m) */
-export function autoRects(points: { x: number; y: number }[], size: { width_m: number; height_m: number }): Rect[] {
-  const { w: SEAT_W, h: SEAT_H } = seatRatio(size.width_m, size.height_m);
+type SeatPoint = { x: number; y: number; w?: number | null; h?: number | null };
+
+/** 좌석 중심점들 → 덩어리마다 감싸는 사각형 (위에서 아래, 왼쪽에서 오른쪽 순). 크기는 도면 크기(m).
+ * 좌석 크기(w·h)가 없으면 기본 책상 */
+export function autoRects(seats: SeatPoint[], size: { width_m: number; height_m: number }): Rect[] {
+  const base = seatRatio(size.width_m, size.height_m);
+  const points = seats.map((p) => ({ x: p.x, y: p.y, w: p.w ?? base.w, h: p.h ?? base.h }));
   const [nearX, nearY] = [NEAR_X / size.width_m, NEAR_Y / size.height_m];
   const [padX, padTop, padBottom] = [PAD_X / size.width_m, PAD_TOP / size.height_m, PAD_BOTTOM / size.height_m];
   const n = points.length;
@@ -32,8 +36,8 @@ export function autoRects(points: { x: number; y: number }[], size: { width_m: n
       for (let j = i + 1; j < n; j++) {
         if (
           label[i] !== label[j] &&
-          Math.abs(points[i].x - points[j].x) <= SEAT_W + nearX &&
-          Math.abs(points[i].y - points[j].y) <= SEAT_H + nearY
+          Math.abs(points[i].x - points[j].x) <= (points[i].w + points[j].w) / 2 + nearX &&
+          Math.abs(points[i].y - points[j].y) <= (points[i].h + points[j].h) / 2 + nearY
         ) {
           const m = Math.min(label[i], label[j]);
           label[i] = m;
@@ -46,10 +50,10 @@ export function autoRects(points: { x: number; y: number }[], size: { width_m: n
   const boxes = new Map<number, { x0: number; y0: number; x1: number; y1: number }>();
   points.forEach((p, i) => {
     const b = boxes.get(label[i]) ?? { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
-    b.x0 = Math.min(b.x0, p.x - SEAT_W / 2 - padX);
-    b.y0 = Math.min(b.y0, p.y - SEAT_H / 2 - padTop);
-    b.x1 = Math.max(b.x1, p.x + SEAT_W / 2 + padX);
-    b.y1 = Math.max(b.y1, p.y + SEAT_H / 2 + padBottom);
+    b.x0 = Math.min(b.x0, p.x - p.w / 2 - padX);
+    b.y0 = Math.min(b.y0, p.y - p.h / 2 - padTop);
+    b.x1 = Math.max(b.x1, p.x + p.w / 2 + padX);
+    b.y1 = Math.max(b.y1, p.y + p.h / 2 + padBottom);
     boxes.set(label[i], b);
   });
   return [...boxes.values()]

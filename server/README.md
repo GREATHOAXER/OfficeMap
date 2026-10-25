@@ -205,7 +205,7 @@ scripts/
 |---|---|
 | `GET /api/admin/plans/floors` | 도면을 편집할 수 있는 층 (`published`, `drafting`) |
 | `GET /api/admin/floors/{층 ID}/plan` | 편집 화면: `draft`(모양·`revision`·편집 중인 사람), `published`, `archived`, 복제할 수 있는 층(`sources`), `live`(책상 칸·회의실마다 지금 앉은 사람·남은 예약) |
-| `POST /api/admin/floors/{층 ID}/plan/draft` | 초안 만들기 `{source: published\|blank\|archived\|floor, plan_id?, floor_id?}`. 이미 있으면 409 `HAS_DRAFT` |
+| `POST /api/admin/floors/{층 ID}/plan/draft` | 초안 만들기 `{source: published\|blank\|archived\|floor, plan_id?, floor_id?, width_m?, height_m?}` (`blank`에 사무실 크기 10~300 m, 없으면 지금 게시본 크기). 이미 있으면 409 `HAS_DRAFT` |
 | `PUT /api/admin/plans/{ID}` | 자동 저장 `{revision, geometry, width_m?, height_m?}` (도면 크기 10~300 m) → `{revision, updated_at}`. 409 `REVISION`(먼저 저장한 곳이 있음, 서버 `revision` 포함), 423 `EDITING`(다른 사람이 편집 중), 409 `SCHEDULED`(게시 예약 중), 422 `BAD_GEOMETRY` |
 | `POST /api/admin/plans/{ID}/heartbeat` | 편집 중 표시 (30초마다). `{take_over: true}`면 넘겨받기 |
 | `DELETE /api/admin/plans/{ID}` | 초안 버리기 |
@@ -226,8 +226,15 @@ scripts/
   정해야 합니다(422 `ROOMS_UNRESOLVED`). 그날 0시(서울)에 서버 작업(`app/jobs.py`, 1분마다)이 같은 방식으로 게시하는데,
   그사이 고른 자리가 찼으면 그 사람은 미배치, 옮길 회의실에 같은 시간 예약이 있으면 그 예약만 취소합니다. 실패하면 초안으로
   돌리고 예약한 사람에게 `PLAN_PUBLISH_FAILED` 알림. 감사 기록 `PLAN_SCHEDULE`, `PLAN_UNSCHEDULE`, `PLAN_SCHEDULE_FAILED`.
-- **도면 크기**: 책상 크기는 미터로 고정(2.665 × 1.668 m)이라, 도면이 커지면 직원 화면의 좌석 비율이 작아집니다.
-  구역 모양(`zone_auto_shape`)도 층의 게시본 크기로 계산하고, 게시하면 그 층 구역 모양을 다시 계산합니다.
+- **도면 요소**(JSON v1): 벽(사각형)·선 벽(`wall_line`, 양 끝점·굵기)·기둥·공간·회의실·출입구(`entrance`, `main` = 주 출입구)·
+  책상 묶음. 벽·선 벽·공간·회의실·출입구는 `line_w`(선 굵기 m, 0.01~2), 공간·회의실·출입구는 `label_size`(글자 %, 50~400)·
+  `label_bold`. 책상 묶음은 `rotation`(0·90·180·270, 90 = 의자가 아래였던 것이 오른쪽으로)·`desk_w`·`desk_h`(책상 하나 m,
+  0.3~6), 칸마다 `flip`(그 책상만 반대로 앉기). 도면의 `desk`는 새 책상 기본 크기. 틀리면 422 `BAD_GEOMETRY`(`where`).
+- 직원 화면(`GET /api/office/floors/{ID}`)·배치 화면 도면은 비율 좌표로 `walls`·`lines`(선 벽)·`pillars`·`spaces`·`entrances`를
+  주고, 선 굵기는 도면 폭 대비 비율(`line`), 회의실 모양(`shape`)에도 `line`·`label_size`·`label_bold`. 좌석에는 의자 방향
+  (`rotation`)과 크기 `w`·`h`(도면 대비 비율, 돌린 뒤; 예전 좌석은 null = 기본 책상)가 있고 게시할 때 맞춰집니다.
+- **도면 크기**: 책상 크기는 미터(기본 2.665 × 1.668 m)라, 도면이 커지면 직원 화면의 좌석 비율이 작아집니다.
+  구역 모양(`zone_auto_shape`)도 층의 게시본 크기와 좌석마다의 크기(`seats.w`·`h`)로 계산하고, 게시하면 그 층 구역 모양을 다시 계산합니다.
 
 ## 팀 이사 도우미 API (`/api/admin/moves`, 목적지 층의 층 관리자 이상)
 

@@ -891,6 +891,67 @@
   background: var(--ink);
 }
 
+/* 선으로 그린 벽: 왼쪽 끝을 기준으로 돌린 막대 (위치·길이·각도·굵기는 PlanShapes.tsx) */
+.wallLine {
+  position: absolute;
+  background: var(--ink);
+  transform-origin: 0 50%;
+}
+
+/* 출입구: 벽을 끊고 이름을 쓴다. 주 출입구는 채우고 굵게 */
+.entrance {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--link);
+  background: var(--surface);
+  color: var(--link);
+  font-size: max(8px, 0.9cqw);
+  line-height: 1.2;
+  text-align: center;
+}
+
+.entrance[data-main="true"] {
+  border-style: solid;
+  background: var(--info-bg);
+  font-weight: 700;
+}
+
+/* 출입구는 벽 두께만큼 얇아서 이름표가 사각형보다 클 때가 많다: 밖으로 넘쳐도 읽히게 바탕을 깐다 */
+.entrance span {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: inherit;
+  white-space: nowrap;
+}
+
+/* 축척 막대 (도면 왼쪽 아래) */
+.scaleBar {
+  position: absolute;
+  left: 1%;
+  bottom: 1%;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  pointer-events: none;
+  font-size: max(9px, 0.8cqw);
+  color: var(--muted);
+}
+
+.scaleBar i {
+  display: block;
+  height: 6px;
+  border: 2px solid var(--ink);
+  border-top: 0;
+}
+
+.scaleBar span {
+  white-space: nowrap;
+}
+
 /* 회의실은 누르면 예약 현황으로 간다 */
 .room {
   border: 2px solid var(--ink);
@@ -978,6 +1039,13 @@
 .seatName {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 옆으로 돌린 책상(의자가 왼쪽·오른쪽): 좁고 길어서 이름을 세로로 쓴다 */
+.seat[data-vertical] {
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  padding: 2px 0;
 }
 
 .seatEmpty {

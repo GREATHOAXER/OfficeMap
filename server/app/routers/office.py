@@ -132,7 +132,8 @@ def floor_map(floor_id: int, user: CurrentUser) -> dict[str, Any]:
 
         seats = conn.execute(
             f"""
-            SELECT s.id, s.code, s.zone_id, s.seat_type, s.x::float8 AS x, s.y::float8 AS y, s.rotation, s.status,
+            SELECT s.id, s.code, s.zone_id, s.seat_type, s.x::float8 AS x, s.y::float8 AS y, s.rotation,
+                   s.w::float8 AS w, s.h::float8 AS h, s.status,
                    a.kind AS assignment_kind, e.emp_no, e.name, e.rank_name, d.name AS department,
                    e.extension, e.email,
                    CASE WHEN {_LIVE_PRESENCE} THEN p.status END AS presence_status,
@@ -254,6 +255,8 @@ def _seat_out(row: dict[str, Any]) -> dict[str, Any]:
         "x": row["x"],
         "y": row["y"],
         "rotation": row["rotation"],
+        "w": row["w"],  # 좌석 크기 (도면 대비, 없으면 기본 책상)
+        "h": row["h"],
         "status": row["status"],
         "occupant": occupant,
     }

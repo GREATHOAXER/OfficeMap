@@ -4,7 +4,7 @@ import Link from "next/link";
 import { type CSSProperties, type FocusEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CloseIcon } from "@/components/icons";
-import type { FloorMap, Occupant, Rect, Room, Seat, Zone } from "@/lib/api";
+import type { FloorMap, Occupant, Rect, Room, Seat, ShapeStyle, Zone } from "@/lib/api";
 import { agoText } from "@/lib/dates";
 import { NO_STATUS_LABEL, PRESENCE_LABEL, type StatusFilter } from "@/lib/presence";
 import { hhmm, roomStatusText } from "@/lib/rooms";
@@ -13,6 +13,7 @@ import { seatRatio } from "@/lib/planGeometry";
 import { useNow } from "@/lib/useNow";
 import { zonePieces, zoneRects } from "@/lib/zoneShape";
 import styles from "./office.module.css";
+import PlanShapes, { labelStyle, lineStyle, ScaleBar } from "./PlanShapes";
 
 const HOVER_DELAY_MS = 700; // 자리에 마우스를 이만큼(0.7초) 올려 두면 정보 카드가 뜬다
 const DRAG_THRESHOLD_PX = 5; // 이보다 적게 움직이면 끌기가 아니라 누르기
@@ -239,25 +240,7 @@ export default function FloorPlan(props: Props) {
         role="group"
         aria-label={`${map.floor.site.name} ${map.floor.name} 좌석 배치도`}
       >
-        {geometry.walls?.map((wall, i) => (
-          <div key={`wall-${i}`} className={styles.wall} style={rectStyle(wall)} />
-        ))}
-        {geometry.spaces?.map((space, i) => (
-          <div key={`space-${i}`} className={styles.space} data-kind={space.kind} style={rectStyle(space)}>
-            <span>{space.label}</span>
-          </div>
-        ))}
-        {geometry.pillars?.map((p, i) => {
-          const w = p.w ?? 0.015;
-          const h = p.h ?? 0.025;
-          return (
-            <div
-              key={`pillar-${i}`}
-              className={styles.pillar}
-              style={{ left: pct(p.x - w / 2), top: pct(p.y - h / 2), width: pct(w), height: pct(h) }}
-            />
-          );
-        })}
+        <PlanShapes geometry={geometry} width_m={plan.width_m} height_m={plan.height_m} />
         {map.rooms.map(
           (room) => room.shape && <RoomBox key={room.id} room={room} shape={room.shape} floorId={map.floor.id} />,
         )}
@@ -302,6 +285,7 @@ export default function FloorPlan(props: Props) {
             onHoverEnd={endHover}
           />
         ))}
+        <ScaleBar width_m={plan.width_m} height_m={plan.height_m} />
         {cardSeat && (
           <SeatCard
             key={cardSeat.id}
@@ -319,18 +303,18 @@ export default function FloorPlan(props: Props) {
 }
 
 /** 도면 위 회의실. 누르면 회의실 화면에서 이 층 예약 현황을 연다 */
-function RoomBox({ room, shape, floorId }: { room: Room; shape: Rect; floorId: number }) {
+function RoomBox({ room, shape, floorId }: { room: Room; shape: Rect & ShapeStyle; floorId: number }) {
   const status = roomStatusText(room);
   return (
     <Link
       href={`/rooms?floor=${floorId}`}
       className={styles.room}
-      style={rectStyle(shape)}
+      style={{ ...rectStyle(shape), ...lineStyle(shape) }}
       data-busy={!!room.busy_until}
       aria-label={`${room.name}, ${status}. 예약 현황 보기`}
       title="예약 현황 보기"
     >
-      <span>
+      <span style={labelStyle(shape)}>
         {room.name}
         <br />
         <span className={styles.roomStatus}>{status}</span>
@@ -353,8 +337,9 @@ type SeatProps = {
   onHoverEnd: () => void;
 };
 
-function SeatButton({ seat, size, zone, dimmed, mine, selected, onSelect, onHoverStart, onHoverEnd }: SeatProps) {
+function SeatButton({ seat, size: base, zone, dimmed, mine, selected, onSelect, onHoverStart, onHoverEnd }: SeatProps) {
   const { occupant } = seat;
+  const size = { w: seat.w ?? base.w, h: seat.h ?? base.h };
   const presence = occupant?.presence?.status;
   const outOfService = seat.status === "OUT_OF_SERVICE";
 
@@ -399,6 +384,7 @@ function SeatButton({ seat, size, zone, dimmed, mine, selected, onSelect, onHove
       aria-label={label}
       aria-pressed={selected}
       data-seat-id={seat.id}
+      data-vertical={seat.rotation === 90 || seat.rotation === 270 || undefined}
       onClick={() => onSelect(seat.id)}
       onPointerEnter={(event) => event.pointerType === "mouse" && occupant && onHoverStart(seat.id)}
       onPointerLeave={onHoverEnd}
@@ -433,7 +419,8 @@ type CardProps = {
  * 자리 위(위쪽 자리면 아래)에 뜨는 사람 정보 카드. 글자 크기는 배율과 상관없이 같다.
  * 휴대폰에서 눌러 고정한 카드는 도면 밖, 화면 아래에서 올라오는 시트로 띄운다 (도면 가장자리에서 잘리지 않게)
  */
-function SeatCard({ seat, size, zone, floorName, pinned, onClose }: CardProps) {
+function SeatCard({ seat, size: base, zone, floorName, pinned, onClose }: CardProps) {
+  const size = { w: seat.w ?? base.w, h: seat.h ?? base.h };
   const phone = useMediaQuery("(max-width: 720px)");
   const occupant = seat.occupant!;
   const body = (
