@@ -43,7 +43,7 @@ cd server
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env               # Windows: copy .env.example .env   (DB 주소가 다르면 수정)
+cp -n .env.example .env            # 처음 한 번만 (이미 있으면 그대로 둠). Windows: if not exist .env copy .env.example .env
 python -m scripts.init_db          # 테이블 + 목업 데이터 넣기
 uvicorn app.main:app --reload --port 8000
 ```
@@ -58,7 +58,7 @@ uvicorn app.main:app --reload --port 8000
 ```bash
 cd frontend
 npm install
-cp .env.example .env.local         # Windows: copy .env.example .env.local
+cp -n .env.example .env.local      # 처음 한 번만 (이미 있으면 그대로 둠). Windows: if not exist .env.local copy .env.example .env.local
 npm run dev
 ```
 
@@ -79,6 +79,8 @@ ngrok http 3000                    # 다른 터미널. 출력된 https://….ngr
 개발 서버(`npm run dev`)를 그대로 공개할 때는 **ngrok을 먼저 켜고 개발 서버를 켜세요**. 개발 서버가 켜질 때 이 PC의 ngrok
 주소를 읽어 허용합니다 (터미널에 `개발 서버 외부 주소 허용: ….ngrok-free.dev`가 찍힘). 개발 서버를 먼저 켰다면 한 번 껐다 켜면 됩니다.
 ngrok 말고 다른 주소(PC 이름, 사내 IP 등)로 열거나 자동으로 안 잡히면 `frontend/.env.local`에 호스트 이름을 넣고 개발 서버를 다시 켭니다.
+개발 서버 터미널의 `개발 서버 외부 주소 허용:` 줄에 그 주소가 보이면 적용된 것입니다. 빌드(`npm run build`)는 `.env` 파일을 고치지 않습니다.
+`.env.local`이 `.env`보다 우선이라, `.env.local`에 `DEV_ORIGINS=`(빈 값)가 있으면 `.env`에 적은 값은 무시됩니다.
 
 ```bash
 DEV_ORIGINS=abcd-12-34-56.ngrok-free.dev     # 여러 개면 쉼표로. https://…/ 처럼 주소째 넣어도 됨
@@ -90,6 +92,8 @@ DEV_ORIGINS=abcd-12-34-56.ngrok-free.dev     # 여러 개면 쉼표로. https://
 `GET /api/auth/me 401`이 찍힙니다 (로그인 안 된 상태로 로그인 화면을 다시 그린 결과이고 원인은 위 설정).
 uvicorn 창에 `POST /api/auth/login … 401`이 찍히면 그건 사번·비밀번호가 틀린 것입니다. ngrok 무료 주소는 처음 들어갈 때
 ngrok 안내 화면이 한 번 뜨는데 "Visit Site"를 누르면 됩니다. 로그인 쿠키는 `COOKIE_SECURE=false` 그대로 https(ngrok)에서도 동작합니다.
+로그인이 응답은 성공인데 실제로는 안 된 경우(중간의 안내 화면이 대신 답함, 브라우저가 로그인 쿠키를 저장하지 않음)는
+로그인 화면이 말없이 다시 뜨지 않고 그 이유를 오류로 보여 줍니다.
 
 ### 목업 계정
 

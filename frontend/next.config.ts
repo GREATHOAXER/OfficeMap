@@ -31,7 +31,11 @@ async function ngrokHosts(): Promise<string[]> {
 async function devOrigins(): Promise<string[]> {
   const listed = (process.env.DEV_ORIGINS ?? "").split(",").flatMap((entry) => hostOf(entry) ?? []);
   const hosts = [...new Set([...listed, ...(await ngrokHosts())])];
-  if (hosts.length) console.log(`  - 개발 서버 외부 주소 허용: ${hosts.join(", ")}`);
+  console.log(
+    hosts.length
+      ? `  - 개발 서버 외부 주소 허용: ${hosts.join(", ")}`
+      : "  - 개발 서버 외부 주소 허용: 없음 (localhost만. ngrok을 먼저 켜고 다시 켜거나 .env.local의 DEV_ORIGINS)",
+  );
   return hosts;
 }
 

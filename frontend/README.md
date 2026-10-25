@@ -2,7 +2,7 @@
 
 ```bash
 npm install
-cp .env.example .env.local   # Windows: copy .env.example .env.local
+cp -n .env.example .env.local   # 처음 한 번만. Windows: if not exist .env.local copy .env.example .env.local
 npm run dev                  # http://localhost:3000
 ```
 
@@ -12,7 +12,8 @@ API 서버(`server/`, uvicorn)가 `http://localhost:8000`에서 떠 있어야 �
 막혀 버튼이 동작하지 않음). `next.config.ts`가 `.env.local`의 `DEV_ORIGINS`와, 개발 서버를 켤 때 돌고 있는 ngrok의 주소
 (ngrok 관리 화면 API `127.0.0.1:4040`)를 넣습니다. 그래도 막히면 개발 서버에서만 몇 초 뒤 화면 위에 고치는 법을 띄웁니다
 (`components/DevHostHint.tsx`). 로그인·관리자 로그인·비밀번호 변경 폼은
-`method="post"`라서 스크립트가 뜨기 전에 눌려도 비밀번호가 주소에 남지 않습니다.
+`method="post"`라서 스크립트가 뜨기 전에 눌려도 비밀번호가 주소에 남지 않습니다. 로그인 응답이 성공이면 한 번 더 확인해서
+(`confirmLogin`: 응답이 이 서버의 JSON인지, 다음 요청에 로그인 쿠키가 실리는지) 아니면 다음 화면으로 넘기지 않고 이유를 보여 줍니다.
 
 | 명령 | 하는 일 |
 |---|---|

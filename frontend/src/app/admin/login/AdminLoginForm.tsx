@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { AlertIcon, checkInput } from "@/app/login/LoginForm";
+import { AlertIcon, checkInput, confirmLogin, LOGIN_CHECK_MESSAGE } from "@/app/login/LoginForm";
 import styles from "@/app/login/login.module.css";
 
 type AdminLoginError =
@@ -14,6 +14,7 @@ type AdminLoginError =
   | { code: "LOCKED"; maxFailedCount: number }
   | { code: "NOT_ACTIVE" }
   | { code: "NO_PERMISSION" }
+  | { code: keyof typeof LOGIN_CHECK_MESSAGE }
   | { code: "NETWORK" };
 
 type Props = {
@@ -58,8 +59,14 @@ export default function AdminLoginForm({ supportContact, maxFailedCount, next, k
         body: JSON.stringify({ emp_no: empNo, password }),
       });
       if (res.ok) {
-        router.replace(next);
-        router.refresh();
+        const check = await confirmLogin(res, "admin", "/api/admin/auth/session");
+        if (check === "OK") {
+          router.replace(next);
+          router.refresh();
+          return;
+        }
+        setError({ code: check });
+        setSubmitting(false);
         return;
       }
       setError(toError(await res.json().catch(() => ({}))));
@@ -163,6 +170,9 @@ function errorMessage(error: AdminLoginError, contact: string, max: number): str
       return `로그인할 수 없는 계정입니다. 문의: ${contact}`;
     case "NO_PERMISSION":
       return "지금 맡고 있는 관리자 권한이 없습니다. 권한이 회수되었거나 아직 지정되지 않았다면 상위 관리자에게 문의하세요.";
+    case "NOT_OUR_SERVER":
+    case "COOKIE_NOT_KEPT":
+      return LOGIN_CHECK_MESSAGE[error.code];
     case "NETWORK":
       return "서버에 연결하지 못했습니다. 잠시 후 다시 시도하세요.";
   }
