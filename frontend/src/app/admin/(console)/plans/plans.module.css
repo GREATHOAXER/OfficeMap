@@ -114,6 +114,21 @@ div.body[data-cols="3"] {
   border: 3px solid var(--ink);
 }
 
+.glyph[data-type="wall_line"] {
+  height: 3px;
+  background: var(--ink);
+  transform: rotate(-30deg);
+}
+
+.glyph[data-type="entrance"] {
+  border: 2px dashed var(--link);
+}
+
+.glyph[data-type="entrance"][data-main] {
+  border-style: solid;
+  background: var(--info-bg);
+}
+
 .glyph[data-type="pillar"] {
   width: 10px;
   height: 10px;
@@ -153,10 +168,127 @@ div.body[data-cols="3"] {
   overscroll-behavior: contain;
 }
 
-/* 1m 칸 눈금 (5m마다 진하게). 크기는 직원 화면과 같은 비율(cqw) */
+/* 눈금자 두 개(위·왼쪽, 스크롤해도 붙어 있다)와 도면. 칸 크기는 PlanCanvas.tsx가 픽셀로 정한다 */
+.sheet {
+  display: grid;
+  width: max-content;
+}
+
+.rulerCorner,
+.ruler {
+  position: sticky;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rulerCorner {
+  top: 0;
+  left: 0;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid var(--divider);
+  border-bottom: 1px solid var(--divider);
+}
+
+.ruler {
+  z-index: 11;
+  overflow: hidden;
+}
+
+.ruler[data-axis="x"] {
+  top: 0;
+  border-bottom: 1px solid var(--divider);
+}
+
+.ruler[data-axis="y"] {
+  left: 0;
+  border-right: 1px solid var(--divider);
+}
+
+.ruler i,
+.ruler span,
+.ruler b,
+.ruler em {
+  position: absolute;
+}
+
+.ruler i {
+  background: #c8c8c4;
+}
+
+.ruler i[data-major] {
+  background: #6e6e69;
+}
+
+.ruler[data-axis="x"] i {
+  bottom: 0;
+  width: 1px;
+  height: 5px;
+}
+
+.ruler[data-axis="x"] i[data-major] {
+  height: 10px;
+}
+
+.ruler[data-axis="y"] i {
+  right: 0;
+  width: 5px;
+  height: 1px;
+}
+
+.ruler[data-axis="y"] i[data-major] {
+  width: 10px;
+}
+
+.ruler[data-axis="x"] span {
+  top: 1px;
+  margin-left: 3px;
+}
+
+.ruler[data-axis="y"] span {
+  left: 1px;
+  margin-top: 2px;
+}
+
+/* 포인터 자리 */
+.ruler b {
+  background: var(--link);
+}
+
+.ruler[data-axis="x"] b {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.ruler[data-axis="y"] b {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+/* 고른 것의 범위 */
+.ruler em {
+  background: rgba(29, 78, 216, 0.14);
+}
+
+.ruler[data-axis="x"] em {
+  top: 0;
+  bottom: 0;
+}
+
+.ruler[data-axis="y"] em {
+  left: 0;
+  right: 0;
+}
+
+/* 1m 칸 눈금 (5m마다 진하게). 선 굵기·글자는 직원 화면과 같은 비율(cqw) */
 .canvas {
   position: relative;
-  width: calc(max(100%, 640px) * var(--zoom, 1));
   container-type: inline-size;
   background-color: var(--surface);
   background-image:
@@ -175,6 +307,8 @@ div.body[data-cols="3"] {
 }
 
 .canvas[data-tool="wall"],
+.canvas[data-tool="wall_line"],
+.canvas[data-tool="entrance"],
 .canvas[data-tool="pillar"],
 .canvas[data-tool="space"],
 .canvas[data-tool="room"],
@@ -236,6 +370,21 @@ div.body[data-cols="3"] {
   right: calc(-1 * var(--bw) - 3px);
 }
 
+/* 선 벽: 얇아도 누르기 쉽게 위아래로 넓은 누름 자리를 둔다 */
+.lineEl > i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 14px;
+  margin-top: -7px;
+}
+
+.lineEl[data-selected] {
+  outline: 2px solid var(--link);
+  outline-offset: 3px;
+}
+
 .room {
   position: absolute;
   display: flex;
@@ -281,6 +430,19 @@ div.body[data-cols="3"] {
 
 .desk[data-chair="top"] {
   border-top: 3px solid var(--tc);
+}
+
+.desk[data-chair="right"] {
+  border-right: 3px solid var(--tc);
+}
+
+.desk[data-chair="left"] {
+  border-left: 3px solid var(--tc);
+}
+
+/* 세로로 놓인 책상은 글자도 세로로 (좌석 번호는 영문·숫자라 눕혀 쓴다) */
+.desk[data-vertical] {
+  writing-mode: vertical-rl;
 }
 
 /* 지금 좌석과 아직 이어지지 않은 새 책상 */
@@ -334,6 +496,83 @@ div.body[data-cols="3"] {
 .handle[data-handle="s"] { left: 50%; top: 100%; cursor: ns-resize; }
 .handle[data-handle="sw"] { left: 0; top: 100%; cursor: nesw-resize; }
 .handle[data-handle="w"] { left: 0; top: 50%; cursor: ew-resize; }
+
+/* 선 벽의 양 끝 손잡이 */
+.endHandle {
+  position: absolute;
+  z-index: 9;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border: 2px solid var(--link);
+  border-radius: 50%;
+  background: var(--surface);
+  cursor: crosshair;
+}
+
+/* 여러 개를 골랐을 때 전체를 감싸는 사각형 */
+.groupBox {
+  position: absolute;
+  z-index: 8;
+  outline: 1.5px dashed var(--link);
+  outline-offset: 6px;
+  pointer-events: none;
+}
+
+/* 고른 것의 크기 (왼쪽 아래) */
+.dimBadge {
+  position: absolute;
+  z-index: 10;
+  margin-top: 8px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--link);
+  color: #fff;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* 치수 보기: 요소마다 폭 × 높이 (m) */
+.dimTag {
+  position: absolute;
+  z-index: 7;
+  margin: 2px 0 0 2px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--link);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.dimTag[data-at="center"] {
+  margin: 0;
+  transform: translate(-50%, -50%);
+}
+
+/* 빈 곳에서 끌어 여러 개 고르기 */
+.marquee {
+  position: absolute;
+  z-index: 9;
+  border: 1px solid var(--link);
+  background: rgba(29, 78, 216, 0.08);
+  pointer-events: none;
+}
+
+/* 그리는 중인 선 벽 */
+.drawingLine {
+  position: absolute;
+  z-index: 9;
+  height: 0;
+  border-top: 2px dashed var(--link);
+  transform-origin: 0 0;
+  pointer-events: none;
+}
 
 /* 끌어서 그리는 사각형과 크기 */
 .drawing {
@@ -690,4 +929,37 @@ div.body[data-cols="3"] {
   align-items: center;
   justify-content: space-between;
   gap: 6px;
+}
+
+/* 여러 개 줄 맞추기: 맞추기 단추 여섯 개(세 칸씩)와 간격 단추 두 개 */
+.alignGrid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.alignGrid button {
+  grid-column: span 2;
+  padding: 0 4px;
+  font-size: 11.5px;
+}
+
+.alignGrid button:nth-last-child(-n + 2) {
+  grid-column: span 3;
+}
+
+/* 고칠 수 없는 값 (선 벽 각도) */
+.readout {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 6px;
+  color: var(--ink);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 좌석 번호 칸(고정폭 글꼴)이 기본 폭 때문에 속성 칸 밖으로 밀리지 않게 */
+.cellEdit input:not([type="checkbox"]) {
+  width: 100%;
 }

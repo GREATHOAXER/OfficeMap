@@ -77,7 +77,12 @@ export type SiteSummary = { id: number; name: string; floors: FloorSummary[] };
 /** my_floor_id: 내 자리가 있는 층. team_floor_id: 우리 팀 구역이 있는 층 (자리가 아직 없는 사람에게 먼저 보여 준다) */
 export type SitesResponse = { sites: SiteSummary[]; my_floor_id: number | null; team_floor_id: number | null };
 
-export type PlanSpace = Rect & { kind: string; label: string };
+/** 도면 요소 모양: 선 굵기(도면 폭 대비 비율), 글자 크기(%, 100 = 기본), 굵게. 없으면 기본 모양 */
+export type ShapeStyle = { line?: number; label_size?: number; label_bold?: boolean };
+export type PlanSpace = Rect & ShapeStyle & { kind: string; label: string };
+/** 선으로 그린 벽 (양 끝점, 굵기는 도면 폭 대비 비율) */
+export type PlanLine = { x1: number; y1: number; x2: number; y2: number; line: number };
+export type PlanEntrance = Rect & ShapeStyle & { label: string; main: boolean };
 
 /** 팀 구역 모양: 좌석을 감싸는 사각형. 좌석 덩어리가 여럿이면 rects (자동 계산, zoneShape.ts) */
 export type ZoneShape = (Rect & { type?: "rect" }) | { type: "rects"; rects: Rect[] };
@@ -96,7 +101,7 @@ export type Room = {
   name: string;
   capacity: number;
   equipment: string[];
-  shape: Rect | null;
+  shape: (Rect & ShapeStyle) | null;
   busy_until: string | null;
   current_title: string | null;
   next_start: string | null; // 오늘 안에 시작하는 다음 예약
@@ -125,7 +130,9 @@ export type Seat = {
   seat_type: "FIXED" | "FLEX";
   x: number; // 좌석 중심
   y: number;
-  rotation: 0 | 90 | 180 | 270; // 의자 방향. 180 = 위쪽
+  rotation: 0 | 90 | 180 | 270; // 의자 방향. 0 = 아래, 90 = 오른쪽, 180 = 위, 270 = 왼쪽
+  w: number | null; // 좌석 크기 (도면 대비). null이면 기본 책상
+  h: number | null;
   status: "ACTIVE" | "OUT_OF_SERVICE";
   occupant: Occupant | null;
 };
@@ -141,9 +148,11 @@ export type FloorMap = {
     height_m: number;
     // 기둥은 중심점. w·h가 없으면 기본 크기 (목업 도면)
     geometry: {
-      walls?: Rect[];
+      walls?: (Rect & ShapeStyle)[];
+      lines?: PlanLine[];
       pillars?: { x: number; y: number; w?: number; h?: number }[];
       spaces?: PlanSpace[];
+      entrances?: PlanEntrance[];
     } | null;
     published_at: string | null;
   } | null;
@@ -564,7 +573,7 @@ export type SeatingData = {
   };
   plan: FloorMap["plan"];
   plan_scheduled: { version: number; effective_at: string } | null; // 게시를 예약한 새 도면
-  rooms: { id: number; name: string; shape: Rect | null }[];
+  rooms: { id: number; name: string; shape: (Rect & ShapeStyle) | null }[];
   zones: SeatingZone[];
   departments: DepartmentChoice[]; // 구역에 고를 수 있는 부서 (층 관리자 이상만)
   seats: SeatingSeat[];
@@ -589,7 +598,7 @@ export function fetchSeating(cookieHeader: string | null, floorId: number) {
 export type PlanRect = { x: number; y: number; w: number; h: number };
 export type SpaceKind = "core" | "pantry" | "restroom" | "lounge" | "storage" | "service" | "restricted";
 
-export type DeskCell = { id: string; desk: boolean; code: string };
+export type DeskCell = { id: string; desk: boolean; code: string; flip?: boolean }; // flip: 이 책상만 반대로 앉는다
 export type DeskGroup = {
   id: string;
   type: "desk_group";
@@ -598,17 +607,27 @@ export type DeskGroup = {
   cols: number;
   x: number;
   y: number;
+  rotation?: 0 | 90 | 180 | 270; // 묶음을 통째로 돌린다 (90 = 의자가 아래였던 것이 오른쪽으로)
+  desk_w?: number; // 책상 하나 크기 (m, 돌리기 전). 없으면 기본 2.665 × 1.668
+  desk_h?: number;
   cells: DeskCell[]; // 줄 순서로 rows × cols 개
 };
 
+/** 선 굵기 (m)·글자 크기 (%)·굵게. 없으면 기본 모양 */
+export type PlanStyle = { line_w?: number; label_size?: number; label_bold?: boolean };
+export type WallLine = { id: string; type: "wall_line"; x: number; y: number; x2: number; y2: number; line_w?: number };
+
 export type PlanElement =
-  | ({ id: string; type: "wall" } & PlanRect)
+  | ({ id: string; type: "wall"; line_w?: number } & PlanRect)
+  | WallLine
   | ({ id: string; type: "pillar" } & PlanRect)
-  | ({ id: string; type: "space"; kind: SpaceKind; label: string } & PlanRect)
-  | ({ id: string; type: "room"; name: string; capacity: number; equipment: string[] } & PlanRect)
+  | ({ id: string; type: "space"; kind: SpaceKind; label: string } & PlanStyle & PlanRect)
+  | ({ id: string; type: "room"; name: string; capacity: number; equipment: string[] } & PlanStyle & PlanRect)
+  | ({ id: string; type: "entrance"; label: string; main: boolean } & PlanStyle & PlanRect)
   | DeskGroup;
 
-export type PlanGeometry = { schema: 1; grid_m: number; elements: PlanElement[] };
+/** desk: 새로 놓는 책상의 기본 크기 (m) */
+export type PlanGeometry = { schema: 1; grid_m: number; desk?: { w: number; h: number }; elements: PlanElement[] };
 
 export type PlanSummary = {
   id: number;

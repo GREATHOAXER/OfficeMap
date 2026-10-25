@@ -231,6 +231,9 @@ class DraftIn(BaseModel):
     source: Literal["published", "blank", "archived", "floor"] = "published"
     plan_id: int | None = None  # archived: 이 층의 보관본(또는 게시본)
     floor_id: int | None = None  # floor: 다른 층의 게시본을 복제
+    # blank: 사무실 실제 크기 (m). 없으면 지금 게시본 크기
+    width_m: float | None = Field(default=None, ge=geo.MIN_SIZE, le=geo.MAX_SIZE)
+    height_m: float | None = Field(default=None, ge=geo.MIN_SIZE, le=geo.MAX_SIZE)
 
 
 def _v1_from_plan(conn: Connection, plan: dict[str, Any], seat_floor: int, *, link: bool) -> dict[str, Any]:
@@ -256,6 +259,7 @@ def _v1_from_plan(conn: Connection, plan: dict[str, Any], seat_floor: int, *, li
     seats = conn.execute(
         """
         SELECT s.id, s.plan_element_key AS key, s.code, s.x::float8 AS x, s.y::float8 AS y, s.rotation,
+               s.w::float8 AS w, s.h::float8 AS h,
                s.zone_id, z.code AS zone_code
         FROM seats s LEFT JOIN zones z ON z.id = s.zone_id
         WHERE s.floor_id = %s AND s.status <> 'REMOVED'
@@ -307,6 +311,7 @@ def create_draft(floor_id: int, body: DraftIn, admin: CurrentAdmin, request: Req
                 raise HTTPException(status_code=422, detail={"code": "NO_PUBLISHED"})
             geometry = _v1_from_plan(conn, published, floor_id, link=True)
         elif body.source == "blank":
+            width, height = body.width_m or width, body.height_m or height
             geometry = {
                 "schema": geo.SCHEMA,
                 "grid_m": geo.GRID_M,
@@ -475,6 +480,7 @@ def _impact(conn: Connection, plan: dict[str, Any]) -> dict[str, Any]:
     seats = conn.execute(
         f"""
         SELECT s.id, s.plan_element_key AS key, s.code, s.x::float8 AS x, s.y::float8 AS y, s.rotation,
+               s.w::float8 AS w, s.h::float8 AS h,
                s.zone_id, s.seat_type, s.status, z.name AS zone_name, z.code AS zone_code,
                cur.employee_id AS occupant_id
         FROM seats s
@@ -774,16 +780,22 @@ def _publish(
         "UPDATE seats SET code = left(code, 10) || '~' || id WHERE id = ANY(%s)",
         ([s["id"] for s in kept if cells[s["key"]]["code"] != s["code"]],),
     )
+
+    def place(c: dict[str, Any]) -> tuple[Any, ...]:
+        return (c["code"], round(c["x"], 6), round(c["y"], 6), c["rotation"], round(c["w"], 6), round(c["h"], 6))
+
     changed = [
-        (c["code"], round(c["x"], 6), round(c["y"], 6), c["rotation"], s["id"])
+        (*place(c), s["id"])
         for s in kept
         for c in [cells[s["key"]]]
-        if (c["code"], round(c["x"], 6), round(c["y"], 6), c["rotation"])
-        != (s["code"], round(s["x"], 6), round(s["y"], 6), s["rotation"])
+        if place(c) != place({**s, "w": s["w"] or -1, "h": s["h"] or -1})
     ]
     with conn.cursor() as cur:
         cur.executemany(
-            "UPDATE seats SET code = %s, x = %s, y = %s, rotation = %s, updated_at = now() WHERE id = %s",
+            """
+            UPDATE seats SET code = %s, x = %s, y = %s, rotation = %s, w = %s, h = %s, updated_at = now()
+            WHERE id = %s
+            """,
             changed,
         )
     # 3) 새 책상: 같은 묶음의 다른 좌석이 많이 속한 구역·유형을 따른다 (없으면 구역 없음·고정석)
@@ -799,8 +811,8 @@ def _publish(
         with conn.cursor() as cur:
             cur.executemany(
                 """
-                INSERT INTO seats (floor_id, zone_id, code, seat_type, x, y, rotation, plan_element_key)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO seats (floor_id, zone_id, code, seat_type, x, y, rotation, w, h, plan_element_key)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 [
                     (
@@ -811,6 +823,8 @@ def _publish(
                         round(cells[k]["x"], 6),
                         round(cells[k]["y"], 6),
                         cells[k]["rotation"],
+                        round(cells[k]["w"], 6),
+                        round(cells[k]["h"], 6),
                         k,
                     )
                     for k in impact["added"]

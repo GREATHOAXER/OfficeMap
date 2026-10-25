@@ -208,6 +208,7 @@ def _seating(conn: Connection, admin: dict[str, Any], floor: dict[str, Any], acc
     seats = conn.execute(
         f"""
         SELECT s.id, s.code, s.zone_id, s.seat_type, s.status, s.x::float8 AS x, s.y::float8 AS y, s.rotation,
+               s.w::float8 AS w, s.h::float8 AS h,
                cur.kind, cur.ends_at AS cur_ends_at, cur.ended_by_request_id,
                ce.emp_no, ce.name, ce.rank_name, ce.employment_status, cd.name AS department, ce.department_id,
                nxt.starts_at AS next_at, ne.emp_no AS next_emp_no, ne.name AS next_name, ne.rank_name AS next_rank,
@@ -344,6 +345,8 @@ def _seat_out(row: dict[str, Any], access: dict[str, Any]) -> dict[str, Any]:
         "x": row["x"],
         "y": row["y"],
         "rotation": row["rotation"],
+        "w": row["w"],  # 좌석 크기 (도면 대비, 없으면 기본 책상)
+        "h": row["h"],
         "occupant": occupant,
         "upcoming": upcoming,
         "editable": _seat_editable(access, row["zone_id"]),

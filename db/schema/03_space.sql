@@ -100,6 +100,9 @@ CREATE TABLE seats (
     x                numeric(7,6) NOT NULL CHECK (x BETWEEN 0 AND 1),
     y                numeric(7,6) NOT NULL CHECK (y BETWEEN 0 AND 1),
     rotation         smallint     NOT NULL DEFAULT 0 CHECK (rotation IN (0, 90, 180, 270)),  -- 의자(앉는 쪽) 방향
+    -- 좌석(책상)이 도면에서 차지하는 폭·높이 (도면 대비 비율, 돌린 뒤). 없으면 기본 책상 (2.665 × 1.668 m)
+    w                numeric(7,6) CHECK (w > 0 AND w <= 1),
+    h                numeric(7,6) CHECK (h > 0 AND h <= 1),
     status           varchar(15)  NOT NULL DEFAULT 'ACTIVE'
                      CHECK (status IN ('ACTIVE', 'OUT_OF_SERVICE', 'REMOVED')),  -- 사용 중, 사용 중지(고장·수리), 도면에서 빠짐
     plan_element_key varchar(50),                         -- 도면 편집기에서 이 좌석을 만든 책상 칸의 ID
@@ -132,6 +135,8 @@ DECLARE
     pad_b  numeric;
     xs numeric[];
     ys numeric[];
+    ws numeric[];  -- 좌석마다 크기 (책상 크기를 바꾼 묶음)
+    hs numeric[];
     label int[];
     n int;
     m int;
@@ -150,7 +155,9 @@ BEGIN
     pad_x := 0.5 / plan_w;
     pad_t := 1.5 / plan_h;
     pad_b := 0.9 / plan_h;
-    SELECT array_agg(x ORDER BY id), array_agg(y ORDER BY id) INTO xs, ys
+    SELECT array_agg(x ORDER BY id), array_agg(y ORDER BY id),
+           array_agg(coalesce(w, seat_w) ORDER BY id), array_agg(coalesce(h, seat_h) ORDER BY id)
+    INTO xs, ys, ws, hs
     FROM seats WHERE zone_id = p_zone AND status <> 'REMOVED';
     IF xs IS NULL THEN
         RETURN NULL;
@@ -163,7 +170,8 @@ BEGIN
         FOR i IN 1..n LOOP
             FOR j IN i + 1..n LOOP
                 IF label[i] <> label[j]
-                   AND abs(xs[i] - xs[j]) <= seat_w + near_x AND abs(ys[i] - ys[j]) <= seat_h + near_y THEN
+                   AND abs(xs[i] - xs[j]) <= (ws[i] + ws[j]) / 2 + near_x
+                   AND abs(ys[i] - ys[j]) <= (hs[i] + hs[j]) / 2 + near_y THEN
                     m := least(label[i], label[j]);
                     label[i] := m;
                     label[j] := m;
@@ -178,10 +186,10 @@ BEGIN
            ORDER BY y0, x0)
     INTO rects
     FROM (
-        SELECT greatest(0, min(xs[i]) - seat_w / 2 - pad_x) AS x0,
-               greatest(0, min(ys[i]) - seat_h / 2 - pad_t) AS y0,
-               least(1, max(xs[i]) + seat_w / 2 + pad_x) AS x1,
-               least(1, max(ys[i]) + seat_h / 2 + pad_b) AS y1
+        SELECT greatest(0, min(xs[i] - ws[i] / 2) - pad_x) AS x0,
+               greatest(0, min(ys[i] - hs[i] / 2) - pad_t) AS y0,
+               least(1, max(xs[i] + ws[i] / 2) + pad_x) AS x1,
+               least(1, max(ys[i] + hs[i] / 2) + pad_b) AS y1
         FROM generate_series(1, n) AS i
         GROUP BY label[i]
     ) c;
@@ -202,7 +210,7 @@ BEGIN
 END $$;
 
 CREATE TRIGGER seats_zone_shape
-    AFTER INSERT OR UPDATE OF zone_id, x, y, status OR DELETE ON seats
+    AFTER INSERT OR UPDATE OF zone_id, x, y, w, h, status OR DELETE ON seats
     FOR EACH ROW EXECUTE FUNCTION refresh_zone_shapes();
 
 -- 조직도 변화 → 구역 -------------------------------------------------------------
