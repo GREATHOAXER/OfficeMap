@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from app.db import pool
+from app.plan_geometry import to_ratio
 from app.session import CurrentUser
 
 router = APIRouter(prefix="/api/office", tags=["office"])
@@ -91,6 +92,9 @@ def floor_map(floor_id: int, user: CurrentUser) -> dict[str, Any]:
             """,
             (floor_id,),
         ).fetchone()
+        if plan is not None:
+            # 도면 편집기 모양(미터)이면 화면이 그리는 비율 좌표로 바꾼다
+            plan["geometry"] = to_ratio(plan["geometry"], plan["width_m"], plan["height_m"])
 
         zones = conn.execute(
             """

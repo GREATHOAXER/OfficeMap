@@ -138,13 +138,17 @@ export default function SeatingCanvas(props: Props) {
             <span>{space.label}</span>
           </div>
         ))}
-        {geometry.pillars?.map((p, i) => (
-          <div
-            key={`pillar-${i}`}
-            className={office.pillar}
-            style={{ left: pct(p.x - 0.0075), top: pct(p.y - 0.0125) }}
-          />
-        ))}
+        {geometry.pillars?.map((p, i) => {
+          const w = p.w ?? 0.015;
+          const h = p.h ?? 0.025;
+          return (
+            <div
+              key={`pillar-${i}`}
+              className={office.pillar}
+              style={{ left: pct(p.x - w / 2), top: pct(p.y - h / 2), width: pct(w), height: pct(h) }}
+            />
+          );
+        })}
         {data.rooms.map(
           (room) =>
             room.shape && (

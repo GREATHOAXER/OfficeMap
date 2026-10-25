@@ -1037,11 +1037,17 @@
   border: 1px solid var(--border);
 }
 
-/* 구역 추가·고치기 대화상자 */
+/* 대화상자 안쪽 (구역 추가·고치기, 확인, 반려). 팝업 틀에는 안쪽 여백이 없어서 여기서 준다 */
 .dialogBody {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  padding: 16px 20px 20px;
+}
+
+.dialogBody p {
+  margin: 0;
+  line-height: 1.6;
 }
 
 .textInput {

@@ -938,6 +938,7 @@
 .zoneTag {
   position: absolute;
   z-index: 1;
+  pointer-events: none; /* 이름이 길어 옆 좌석에 걸쳐도 그 좌석을 누를 수 있게 */
   padding: 1px 7px;
   border-radius: 6px 0 6px 0;
   background: var(--tc);

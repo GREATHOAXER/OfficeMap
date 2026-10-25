@@ -26,6 +26,7 @@ from starlette.concurrency import run_in_threadpool
 from app.admin_auth import CurrentAdmin, grants_of, load_admin
 from app.config import settings
 from app.db import pool
+from app.plan_geometry import to_ratio
 from app.realtime import SSE_HEADERS, hub
 from app.routers.auth import client_info
 from app.routers.employees import _like
@@ -171,6 +172,8 @@ def _seating(conn: Connection, admin: dict[str, Any], floor: dict[str, Any], acc
         """,
         (floor_id,),
     ).fetchone()
+    if plan is not None:
+        plan["geometry"] = to_ratio(plan["geometry"], plan["width_m"], plan["height_m"])
     rooms = conn.execute(
         "SELECT id, name, shape FROM meeting_rooms WHERE floor_id = %s AND is_active ORDER BY sort_order, id",
         (floor_id,),

@@ -49,7 +49,7 @@ function mySeatText(info: MySeat): FloorNotice {
 /**
  * 직원 화면의 도면·좌석 배치 실시간 반영.
  * - 보고 있는 층의 배정이 바뀌면 바로 다시 읽고 "7F 자리 배치가 바뀌었어요 (3석)"을 잠깐 띄운다 (확대·선택은 그대로)
- * - 도면이 새로 게시되면 배너를 띄우고 5초 뒤 새로 읽는다
+ * - 도면이 새로 게시되면 배너를 띄우고 5초 뒤 새로 읽는다 (그동안 오는 그 층 좌석 알림은 따로 읽지 않는다)
  * - 내 자리가 바뀌면 어느 층을 보고 있든 따로 알린다 (날짜를 정한 변경이면 그 날짜와 함께)
  * - 날짜를 정해 둔 변경은 알림이 따로 오지 않으므로 그 시각(next_change_at)에 다시 읽는다
  */
@@ -79,6 +79,7 @@ export function useFloorUpdates(map: FloorMap, myEmpNo: string) {
   const refreshTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const mineTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const planTimer = useRef<ReturnType<typeof setInterval>>(undefined);
+  const planFloor = useRef<number | null>(null); // 도면 게시 배너가 떠 있는 층
 
   const refreshSoon = useCallback(() => {
     setExpecting(true);
@@ -88,6 +89,7 @@ export function useFloorUpdates(map: FloorMap, myEmpNo: string) {
 
   const showPlanNow = useCallback(() => {
     clearInterval(planTimer.current);
+    planFloor.current = null;
     setPlan(null);
     router.refresh();
   }, [router]);
@@ -109,6 +111,10 @@ export function useFloorUpdates(map: FloorMap, myEmpNo: string) {
       const here = change.floor_id === floorIdRef.current;
       if (change.kind === "plan") {
         if (!here) return;
+        // 게시는 좌석 알림이 먼저 여러 개 오고 도면 알림이 온다. 좌석 때문에 걸어 둔 새로 읽기는 거두고 배너 뒤에 한 번만 읽는다
+        clearTimeout(refreshTimer.current);
+        setExpecting(false);
+        planFloor.current = change.floor_id;
         clearInterval(planTimer.current);
         const startedAt = Date.now();
         setPlan({ floorId: change.floor_id, left: PLAN_COUNTDOWN_S });
@@ -119,6 +125,7 @@ export function useFloorUpdates(map: FloorMap, myEmpNo: string) {
         }, 250);
         return;
       }
+      if (here && planFloor.current === change.floor_id) return; // 배너가 끝나면 어차피 새로 읽는다
       // 다른 층이라도 내 자리가 바뀌었으면 층 버튼의 "내 자리" 표시를 맞추려고 다시 읽는다
       if (here || change.emp_no === myEmpNo) refreshSoon();
     },

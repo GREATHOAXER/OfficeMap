@@ -9,11 +9,16 @@ app/
   db.py            PostgreSQL 연결 풀, app_settings 읽기
   security.py      비밀번호 해시(bcrypt), 세션 토큰
   session.py       로그인 확인. 로그인이 필요한 API는 CurrentUser 인자를 받는다
+  admin_auth.py    관리자 로그인 확인 (CurrentAdmin)
+  plan_geometry.py 도면 모양(JSON v1, 미터) 검사·변환, 책상 칸 위치 계산
   routers/auth.py      로그인 화면 API
   routers/office.py    자리·재실 현황 API
   routers/presence.py  내 재실 상태 바꾸기, 실시간 알림(SSE) API
   routers/employees.py 직원 검색 API (검색창, 참석자 추가)
   routers/rooms.py     회의실 확인·예약 API
+  routers/admin.py     관리자 로그인·첫 화면 API
+  routers/seating.py   좌석 배치 편집·팀 구역 API
+  routers/plans.py     도면 편집 API (초안·자동 저장·편집 잠금·게시 점검·게시)
   realtime.py      재실 상태 변경을 DB에서 받아(LISTEN) 열린 화면마다 나눠 주기
 scripts/
   init_db.py       db/schema + db/seed 실행
@@ -187,6 +192,32 @@ scripts/
   (`SEAT_CHANGED`, 메신저 연동 후 발송)를 남깁니다. 배정은 지우지 않고 끝내고 새로 만들어 이력이 남습니다.
 - **부서 이동·퇴사**: `employees`의 트리거가 고정석 배정을 끝냅니다 (좌석은 원래 팀 구역에 그대로, 그 사람은 새 팀의
   미배치 인원). 조직도 동기화든 직접 SQL이든 똑같이 동작하고 `audit_logs`에 `SEAT_RELEASE`로 남습니다.
+
+## 도면 편집 API (`/api/admin`, 층 관리자 이상)
+
+층마다 게시본 하나와 초안 하나. 초안은 직원 화면에 보이지 않고, 게시하는 순간 한 트랜잭션으로 좌석·회의실을 초안에 맞춥니다.
+도면 모양은 미터 단위 JSON v1입니다 (`docs/design/floor-plan-and-seating.md` 2.2). 구역 관리자는 403 `FLOOR_ADMIN_ONLY`.
+
+| 요청 | 하는 일 |
+|---|---|
+| `GET /api/admin/plans/floors` | 도면을 편집할 수 있는 층 (`published`, `drafting`) |
+| `GET /api/admin/floors/{층 ID}/plan` | 편집 화면: `draft`(모양·`revision`·편집 중인 사람), `published`, `archived`, 복제할 수 있는 층(`sources`), `live`(책상 칸·회의실마다 지금 앉은 사람·남은 예약) |
+| `POST /api/admin/floors/{층 ID}/plan/draft` | 초안 만들기 `{source: published\|blank\|archived\|floor, plan_id?, floor_id?}`. 이미 있으면 409 `HAS_DRAFT` |
+| `PUT /api/admin/plans/{ID}` | 자동 저장 `{revision, geometry}` → `{revision, updated_at}`. 409 `REVISION`(먼저 저장한 곳이 있음, 서버 `revision` 포함), 423 `EDITING`(다른 사람이 편집 중), 422 `BAD_GEOMETRY` |
+| `POST /api/admin/plans/{ID}/heartbeat` | 편집 중 표시 (30초마다). `{take_over: true}`면 넘겨받기 |
+| `DELETE /api/admin/plans/{ID}` | 초안 버리기 |
+| `GET /api/admin/plans/{ID}/check` | 게시 전 점검: `summary`(좌석 수·새로·빠짐·옮김·번호 바뀜), `people`(자리가 없어지는 사람과 추천 자리), `rooms_removed`(남은 예약), `rooms_added`·`rooms_changed`, 고를 수 있는 자리·회의실, `problems` |
+| `POST /api/admin/plans/{ID}/publish` | 게시 `{revision, people: [{emp_no, to_key?}], rooms: [{room_id, action: MOVE\|CANCEL, to_key?}], note?}` |
+
+- 책상 칸 하나가 좌석 하나이고, 칸 `id`가 `seats.plan_element_key`입니다. 같은 칸이면 같은 좌석이라 옮기거나 번호를 바꿔도
+  앉은 사람은 그대로입니다. 초안에 없는 좌석은 `REMOVED`(지우지 않음), 새 칸은 새 좌석(같은 묶음의 가장 많은 구역·유형).
+- 자리가 없어지는 사람은 `people`에 넣지 않으면 미배치입니다. 예약이 남은 회의실을 정하지 않으면 422 `ROOMS_UNRESOLVED`,
+  게시를 막는 문제가 있으면 422 `PROBLEMS`, 고른 자리가 그새 찼으면 409 `TARGET_TAKEN`, 옮길 회의실에 같은 시간 예약이
+  있으면 409 `ROOM_TIME_TAKEN`. 어느 경우든 아무것도 바꾸지 않습니다.
+- 게시하면 이전 게시본은 `ARCHIVED`, 자리가 없어지거나 번호가 바뀐 사람에게 `SEAT_CHANGED`, 예약이 취소된 사람에게
+  `RESERVATION_CANCELLED` 알림, `audit_logs`(`PLAN_DRAFT_CREATE`, `PLAN_TAKE_OVER`, `PLAN_DRAFT_DISCARD`, `PLAN_PUBLISH`).
+  직원 화면에는 `floor` 이벤트 `kind: plan`이 가서 배너를 띄우고 5초 뒤 새로 읽습니다.
+- 목업 게시본(v0, 비율 좌표)은 초안을 만들 때 v1으로 바꿉니다(구역마다 좌석을 책상 묶음으로 맞춤).
 
 ## 내 재실 상태 API (로그인 필요)
 

@@ -248,9 +248,17 @@ export default function FloorPlan(props: Props) {
             <span>{space.label}</span>
           </div>
         ))}
-        {geometry.pillars?.map((p, i) => (
-          <div key={`pillar-${i}`} className={styles.pillar} style={{ left: pct(p.x - 0.0075), top: pct(p.y - 0.0125) }} />
-        ))}
+        {geometry.pillars?.map((p, i) => {
+          const w = p.w ?? 0.015;
+          const h = p.h ?? 0.025;
+          return (
+            <div
+              key={`pillar-${i}`}
+              className={styles.pillar}
+              style={{ left: pct(p.x - w / 2), top: pct(p.y - h / 2), width: pct(w), height: pct(h) }}
+            />
+          );
+        })}
         {map.rooms.map(
           (room) => room.shape && <RoomBox key={room.id} room={room} shape={room.shape} floorId={map.floor.id} />,
         )}

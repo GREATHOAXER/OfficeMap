@@ -139,7 +139,12 @@ export type FloorMap = {
     version: number;
     width_m: number;
     height_m: number;
-    geometry: { walls?: Rect[]; pillars?: { x: number; y: number }[]; spaces?: PlanSpace[] } | null;
+    // 기둥은 중심점. w·h가 없으면 기본 크기 (목업 도면)
+    geometry: {
+      walls?: Rect[];
+      pillars?: { x: number; y: number; w?: number; h?: number }[];
+      spaces?: PlanSpace[];
+    } | null;
     published_at: string | null;
   } | null;
   zones: Zone[];
@@ -573,4 +578,102 @@ export function fetchSeatingFloors(cookieHeader: string | null) {
 
 export function fetchSeating(cookieHeader: string | null, floorId: number) {
   return apiGet<SeatingData>(`/api/admin/floors/${floorId}/seating`, cookieHeader);
+}
+
+// 도면 편집 (⑥) ------------------------------------------------------------------
+
+/** 미터 단위 사각형 */
+export type PlanRect = { x: number; y: number; w: number; h: number };
+export type SpaceKind = "core" | "pantry" | "restroom" | "lounge" | "storage" | "service" | "restricted";
+
+export type DeskCell = { id: string; desk: boolean; code: string };
+export type DeskGroup = {
+  id: string;
+  type: "desk_group";
+  layout: "face" | "one"; // 마주보기 / 한 방향
+  rows: number;
+  cols: number;
+  x: number;
+  y: number;
+  cells: DeskCell[]; // 줄 순서로 rows × cols 개
+};
+
+export type PlanElement =
+  | ({ id: string; type: "wall" } & PlanRect)
+  | ({ id: string; type: "pillar" } & PlanRect)
+  | ({ id: string; type: "space"; kind: SpaceKind; label: string } & PlanRect)
+  | ({ id: string; type: "room"; name: string; capacity: number; equipment: string[] } & PlanRect)
+  | DeskGroup;
+
+export type PlanGeometry = { schema: 1; grid_m: number; elements: PlanElement[] };
+
+export type PlanSummary = {
+  id: number;
+  version: number;
+  published_at: string | null;
+  published_by: string | null;
+  note: string | null;
+};
+
+export type PlanEditorData = {
+  floor: FloorMap["floor"];
+  floors: { id: number; name: string; site: string; published: boolean; drafting: boolean }[];
+  size: { width_m: number; height_m: number };
+  published: PlanSummary | null;
+  draft: {
+    id: number;
+    version: number;
+    revision: number;
+    geometry: PlanGeometry;
+    updated_at: string;
+    updated_by: string | null;
+    base_version: number | null;
+    editing: { mine: boolean; name: string | null; at: string } | null; // 지금 편집 중인 사람
+  } | null;
+  archived: PlanSummary[];
+  sources: { id: number; name: string; site: string }[]; // 복제할 수 있는 다른 층
+  // 지금 게시본 기준으로 책상 칸·회의실 공간에 앉은 사람과 남은 예약 (초안에서 지우면 영향 받는 것)
+  live: {
+    seats: Record<
+      string,
+      { code: string; occupant: string | null; color_key: string | null; zone_code: string | null; upcoming: number }
+    >;
+    rooms: Record<string, { name: string; upcoming: number }>;
+  };
+};
+
+export type PublishCheck = {
+  revision: number;
+  summary: {
+    seats_before: number;
+    seats_after: number;
+    added: number;
+    removed: number;
+    moved: number;
+    renamed: { from: string; to: string }[];
+    daily_ended: number;
+  };
+  people: {
+    emp_no: string;
+    name: string;
+    rank: string | null;
+    department: string;
+    seat_code: string;
+    scheduled: boolean;
+    suggestion: { key: string; code: string } | null;
+  }[];
+  rooms_removed: { id: number; name: string; upcoming: number; next_at: string | null }[];
+  rooms_added: string[];
+  rooms_changed: { from: string; to: string; capacity: number }[];
+  room_targets: { key: string; name: string; capacity: number }[];
+  seat_targets: { key: string; code: string }[];
+  problems: { code: string; element: string; seat?: string; name?: string }[];
+};
+
+export function fetchPlanFloors(cookieHeader: string | null) {
+  return apiGet<{ floors: PlanEditorData["floors"] }>("/api/admin/plans/floors", cookieHeader);
+}
+
+export function fetchPlanEditor(cookieHeader: string | null, floorId: number) {
+  return apiGet<PlanEditorData>(`/api/admin/floors/${floorId}/plan`, cookieHeader);
 }

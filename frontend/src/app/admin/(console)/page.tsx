@@ -81,7 +81,7 @@ export default async function AdminHomePage() {
         </p>
 
         <p className={styles.readyNote}>
-          좌석 배치 편집이 열렸어요. 점선 버튼(도면 관리 · 층 추가 · 권한 부여 등)은 다음 단계에서 열려요.
+          좌석 배치 편집과 도면 편집이 열렸어요. 점선 버튼(층 추가 · 권한 부여 등)은 다음 단계에서 열려요.
         </p>
 
         <ul className={styles.stats} aria-label={scoped ? "내 관리 범위 현황" : "전체 현황"}>
@@ -296,7 +296,11 @@ function FloorRow({ floor, siteWide, editPlan }: { floor: AdminFloor; siteWide: 
         <div className={styles.actionRow}>
           {floor.in_scope ? (
             <>
-              {editPlan && <Pending label="도면 관리" />}
+              {editPlan && (
+                <Link href={`/admin/plans?floor=${floor.id}`} className={styles.btn}>
+                  도면 관리
+                </Link>
+              )}
               {floor.seats + floor.flex > 0 ? (
                 <Link href={`/admin/seating?floor=${floor.id}`} className={`${styles.btn} ${styles.pri}`}>
                   {floor.in_scope === "ALL" ? "배치 편집" : "내 구역 배치"}

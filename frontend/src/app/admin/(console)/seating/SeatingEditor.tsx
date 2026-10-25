@@ -1499,7 +1499,9 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
           </>
         }
       >
-        <p>{confirm?.body}</p>
+        <div className={styles.dialogBody}>
+          <p>{confirm?.body}</p>
+        </div>
       </Dialog>
 
       {zoneDialog && (
@@ -1545,23 +1547,27 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
           </>
         }
       >
-        <label className={styles.noteField}>
-          <span>반려 사유 (요청한 사람에게 보여요)</span>
-          <textarea
-            data-autofocus
-            rows={3}
-            maxLength={200}
-            value={rejecting?.comment ?? ""}
-            aria-invalid={!!rejecting?.error || undefined}
-            aria-describedby="reject-error"
-            onChange={(event) => rejecting && setRejecting({ ...rejecting, comment: event.target.value, error: null })}
-          />
-        </label>
-        {rejecting?.error && (
-          <p id="reject-error" className={styles.fieldError} role="alert">
-            {rejecting.error}
-          </p>
-        )}
+        <div className={styles.dialogBody}>
+          <label className={styles.noteField}>
+            <span>반려 사유 (요청한 사람에게 보여요)</span>
+            <textarea
+              data-autofocus
+              rows={3}
+              maxLength={200}
+              value={rejecting?.comment ?? ""}
+              aria-invalid={!!rejecting?.error || undefined}
+              aria-describedby="reject-error"
+              onChange={(event) =>
+                rejecting && setRejecting({ ...rejecting, comment: event.target.value, error: null })
+              }
+            />
+          </label>
+          {rejecting?.error && (
+            <p id="reject-error" className={styles.fieldError} role="alert">
+              {rejecting.error}
+            </p>
+          )}
+        </div>
       </Dialog>
     </div>
   );

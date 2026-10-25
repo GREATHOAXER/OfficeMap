@@ -25,9 +25,11 @@ CREATE TABLE floors (
     UNIQUE (site_id, name)
 );
 
--- 도면 버전. 층마다 게시본 1개와 작성 중인 초안 1개까지
--- MVP: 배경 이미지(PDF 변환본)만 쓰고 geometry는 비워 둔다
--- 도면 편집기 도입 후: 벽·공간·책상을 geometry(JSON)에 도면 버전 단위로 통째로 저장한다
+-- 도면 버전. 층마다 게시본 1개와 작성 중인 초안 1개까지, 이전 게시본은 보관본(ARCHIVED)으로 모두 남긴다
+-- 벽·기둥·공간·회의실·책상 묶음을 geometry(JSON)에 버전 단위로 통째로 저장한다
+--   v0 (목업): {"walls", "pillars", "spaces"} 도면 대비 비율(0~1) 좌표. 좌석·회의실은 각자 테이블에만 있다
+--   v1 (도면 편집기, "schema": 1): 미터 단위 요소 목록. 책상 칸 하나가 좌석 하나 (server/app/plan_geometry.py)
+-- 게시하면 v1의 책상 칸·회의실 공간으로 seats·meeting_rooms 행을 맞춘다 (plan_element_key로 연결)
 CREATE TABLE floor_plans (
     id                 bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     floor_id           bigint       NOT NULL REFERENCES floors(id),
@@ -44,6 +46,11 @@ CREATE TABLE floor_plans (
     updated_at         timestamptz  NOT NULL DEFAULT now(),  -- 자동 저장 시각
     published_by       bigint REFERENCES employees(id),
     published_at       timestamptz,
+    publish_note       varchar(200),                      -- 게시 메모 (예: 7F 리모델링 1차)
+    base_plan_id       bigint REFERENCES floor_plans(id),   -- 초안이 어느 게시본(또는 보관본)에서 시작했나
+    revision           integer      NOT NULL DEFAULT 1,  -- 자동 저장마다 +1. 다른 탭·사람이 먼저 저장했으면 덮어쓰지 않는다
+    editing_by         bigint REFERENCES employees(id),   -- 지금 편집 중인 사람 (한 초안은 한 사람이 편집)
+    editing_heartbeat_at timestamptz,                     -- 편집 화면이 30초마다 알린다. 2분 넘게 없으면 잠금이 풀린다
     UNIQUE (floor_id, version)
 );
 CREATE UNIQUE INDEX floor_plans_one_published_idx ON floor_plans (floor_id) WHERE status = 'PUBLISHED';
@@ -87,12 +94,17 @@ CREATE TABLE seats (
     rotation         smallint     NOT NULL DEFAULT 0 CHECK (rotation IN (0, 90, 180, 270)),  -- 의자(앉는 쪽) 방향
     status           varchar(15)  NOT NULL DEFAULT 'ACTIVE'
                      CHECK (status IN ('ACTIVE', 'OUT_OF_SERVICE', 'REMOVED')),  -- 사용 중, 사용 중지(고장·수리), 도면에서 빠짐
-    plan_element_key varchar(50),                         -- 도면 편집기에서 이 좌석을 만든 책상의 ID
+    plan_element_key varchar(50),                         -- 도면 편집기에서 이 좌석을 만든 책상 칸의 ID
+    removed_at       timestamptz,                         -- 도면 게시로 빠진 시각 (status = REMOVED)
+    removed_by_plan_id bigint REFERENCES floor_plans(id),  -- 어느 도면 게시로 빠졌나
     created_at       timestamptz  NOT NULL DEFAULT now(),
-    updated_at       timestamptz  NOT NULL DEFAULT now(),
-    UNIQUE (floor_id, code)
+    updated_at       timestamptz  NOT NULL DEFAULT now()
 );
 CREATE INDEX seats_zone_id_idx ON seats (zone_id);
+-- 좌석 번호는 층 안에서 살아 있는 좌석끼리만 겹치지 않으면 된다 (빠진 좌석의 번호는 새 책상이 다시 쓸 수 있다)
+CREATE UNIQUE INDEX seats_floor_code_idx ON seats (floor_id, code) WHERE status <> 'REMOVED';
+CREATE UNIQUE INDEX seats_floor_element_idx ON seats (floor_id, plan_element_key)
+    WHERE status <> 'REMOVED' AND plan_element_key IS NOT NULL;
 
 -- 구역 모양 자동 계산 ----------------------------------------------------------
 -- 구역 좌석들을 가까운 것끼리 덩어리로 묶고(책상을 붙여 놓은 섬), 덩어리마다 좌석을 감싸는 사각형을 만든다.
