@@ -8,6 +8,7 @@ import {
   boxOfAll,
   countsOf,
   DESK,
+  OFFICE_DESK,
   DESK_RANGE,
   deskDims,
   distributeElements,
@@ -164,17 +165,11 @@ function Summary(props: Props) {
             </div>
             <p className={ui.hint}>
               새로 놓는 책상 묶음에 써요. 이미 놓은 묶음은 골라서 책상 크기를 바꿔요.
-              {geometry.desk && (
+              {(desk.w !== OFFICE_DESK.w || desk.h !== OFFICE_DESK.h) && (
                 <>
                   {" "}
-                  <button
-                    type="button"
-                    className={ui.linkButton}
-                    onClick={() =>
-                      onGeometry({ schema: geometry.schema, grid_m: geometry.grid_m, elements: geometry.elements })
-                    }
-                  >
-                    기본({DESK.w} × {DESK.h})으로
+                  <button type="button" className={ui.linkButton} onClick={() => setDesk(OFFICE_DESK)}>
+                    보통 책상({OFFICE_DESK.w} × {OFFICE_DESK.h})으로
                   </button>
                 </>
               )}

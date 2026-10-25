@@ -5,11 +5,11 @@ import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useRef } from "react";
 import type { Admin, FloorEvent, PlanEditorData } from "@/lib/api";
 import { openEventStream } from "@/lib/eventStream";
+import { adminExpiredUrl } from "@/lib/loginRedirect";
 import ui from "../seating/seating.module.css";
 
 // 도면 편집 화면들(시작·초안 편집·게시 예약)이 같이 쓰는 것
 
-export const EXPIRED = "/admin/login?reason=expired&next=/admin/plans";
 export const json = { "content-type": "application/json" };
 
 export type ScreenProps = {
@@ -96,7 +96,7 @@ export function useFloorChanges(floorId: number, onChange: () => unknown) {
       onRejected: async () => {
         const res = await fetch("/api/admin/auth/session").catch(() => null);
         if (res?.status === 401) {
-          router.replace(EXPIRED);
+          router.replace(adminExpiredUrl());
           return false;
         }
         return true;

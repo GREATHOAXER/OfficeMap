@@ -5,10 +5,11 @@ import { useEffect, useState } from "react";
 import type { PlanEditorData, PublishCheck } from "@/lib/api";
 import { shortDate } from "@/lib/dates";
 import { problemsOf } from "@/lib/planGeometry";
+import { adminExpiredUrl } from "@/lib/loginRedirect";
 import ui from "../seating/seating.module.css";
 import PlanCanvas, { ZoomControls } from "./PlanCanvas";
 import PlanPanel from "./PlanPanel";
-import { EXPIRED, Header, type ScreenProps, useFloorChanges } from "./shared";
+import { Header, type ScreenProps, useFloorChanges } from "./shared";
 import styles from "./plans.module.css";
 
 // 게시 예약 --------------------------------------------------------------------
@@ -40,7 +41,7 @@ export default function ScheduledView({ admin, data, setData, reload, showToast,
     const res = await fetch(`/api/admin/plans/${draft.id}/unschedule`, { method: "POST" }).catch(() => null);
     setBusy(false);
     if (res?.status === 401) {
-      router.replace(EXPIRED);
+      router.replace(adminExpiredUrl());
       return;
     }
     if (!res?.ok) {

@@ -635,6 +635,12 @@
   padding: 2px 0;
 }
 
+/* 세로쓰기에서는 글꼴에 따라 글자가 제자리보다 조금 아래에 그려져, 이름 칸 끝에서 마지막 글자 아랫부분이 잘렸다.
+   칸 끝에 여유를 둔다 (글자 크기는 세로 글자 길이를 넉넉히 잡아 정해서 좌석 안에 들어간다) */
+.seat[data-vertical] .seatName {
+  padding-inline: 0.1em 0.8em;
+}
+
 .seat[draggable="true"] {
   cursor: grab;
 }

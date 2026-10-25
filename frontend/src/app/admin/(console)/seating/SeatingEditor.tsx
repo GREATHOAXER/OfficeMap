@@ -19,12 +19,14 @@ import type {
   SeatingZone,
   UnassignedPerson,
 } from "@/lib/api";
+import { type Columns, columnsFor } from "@/lib/columns";
 import { addDays, kstDate, shortDate } from "@/lib/dates";
 import { placeOf } from "../place";
 import { openEventStream } from "@/lib/eventStream";
 import { drawingFromSeating } from "@/lib/floorDrawing";
 import { useNow } from "@/lib/useNow";
 import { autoRects, zoneRects } from "@/lib/zoneShape";
+import { adminExpiredUrl } from "@/lib/loginRedirect";
 import {
   baseMode,
   baseOccupant,
@@ -67,7 +69,6 @@ const ZOOM_STEPS = [0.75, 1, 1.25, 1.5, 2];
 const SAVE_DELAY_MS = 800; // 마지막으로 바꾸고 이만큼 쉬면 자동 저장
 const HISTORY_MAX = 50;
 const MAX_SCHEDULE_DAYS = 365;
-const EXPIRED = "/admin/login?reason=expired&next=/admin/seating";
 // 화면 폭(왼쪽 메뉴를 뺀 본문)에 따라 단 수를 정한다. 세 단: 도구·미배치 | 도면 | 좌석·변경,
 // 두 단: 도면 | 좌석·미배치·변경·도구 (미배치 인원이 도면 옆에 오게), 한 단: 위에서 아래로
 const THREE_COLUMNS_PX = 1240;
@@ -133,7 +134,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
   const pageRef = useRef<HTMLDivElement>(null);
-  const [cols, setCols] = useState<1 | 2 | 3>(2);
+  const [cols, setCols] = useState<Columns>(2);
   const wide = cols === 3;
 
   useEffect(() => {
@@ -141,7 +142,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
     if (!el) return;
     const observer = new ResizeObserver(([entry]) => {
       const width = entry.contentRect.width;
-      setCols(width >= THREE_COLUMNS_PX ? 3 : width >= TWO_COLUMNS_PX ? 2 : 1);
+      setCols((prev) => columnsFor(width, prev, THREE_COLUMNS_PX, TWO_COLUMNS_PX));
     });
     observer.observe(el);
     return () => observer.disconnect();
@@ -275,7 +276,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
           }),
         });
         if (res.status === 401) {
-          router.replace(EXPIRED);
+          router.replace(adminExpiredUrl());
           return false;
         }
         if (!res.ok) {
@@ -395,7 +396,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
     async (reset: boolean) => {
       const res = await fetch(`/api/admin/floors/${floorId}/seating`, { cache: "no-store" });
       if (res.status === 401) {
-        router.replace(EXPIRED);
+        router.replace(adminExpiredUrl());
         return;
       }
       if (!res.ok) return;
@@ -448,7 +449,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
       onRejected: async () => {
         const res = await fetch("/api/admin/auth/session").catch(() => null);
         if (res?.status === 401) {
-          router.replace(EXPIRED);
+          router.replace(adminExpiredUrl());
           return false;
         }
         return true;
@@ -665,7 +666,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
       headers: body === undefined ? undefined : json,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-    if (res.status === 401) router.replace(EXPIRED);
+    if (res.status === 401) router.replace(adminExpiredUrl());
     return { ok: res.ok, status: res.status, data: await res.json().catch(() => null) };
   }
 
@@ -754,7 +755,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
   async function openReview(row: ChangeRequestRow) {
     const res = await fetch(`/api/admin/change-sets/${row.id}`, { cache: "no-store" });
     if (res.status === 401) {
-      router.replace(EXPIRED);
+      router.replace(adminExpiredUrl());
       return;
     }
     if (!res.ok) {
@@ -1642,7 +1643,7 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
           departments={data.departments}
           statsOf={zoneStats}
           onClose={() => setZoneDialog(null)}
-          onExpired={() => router.replace(EXPIRED)}
+          onExpired={() => router.replace(adminExpiredUrl())}
           onDone={async ({ message, zoneId }) => {
             setZoneDialog(null);
             showToast(message);

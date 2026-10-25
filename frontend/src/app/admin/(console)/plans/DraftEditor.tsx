@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Dialog from "@/components/Dialog";
 import FloorExportDialog from "@/components/FloorExportDialog";
 import type { DeskGroup, PlanEditorData, PlanElement, PlanGeometry, PlanRect, SpaceKind } from "@/lib/api";
+import { type Columns, columnsFor } from "@/lib/columns";
 import { agoText, shortDate } from "@/lib/dates";
 import { drawingFromPlan } from "@/lib/floorDrawing";
 import {
@@ -28,6 +29,7 @@ import {
 } from "@/lib/planGeometry";
 import { useNow } from "@/lib/useNow";
 import { straighten, type TidyResult } from "@/lib/wallSnap";
+import { adminExpiredUrl } from "@/lib/loginRedirect";
 import ui from "../seating/seating.module.css";
 import BackgroundDialog from "./BackgroundDialog";
 import ImportWizard, { type Background } from "./ImportWizard";
@@ -37,11 +39,11 @@ import PublishDialog, { type PublishResult, type ScheduleResult } from "./Publis
 import ResizeDialog from "./ResizeDialog";
 import SelectionToolbar from "./SelectionToolbar";
 import TidyDialog from "./TidyDialog";
-import { EXPIRED, Header, json, type ScreenProps, useFloorChanges } from "./shared";
+import { Header, json, type ScreenProps, useFloorChanges } from "./shared";
 import styles from "./plans.module.css";
 
 const SAVE_DELAY_MS = 1500; // 마지막으로 바꾸고 이만큼 쉬면 자동 저장
-const HEARTBEAT_MS = 30_000; // 편집 중 표시 (서버는 2분 소식이 없으면 잠금을 푼다)
+const HEARTBEAT_MS = 10_000; // 편집 중 표시. 다른 관리자가 넘겨받으면 다음 표시 때 알아챈다 (서버는 2분 소식이 없으면 잠금을 푼다)
 const WATCH_MS = 15_000; // 보기만 할 때 다른 사람의 편집을 다시 읽는 간격
 const COALESCE_MS = 1500; // 같은 칸을 이만큼 안에 이어서 고치면 되돌리기 한 번으로 묶는다
 const HISTORY_MAX = 100;
@@ -135,7 +137,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
   const [exporting, setExporting] = useState(false);
   const [busy, setBusy] = useState(false);
   const pageRef = useRef<HTMLDivElement>(null);
-  const [cols, setCols] = useState<1 | 2 | 3>(2);
+  const [cols, setCols] = useState<Columns>(2);
   const readOnly = lock !== null;
 
   useEffect(() => {
@@ -143,7 +145,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
     if (!el) return;
     const observer = new ResizeObserver(([entry]) => {
       const w = entry.contentRect.width;
-      setCols(w >= THREE_COLUMNS_PX ? 3 : w >= TWO_COLUMNS_PX ? 2 : 1);
+      setCols((prev) => columnsFor(w, prev, THREE_COLUMNS_PX, TWO_COLUMNS_PX));
     });
     observer.observe(el);
     return () => observer.disconnect();
@@ -192,7 +194,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
           }),
         });
         if (res.status === 401) {
-          router.replace(EXPIRED);
+          router.replace(adminExpiredUrl());
           return false;
         }
         const out = await res.json().catch(() => null);
@@ -265,7 +267,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
         body: JSON.stringify({ take_over: takeOver }),
       }).catch(() => null);
       if (res?.status === 401) {
-        router.replace(EXPIRED);
+        router.replace(adminExpiredUrl());
         return false;
       }
       if (res?.status === 404) {
@@ -418,7 +420,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
         headers: json,
         body: JSON.stringify({ visible }),
       });
-      if (res.status === 401) router.replace(EXPIRED);
+      if (res.status === 401) router.replace(adminExpiredUrl());
     } catch {
       // 화면에서는 이미 바뀌었다. 다음에 열 때 예전 값이면 다시 고르면 된다
     }
@@ -754,7 +756,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
       result.reservations_cancelled && `예약 취소 ${result.reservations_cancelled}건`,
     ].filter(Boolean);
     showToast(
-      `${data.floor.name} 도면을 게시했어요 (v${result.version})${parts.length ? ` · ${parts.join(" · ")}` : ""}`,
+      `${data.floor.site.name} ${data.floor.name} 도면을 게시했어요 (v${result.version})${parts.length ? ` · ${parts.join(" · ")}` : ""}`,
     );
     await reload();
   }
@@ -775,7 +777,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
     setBusy(false);
     setDiscarding(false);
     if (res?.status === 401) {
-      router.replace(EXPIRED);
+      router.replace(adminExpiredUrl());
       return;
     }
     if (res?.status === 423) {
@@ -1193,7 +1195,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
             setTool("select");
             setSelectedIds([id]);
           }}
-          onExpired={() => router.replace(EXPIRED)}
+          onExpired={() => router.replace(adminExpiredUrl())}
         />
       )}
 
@@ -1211,7 +1213,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
           mode="draft"
           data={{ ...data, size: { width_m: width, height_m: height } }}
           onClose={() => setImporting(false)}
-          onExpired={() => router.replace(EXPIRED)}
+          onExpired={() => router.replace(adminExpiredUrl())}
           onApply={applyImport}
         />
       )}
@@ -1227,7 +1229,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
             setBgEditing(false);
             setImporting(true);
           }}
-          onExpired={() => router.replace(EXPIRED)}
+          onExpired={() => router.replace(adminExpiredUrl())}
         />
       )}
 

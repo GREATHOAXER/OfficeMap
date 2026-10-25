@@ -115,7 +115,7 @@ SELECT e.id,
        (ARRAY['AVAILABLE', 'AVAILABLE', 'AVAILABLE', 'DO_NOT_DISTURB',
               'AVAILABLE', 'IN_MEETING', 'AWAY'])[1 + e.id % 7],
        (ARRAY[NULL, NULL, NULL, '집중 업무 중', NULL, '회의 중', '외근'])[1 + e.id % 7],
-       pg_temp.kst(0, '09:00')
+       least(now(), pg_temp.kst(0, '09:00'))
 FROM employees e
 WHERE e.emp_no LIKE '22%' AND e.id % 8 <> 0;
 

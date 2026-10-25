@@ -365,7 +365,9 @@ export default function ImportWizard({ mode, data, onClose, onExpired, onCreated
     if (file?.kind === "image") scale = Math.min(1, scale);
     if (file?.kind === "excel") scale = Math.min(3, scale);
     const blob = await canvasFile(await p.render(scale, s.crop));
-    return { size, found, blob };
+    // 이 쪽에서 정한 책상 크기를 초안의 "새 책상 기본 크기"로도 쓴다 (나중에 놓는 책상도 같은 크기)
+    const desk = { w: Number(s.desk.w) || 1.6, h: Number(s.desk.h) || 0.8 };
+    return { size, found, blob, desk };
   }
 
   async function upload(floorId: number, blob: Blob, size: { widthM: number; heightM: number }, name: string) {
@@ -393,7 +395,7 @@ export default function ImportWizard({ mode, data, onClose, onExpired, onCreated
       const floor = data.floors.find((f) => f.id === floorId);
       setJobs((j) => ({ ...j, [p.index]: { state: "working" } }));
       try {
-        const { size, found, blob } = await prepare(p, "imp-");
+        const { size, found, blob, desk } = await prepare(p, "imp-");
         const res = await fetch(`/api/admin/floors/${floorId}/plan/draft`, {
           method: "POST",
           headers: json,
@@ -401,7 +403,7 @@ export default function ImportWizard({ mode, data, onClose, onExpired, onCreated
             source: "import",
             width_m: Math.max(MIN_SIZE, size.widthM),
             height_m: Math.max(MIN_SIZE, size.heightM),
-            geometry: { schema: 1, grid_m: 0.5, elements: found?.elements ?? [] },
+            geometry: { schema: 1, grid_m: 0.5, desk, elements: found?.elements ?? [] },
           }),
         });
         if (res.status === 401) return onExpired();
@@ -409,7 +411,9 @@ export default function ImportWizard({ mode, data, onClose, onExpired, onCreated
           const out = await res.json().catch(() => null);
           throw new Error(out?.detail?.code === "HAS_DRAFT" ? "그새 초안이 생겼어요" : "초안을 만들지 못했어요");
         }
-        await upload(floorId, blob, size, `${file.name} ${p.label}`.slice(0, 200));
+        // 그림 파일은 쪽 이름이 파일 이름 그대로라 두 번 붙이지 않는다 (PDF는 "본사도면.pdf 3쪽")
+        const name = p.label && p.label !== file.name ? `${file.name} ${p.label}` : file.name;
+        await upload(floorId, blob, size, name.slice(0, 200));
         done.push({ id: floorId, name: floor?.name ?? "" });
         setJobs((j) => ({ ...j, [p.index]: { state: "done" } }));
       } catch (e) {

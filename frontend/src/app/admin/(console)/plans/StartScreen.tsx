@@ -6,9 +6,10 @@ import type { PlanEditorData } from "@/lib/api";
 import { agoText, kstDate } from "@/lib/dates";
 import { MAX_SIZE, MIN_SIZE } from "@/lib/planGeometry";
 import { useNow } from "@/lib/useNow";
+import { adminExpiredUrl } from "@/lib/loginRedirect";
 import ui from "../seating/seating.module.css";
 import ImportWizard from "./ImportWizard";
-import { EXPIRED, Header, json, type ScreenProps } from "./shared";
+import { Header, json, type ScreenProps } from "./shared";
 import styles from "./plans.module.css";
 
 // 시작 화면 --------------------------------------------------------------------
@@ -46,7 +47,7 @@ export default function StartScreen({ admin, data, setData, reload, showToast, g
         body: JSON.stringify(body),
       });
       if (res.status === 401) {
-        router.replace(EXPIRED);
+        router.replace(adminExpiredUrl());
         return;
       }
       const out = await res.json().catch(() => null);
@@ -225,7 +226,7 @@ export default function StartScreen({ admin, data, setData, reload, showToast, g
             mode="start"
             data={data}
             onClose={() => setImporting(false)}
-            onExpired={() => router.replace(EXPIRED)}
+            onExpired={() => router.replace(adminExpiredUrl())}
             onCreated={(floors) => {
               const names = floors.map((f) => f.name).join(", ");
               const here = floors.some((f) => f.id === data.floor.id);

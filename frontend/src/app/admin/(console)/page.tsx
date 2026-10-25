@@ -1,11 +1,11 @@
 import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import PendingButton from "@/components/PendingButton";
 import { applyModeText, canEditPlan, canManage, canManageSite, LEVELS, PLAN_LABEL, ROLE_TASKS } from "@/lib/admin";
 import { type Admin, type AdminFloor, type AdminSite, ApiError, fetchAdmin, fetchAdminOverview } from "@/lib/api";
 import { kstDate, shortDate } from "@/lib/dates";
+import { redirectToAdminLogin } from "@/lib/expiredRedirect";
 import { FloorButton, SiteButton } from "./SiteActions";
 import styles from "./admin.module.css";
 
@@ -18,10 +18,10 @@ export default async function AdminHomePage() {
   let data;
   try {
     const [admin, overview] = await Promise.all([fetchAdmin(cookieHeader), fetchAdminOverview(cookieHeader)]);
-    if (!admin) redirect("/admin/login?reason=expired");
+    if (!admin) return redirectToAdminLogin();
     data = { admin, overview };
   } catch (error) {
-    if (error instanceof ApiError && error.status === 401) redirect("/admin/login?reason=expired");
+    if (error instanceof ApiError && error.status === 401) return redirectToAdminLogin();
     throw error;
   }
   const { admin, overview } = data;
@@ -60,7 +60,7 @@ export default async function AdminHomePage() {
   ];
 
   return (
-    <div className={styles.page}>
+    <main className={styles.page}>
       <header className={styles.header}>
         <div className={styles.titleRow}>
           <h1 className={styles.title}>사업장·층·권한 관리</h1>
@@ -183,7 +183,7 @@ export default async function AdminHomePage() {
 
         <p className={styles.foot}>관리자 화면은 {admin.idle_minutes}분간 사용하지 않으면 자동 로그아웃됩니다.</p>
       </div>
-    </div>
+    </main>
   );
 }
 

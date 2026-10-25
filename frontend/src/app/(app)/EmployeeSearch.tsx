@@ -71,7 +71,7 @@ export default function EmployeeSearch({ onPick }: { onPick: (hit: EmployeeHit) 
           aria-controls={listId}
           aria-autocomplete="list"
           aria-activedescendant={showList && activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined}
-          placeholder="이름·팀·사번·하는 일로 직원 찾기"
+          placeholder="이름·팀·사번·하는 일 검색" // 좁은 머리글(1024px)에서도 잘리지 않게 짧게
           maxLength={QUERY_MAX}
           value={query}
           onChange={(event) => {

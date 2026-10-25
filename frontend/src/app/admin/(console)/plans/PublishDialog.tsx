@@ -326,7 +326,9 @@ export default function PublishDialog({
                     onChange={(e) => setPeople({ ...people, [p.emp_no]: e.target.value })}
                   >
                     <option value={UNASSIGNED}>미배치로 두기</option>
-                    {check.seat_targets
+                    {/* 좌석 번호 순 (A-2가 A-10보다 앞) */}
+                    {[...check.seat_targets]
+                      .sort((a, b) => a.code.localeCompare(b.code, "ko", { numeric: true }))
                       .filter((t) => !chosen.has(t.key) || chosen.get(t.key) === p.emp_no)
                       .map((t) => (
                         <option key={t.key} value={t.key}>

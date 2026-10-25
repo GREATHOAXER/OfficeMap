@@ -33,7 +33,8 @@ function errorText(code: string, forced: boolean, maxFailed: number) {
   return texts[code] ?? texts.NETWORK;
 }
 
-export default function PasswordForm({ empNo, forced }: { empNo: string; forced: boolean }) {
+/** next: 바꾼 뒤 갈 화면 (임시 비밀번호로 로그인했을 때 가려던 화면, 없으면 첫 화면) */
+export default function PasswordForm({ empNo, forced, next }: { empNo: string; forced: boolean; next: string }) {
   const router = useRouter();
   const currentRef = useRef<HTMLInputElement>(null);
   const [password, setPassword] = useState("");
@@ -78,7 +79,7 @@ export default function PasswordForm({ empNo, forced }: { empNo: string; forced:
       if (res.ok) {
         setDone(true);
         setTimeout(() => {
-          router.replace("/");
+          router.replace(next);
           router.refresh();
         }, 2000);
         return;
@@ -99,7 +100,7 @@ export default function PasswordForm({ empNo, forced }: { empNo: string; forced:
     return (
       <p role="status" className={own.done}>
         비밀번호를 바꿨습니다. 다음 로그인부터 새 비밀번호를 쓰세요. 다른 기기에 로그인되어 있었다면 그쪽은
-        로그아웃됩니다. 잠시 후 첫 화면으로 이동합니다…
+        로그아웃됩니다. 잠시 후 {next === "/" ? "첫 화면" : "보던 화면"}으로 이동합니다…
       </p>
     );
   }

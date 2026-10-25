@@ -7,6 +7,8 @@ export const GRID_M = 0.5;
 
 // 책상 기본 크기와 책상 사이 간격 (m). 서버(server/app/plan_geometry.py)와 같아야 한다.
 // 직원 화면은 좌석을 "책상 크기 ÷ 도면 크기" 비율로 그린다. 기본 책상을 50 × 30 m 도면에 두면 0.0533 × 0.0556
+// 보통 사무용 책상 (빈 도면·도면 파일로 만든 초안의 "새 책상 기본 크기")
+export const OFFICE_DESK = { w: 1.6, h: 0.8 };
 const DESK_W = 2.665;
 const DESK_H = 1.668;
 const GAP_X = 0.085; // 옆 책상 사이

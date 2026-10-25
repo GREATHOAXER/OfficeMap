@@ -397,7 +397,7 @@ VALUES ((SELECT id FROM employees WHERE emp_no = '20130003'), 'LEAVE',
         pg_temp.kst(0, '00:00'), pg_temp.kst(1, '00:00'), 'HR_API', 'LV-MOCK-0001');
 
 INSERT INTO presence_status (employee_id, status, message, expires_at, updated_at)
-SELECT e.id, v.status, v.message, v.expires_at, pg_temp.kst(0, '09:00')
+SELECT e.id, v.status, v.message, v.expires_at, least(now(), pg_temp.kst(0, '09:00'))  -- 9시 전에 만들면 지금
 FROM (VALUES
     ('20190005', 'AVAILABLE',      '편하게 자리로 찾아오세요',       NULL::timestamptz),
     ('20150004', 'IN_MEETING',     '대회의실 701 · 14:30 종료 예정', pg_temp.kst(0, '14:30')),
@@ -415,7 +415,7 @@ INSERT INTO presence_status (employee_id, status, message, updated_at)
 SELECT e.id,
        (ARRAY['AVAILABLE', 'AVAILABLE', 'AVAILABLE', 'AVAILABLE', 'DO_NOT_DISTURB', 'IN_MEETING', 'AWAY'])[1 + e.id % 7],
        (ARRAY[NULL, NULL, NULL, NULL, '집중 업무 중', '회의 중', '외근'])[1 + e.id % 7],
-       pg_temp.kst(0, '09:00')
+       least(now(), pg_temp.kst(0, '09:00'))
 FROM employees e
 WHERE e.emp_no LIKE '21%' AND e.id % 9 <> 0;
 

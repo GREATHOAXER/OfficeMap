@@ -5,7 +5,7 @@ import { useState } from "react";
 import { GridIcon } from "@/components/icons";
 import type { EmployeeHit, MyPresenceInfo, MyReservation, MyTeam, PresenceStatus } from "@/lib/api";
 import { kstDate } from "@/lib/dates";
-import { useLivePresence, useRefreshAtExpiry, withLiveMine } from "@/lib/livePresence";
+import { useLivePresence, withLiveMine } from "@/lib/livePresence";
 import {
   NO_STATUS_LABEL,
   PRESENCE_HINT,
@@ -16,6 +16,8 @@ import {
   type StatusFilter,
 } from "@/lib/presence";
 import { hhmm, rangeText } from "@/lib/rooms";
+import { useNow } from "@/lib/useNow";
+import { useRefreshAt } from "@/lib/useRefreshAt";
 import PresenceForm from "../PresenceForm";
 import styles from "./presence.module.css";
 
@@ -37,7 +39,8 @@ const rank = (status: PresenceStatus | undefined) => (status ? PRESENCE_ORDER.in
 export default function PresenceView({ myEmpNo, info, team, upcoming, today }: Props) {
   const live = useLivePresence();
   const mine = withLiveMine(info.presence, live.get(myEmpNo), team.fetched_at);
-  useRefreshAtExpiry([mine?.expires_at]);
+  // 내 상태 자동 해제 시각·자정에 다시 읽는다 (해제는 알림이 따로 오지 않는다)
+  useRefreshAt([mine?.expires_at]);
   const [filter, setFilter] = useState<StatusFilter | null>(null);
 
   // 팀 사람들에게도 읽은 뒤에 온 상태 변경을 덮어쓴다
@@ -57,9 +60,16 @@ export default function PresenceView({ myEmpNo, info, team, upcoming, today }: P
     .filter((m) => !filter || (m.presence?.status ?? "NONE") === filter)
     .sort((a, b) => rank(a.presence?.status) - rank(b.presence?.status) || a.name.localeCompare(b.name, "ko"));
 
-  // 오늘 남은 일정: 내가 실제로 들어가는 회의만 (취소된 회의, 예약만 해 준 회의는 빼고)
+  // 오늘 남은 일정: 내가 실제로 들어가는 회의만 (취소된 회의, 예약만 해 준 회의는 빼고). 끝난 회의는 열어 둔 채로도 빠지고,
+  // 날짜가 바뀌면 다시 읽는다
+  const now = useNow();
   const todays = upcoming.filter(
-    (r) => r.status === "CONFIRMED" && r.attending && kstDate(r.starts_at) <= today && today <= kstDate(r.ends_at),
+    (r) =>
+      r.status === "CONFIRMED" &&
+      r.attending &&
+      kstDate(r.starts_at) <= today &&
+      today <= kstDate(r.ends_at) &&
+      (now === 0 || Date.parse(r.ends_at) > now),
   );
 
   return (

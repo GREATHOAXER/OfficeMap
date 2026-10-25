@@ -300,12 +300,15 @@ def _seating(conn: Connection, admin: dict[str, Any], floor: dict[str, Any], acc
 
 
 def _department_choices(conn: Connection) -> list[dict[str, Any]]:
-    """살아 있는 팀(아래 부서가 없는 부서)과 위 부서 이름"""
+    """살아 있는 팀(아래 부서가 없는 부서)과 위 부서 이름. 아래 부서가 생긴 부서도 이미 그 부서 구역이 있으면 넣는다
+    (구역을 고칠 때 지금 부서가 목록에 없어 공용 구역으로 바뀌지 않게)"""
     return conn.execute(
         """
         SELECT d.id, d.name, p.name AS parent
         FROM departments d LEFT JOIN departments p ON p.id = d.parent_id
-        WHERE d.is_active AND NOT EXISTS (SELECT 1 FROM departments c WHERE c.parent_id = d.id AND c.is_active)
+        WHERE d.is_active
+          AND (NOT EXISTS (SELECT 1 FROM departments c WHERE c.parent_id = d.id AND c.is_active)
+               OR EXISTS (SELECT 1 FROM zones z WHERE z.department_id = d.id AND z.is_active))
         ORDER BY p.sort_order NULLS FIRST, d.sort_order, d.name
         """
     ).fetchall()

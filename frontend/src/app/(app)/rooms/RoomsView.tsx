@@ -63,7 +63,9 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // 고치는 예약. updatedAt: 폼을 채울 때 읽은 버전 (그사이 다른 탭·창에서 고쳤으면 서버가 저장을 막는다)
-  const [editing, setEditing] = useState<{ id: number; title: string; updatedAt: string } | null>(null);
+  const [editing, setEditing] = useState<{ id: number; title: string; updatedAt: string; series: boolean } | null>(
+    null,
+  );
   const [staleEdit, setStaleEdit] = useState(false); // 다른 곳에서 먼저 고쳐서 저장하지 못했다 (다시 불러오기)
   const [skipDates, setSkipDates] = useState<string[] | null>(null);
   const [capacityOk, setCapacityOk] = useState(false); // 정원 초과를 알고도 예약하겠다고 한 번 더 눌렀다
@@ -99,7 +101,7 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
       if (!saved) return;
       if (saved.edit) {
         restoredEdit.current = saved.edit.id;
-        setEditing(saved.edit);
+        setEditing({ ...saved.edit, series: saved.edit.series ?? false });
       }
       setDraft(saved.draft);
       setFormOpen(true);
@@ -134,7 +136,7 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
           return;
         }
         if (restoredEdit.current === detail.id) return; // 맡겨 둔 내용으로 이미 채웠다
-        setEditing({ id: detail.id, title: detail.title, updatedAt: detail.updated_at });
+        setEditing({ id: detail.id, title: detail.title, updatedAt: detail.updated_at, series: detail.series !== null });
         setDraft(draftOf(detail));
         setError(null);
         setFormOpen(true);
@@ -158,7 +160,7 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
         router.refresh();
         return;
       }
-      setEditing({ id: detail.id, title: detail.title, updatedAt: detail.updated_at });
+      setEditing({ id: detail.id, title: detail.title, updatedAt: detail.updated_at, series: detail.series !== null });
       setDraft(draftOf(detail));
       setError(null);
       setStaleEdit(false);
@@ -525,6 +527,7 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
           conflicts={conflicts}
           checking={checking}
           editing={editing !== null}
+          editingSeries={editing?.series ?? false}
           editingId={editing?.id ?? null}
           skipDates={skipDates}
           onSkipConflicts={() => void submit(true)}

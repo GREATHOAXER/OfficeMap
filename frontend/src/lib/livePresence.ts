@@ -7,7 +7,6 @@ import { expiredLoginUrl, toLogoutReason } from "./loginRedirect";
 /** 사번 → 그 사람의 가장 최근 상태 변경 알림 */
 export type LiveChanges = ReadonlyMap<string, PresenceEvent>;
 
-const MAX_TIMEOUT_MS = 2 ** 31 - 1; // setTimeout이 받는 최대 지연 (약 24일)
 
 /**
  * 동료들의 재실 상태 변경을 실시간으로 받는다 (/api/presence/stream, SSE).
@@ -70,20 +69,4 @@ export function withLivePresence(map: FloorMap, changes: LiveChanges): FloorMap 
 /** 내 상태도 같은 방식으로 */
 export function withLiveMine(mine: MyPresence, change: PresenceEvent | undefined, fetchedAt: string): MyPresence {
   return change && Date.parse(change.at) > Date.parse(fetchedAt) ? change.presence : mine;
-}
-
-/** 화면에 보이는 상태 중 가장 먼저 자동 해제되는 시각에 데이터를 다시 읽는다 (해제는 알림이 따로 오지 않는다) */
-export function useRefreshAtExpiry(expiries: (string | null | undefined)[]) {
-  const router = useRouter();
-  const times = expiries.filter((t): t is string => !!t).map((t) => Date.parse(t));
-  const next = times.length ? Math.min(...times) : null;
-
-  useEffect(() => {
-    if (next === null) return;
-    // 서버와 PC 시계가 조금 어긋나도 해제된 뒤에 읽도록 1초 늦게
-    const delay = Math.max(0, next - Date.now() + 1000);
-    if (delay > MAX_TIMEOUT_MS) return;
-    const timer = setTimeout(() => router.refresh(), delay);
-    return () => clearTimeout(timer);
-  }, [next, router]);
 }

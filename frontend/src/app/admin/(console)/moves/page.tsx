@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { ApiError, fetchAdmin, fetchMoveOptions } from "@/lib/api";
+import { redirectToAdminLogin } from "@/lib/expiredRedirect";
 import ui from "../seating/seating.module.css";
 import MoveWizard from "./MoveWizard";
 
@@ -14,10 +14,10 @@ export default async function MovesPage() {
   let loaded;
   try {
     const [admin, options] = await Promise.all([fetchAdmin(cookieHeader), fetchMoveOptions(cookieHeader)]);
-    if (!admin) redirect("/admin/login?reason=expired");
+    if (!admin) return redirectToAdminLogin();
     loaded = { admin, options };
   } catch (error) {
-    if (error instanceof ApiError && error.status === 401) redirect("/admin/login?reason=expired");
+    if (error instanceof ApiError && error.status === 401) return redirectToAdminLogin();
     throw error;
   }
 

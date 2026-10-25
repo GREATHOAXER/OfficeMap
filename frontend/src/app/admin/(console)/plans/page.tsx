@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { ApiError, fetchAdmin, fetchPlanEditor, fetchPlanFloors } from "@/lib/api";
+import { redirectToAdminLogin } from "@/lib/expiredRedirect";
 import ui from "../seating/seating.module.css";
 import PlanEditor from "./PlanEditor";
 
@@ -15,7 +15,7 @@ export default async function PlansPage({ searchParams }: PageProps<"/admin/plan
   let loaded;
   try {
     const [admin, { floors }] = await Promise.all([fetchAdmin(cookieHeader), fetchPlanFloors(cookieHeader)]);
-    if (!admin) redirect("/admin/login?reason=expired");
+    if (!admin) return redirectToAdminLogin();
     const wanted = Number(params.floor) || null;
     const floor = floors.find((f) => f.id === wanted) ?? floors[0];
     loaded = floor
@@ -29,7 +29,7 @@ export default async function PlansPage({ searchParams }: PageProps<"/admin/plan
         }
       : null;
   } catch (error) {
-    if (error instanceof ApiError && error.status === 401) redirect("/admin/login?reason=expired");
+    if (error instanceof ApiError && error.status === 401) return redirectToAdminLogin();
     throw error;
   }
 

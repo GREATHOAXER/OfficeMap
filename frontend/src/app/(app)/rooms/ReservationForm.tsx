@@ -48,6 +48,8 @@ type Props = {
   checking: boolean;
   /** 이미 있는 예약을 고치는 중 (반복은 못 바꾼다) */
   editing: boolean;
+  /** 고치는 예약이 반복 예약의 한 회차인가 */
+  editingSeries: boolean;
   /** 고치는 예약의 ID (참석자 일정 확인에서 자기 자신과는 겹치지 않게) */
   editingId: number | null;
   /** 반복 예약 중 겹치는 날이 있을 때: 그날만 빼고 예약하기 */
@@ -67,7 +69,7 @@ export const isReady = (draft: Draft) =>
  */
 export default function ReservationForm(props: Props) {
   const { formId, day, draft, onDraftChange, onDateChange, onSubmit, error, conflicts, checking } = props;
-  const { editing, editingId, skipDates, onSkipConflicts, onReloadEdit } = props;
+  const { editing, editingSeries, editingId, skipDates, onSkipConflicts, onReloadEdit } = props;
   const ids = useId();
   const roomRef = useRef<HTMLSelectElement>(null);
   const startRef = useRef<HTMLSelectElement>(null);
@@ -342,7 +344,9 @@ export default function ReservationForm(props: Props) {
           </label>
 
           {editing ? (
-            <p className={styles.policy}>예약을 고치면 이 회차만 바뀌어요. 반복 설정은 바꿀 수 없어요.</p>
+            editingSeries && (
+              <p className={styles.policy}>반복 예약은 고치면 이 회차만 바뀌어요. 반복 설정은 바꿀 수 없어요.</p>
+            )
           ) : (
             <div className={styles.fieldRow}>
               <label className={styles.field}>
@@ -384,7 +388,7 @@ export default function ReservationForm(props: Props) {
             </div>
           )}
 
-          {multiDay && (
+          {multiDay && !editing && (
             <p id={`${ids}-repeat-note`} className={styles.policy}>
               여러 날에 걸친 예약은 반복할 수 없어요.
             </p>

@@ -1,11 +1,12 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeftIcon, ChevronRightIcon, SparkleIcon } from "@/components/icons";
 import type { EmployeeHit, FloorMap, FloorSummary, MyPresenceInfo } from "@/lib/api";
-import { useLivePresence, useRefreshAtExpiry, withLiveMine, withLivePresence } from "@/lib/livePresence";
+import { useLivePresence, withLiveMine, withLivePresence } from "@/lib/livePresence";
+import { useRefreshAt } from "@/lib/useRefreshAt";
 import { NO_STATUS_LABEL, PRESENCE_LABEL, STATUS_FILTERS, type StatusFilter } from "@/lib/presence";
 import AiPanel from "./AiPanel";
 import EmployeeSearch from "./EmployeeSearch";
@@ -26,6 +27,12 @@ type Props = {
 };
 
 /** 화면을 다시 그리지 않고 주소의 물음표 뒤만 바꾼다 (null이면 지운다). Next.js가 useSearchParams에 반영한다 */
+/** 층 탭을 누른 뒤 그 층을 받아 오는 동안 탭 아래에 움직이는 줄 (느린 망에서도 눌린 것을 바로 알게) */
+function FloorPending() {
+  const { pending } = useLinkStatus();
+  return <span aria-hidden="true" className={styles.floorPending} data-pending={pending || undefined} />;
+}
+
 function replaceQuery(changes: Record<string, string | null>) {
   const url = new URL(window.location.href);
   for (const [key, value] of Object.entries(changes)) {
@@ -48,7 +55,12 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
   const live = useLivePresence(updates.onFloor);
   const map = useMemo(() => withLivePresence(fetchedMap, live), [fetchedMap, live]);
   const mine = withLiveMine(myPresence.presence, live.get(myEmpNo), fetchedMap.fetched_at);
-  useRefreshAtExpiry([mine?.expires_at, ...map.seats.map((s) => s.occupant?.presence?.expires_at)]);
+  // 화면의 상태가 바뀌는 시각에 다시 읽는다: 재실 상태 자동 해제(알림이 따로 오지 않는다), 회의실 사용 끝·다음 예약 시작, 자정
+  useRefreshAt([
+    mine?.expires_at,
+    ...map.seats.map((s) => s.occupant?.presence?.expires_at),
+    ...map.rooms.flatMap((r) => [r.busy_until, r.next_start]),
+  ]);
 
   const floorId = map.floor.id;
   const searchParams = useSearchParams();
@@ -299,6 +311,7 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
                       {seatless && floor.id === teamFloorId && <span className={styles.mine}>우리 팀</span>}
                     </strong>
                     <span title={caption || undefined}>{caption || "\u00a0"}</span>
+                    <FloorPending />
                   </Link>
                 );
               })}

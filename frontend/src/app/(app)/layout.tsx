@@ -17,8 +17,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     const reason = ended ? ((await fetchLogoutReason(cookieHeader)) ?? "expired") : null;
     redirect(loginUrl("/login", headerList.get("x-pathname"), reason));
   }
-  // 임시 비밀번호 상태면 새 비밀번호를 정하기 전에는 다른 화면에 못 간다
-  if (user.must_change_password) redirect("/password");
+  // 임시 비밀번호 상태면 새 비밀번호를 정하기 전에는 다른 화면에 못 간다. 정하고 나면 가려던 화면으로
+  if (user.must_change_password) {
+    const back = headerList.get("x-pathname");
+    redirect(back && back !== "/" ? `/password?next=${encodeURIComponent(back)}` : "/password");
+  }
 
   let sites: SiteSummary[] = [];
   let myFloorId: number | null = null;

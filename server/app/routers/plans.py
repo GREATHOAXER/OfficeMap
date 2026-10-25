@@ -368,6 +368,8 @@ def create_draft(floor_id: int, body: DraftIn, admin: CurrentAdmin, request: Req
                 raise HTTPException(status_code=422, detail={"code": "BAD_GEOMETRY", "where": str(error)}) from None
             # 파일에서 찾은 책상이 우연히 지금 좌석 키와 같아 엉뚱한 사람이 이어지지 않게 ID를 새로 붙인다
             geometry = _rename_ids(geometry, f"i{version}-")
+            # 새로 놓는 책상 기본 크기: 화면이 보낸 크기(가져오기에서 정한 책상), 없으면 빈 도면과 같은 보통 책상
+            geometry.setdefault("desk", {"w": BLANK_DESK_M[0], "h": BLANK_DESK_M[1]})
 
         plan_id = conn.execute(
             """

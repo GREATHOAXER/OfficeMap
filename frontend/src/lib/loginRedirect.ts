@@ -30,6 +30,11 @@ export function expiredLoginUrl(reason: LogoutReason = "expired") {
   return loginUrl("/login", window.location.pathname + window.location.search, reason);
 }
 
+/** 관리자 화면을 보다가 관리자 로그인이 끊겼을 때: 다시 로그인하면 지금 화면(?floor=·?dept= 포함)으로 돌아온다 */
+export function adminExpiredUrl() {
+  return loginUrl("/admin/login", window.location.pathname + window.location.search, "expired");
+}
+
 /** 브라우저에서 로그인이 끊긴 것을 알았을 때: 서버에 왜 끊겼는지 묻고 로그인 화면 주소를 만든다 */
 export async function sessionEndUrl() {
   const res = await fetch("/api/auth/me", { cache: "no-store" }).catch(() => null);

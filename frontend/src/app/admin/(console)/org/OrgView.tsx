@@ -4,12 +4,12 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Dialog from "@/components/Dialog";
 import type { Admin, OrgDepartment, OrgMember } from "@/lib/api";
+import { adminExpiredUrl } from "@/lib/loginRedirect";
 import ui from "../seating/seating.module.css";
 import { validationText } from "../validation";
 import styles from "./org.module.css";
 
 const json = { "content-type": "application/json" };
-const EXPIRED = "/admin/login?reason=expired&next=/admin/org";
 
 type Org = { departments: OrgDepartment[]; can_edit: boolean };
 type Person = { emp_no: string; name: string; rank: string | null; department_id: number; department: string };
@@ -121,7 +121,7 @@ export default function OrgView({
         cache: "no-store",
       });
       if (res.status === 401) {
-        router.replace(EXPIRED);
+        router.replace(adminExpiredUrl());
         throw new Error("로그인이 끝났어요");
       }
       const out = res.status === 204 ? null : await res.json().catch(() => null);
@@ -189,7 +189,7 @@ export default function OrgView({
   };
 
   return (
-    <div className={ui.page}>
+    <main className={ui.page}>
       <header className={ui.header}>
         <div className={ui.titleRow}>
           <h1 className={ui.title}>조직도</h1>
@@ -506,7 +506,7 @@ export default function OrgView({
           {toast}
         </div>
       )}
-    </div>
+    </main>
   );
 }
 

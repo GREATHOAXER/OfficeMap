@@ -60,6 +60,15 @@ type Props = {
   onUnpin: () => void;
 };
 
+/** 그려진 도면 폭(px)에서 이름 글자가 너무 작아 읽을 수 없는 자리(돌린 책상·이름이 긴 자리)는 이름을 숨기고 재실 표시만 둔다.
+ *  층 전체를 숨기는 data-compact와 같은 기준을 자리마다 본다. 크기·배율이 바뀔 때만 DOM에 표시해서 자리를 다시 그리지 않는다 */
+function markTinySeats(plan: HTMLElement, width: number) {
+  for (const seat of plan.querySelectorAll<HTMLElement>("[data-font]")) {
+    if (compactAt(width, Number(seat.dataset.font))) seat.dataset.tiny = "";
+    else delete seat.dataset.tiny;
+  }
+}
+
 export default function FloorPlan(props: Props) {
   const { map, myEmpNo, zoom, onZoomChange, focusZoneId, visibleStatuses, selectedSeatId, onSelectSeat } = props;
   const { pinnedSeatId, onUnpin, onFitZoom } = props;
@@ -119,6 +128,7 @@ export default function FloorPlan(props: Props) {
       el.dataset.pannable = String(el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1);
       const width = plan.getBoundingClientRect().width;
       plan.dataset.compact = String(compactAt(width, baseFontRef.current));
+      markTinySeats(plan, width);
       const baseW = width / zoomRef.current;
       const baseH = (baseW * plan.offsetHeight) / Math.max(1, plan.offsetWidth);
       const maxH = parseFloat(getComputedStyle(el).maxHeight) || el.clientHeight;
@@ -133,6 +143,12 @@ export default function FloorPlan(props: Props) {
     observer.observe(plan);
     return () => observer.disconnect();
   }, [hasPlan]);
+
+  // 층 데이터가 바뀌면(실시간 반영·다른 층) 자리마다 글자 크기가 달라질 수 있어 다시 본다
+  useEffect(() => {
+    const plan = planRef.current;
+    if (plan) markTinySeats(plan, plan.getBoundingClientRect().width);
+  }, [map]);
 
   // 고정한 정보 카드: Esc나 카드·자리 밖을 누르면 닫는다
   useEffect(() => {
@@ -509,6 +525,8 @@ const SeatButton = memo(function SeatButton(props: SeatProps) {
     label = `${text} ${seat.code}${zone ? `, ${zone.name}` : ""}`;
   }
 
+  // 이름이 좌석에 다 들어가는 크기 (재실 표시 자리 포함). 이 크기로 읽을 수 없으면 그 자리만 이름을 숨긴다 (markTinySeats)
+  const font = seatFont(box, text, !!presence, baseFont);
   const chair = { 0: styles.chairBottom, 90: styles.chairRight, 180: styles.chairTop, 270: styles.chairLeft }[
     seat.rotation
   ];
@@ -532,8 +550,8 @@ const SeatButton = memo(function SeatButton(props: SeatProps) {
         top: pct(seat.y - size.h / 2),
         width: pct(size.w),
         height: pct(size.h),
-        // 이름이 좌석에 다 들어가는 크기 (재실 표시 자리 포함). 의자는 책상 깊이에 맞춘다
-        fontSize: `${seatFont(box, text, !!presence, baseFont).toFixed(3)}cqw`,
+        // 의자는 책상 깊이에 맞춘다
+        fontSize: `${font.toFixed(3)}cqw`,
         ...({ "--d": `${Math.min(box.w, box.h).toFixed(3)}cqw` } as CSSProperties),
       }}
       title={seat.code}
@@ -541,6 +559,7 @@ const SeatButton = memo(function SeatButton(props: SeatProps) {
       aria-pressed={selected}
       tabIndex={tabStop ? 0 : -1}
       data-seat-id={seat.id}
+      data-font={font.toFixed(3)}
       data-vertical={seat.rotation === 90 || seat.rotation === 270 || undefined}
       onClick={() => onSelect(seat.id)}
       onPointerEnter={(event) => event.pointerType === "mouse" && occupant && onHoverStart(seat.id)}

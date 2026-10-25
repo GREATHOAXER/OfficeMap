@@ -11,7 +11,7 @@ export type SavedDraft = {
   siteId: number;
   draft: Draft;
   /** 고치던 예약 (새 예약이면 null)과 그 예약을 읽었을 때의 updated_at */
-  edit: { id: number; title: string; updatedAt: string } | null;
+  edit: { id: number; title: string; updatedAt: string; series?: boolean } | null;
   savedAt: number;
 };
 

@@ -1,31 +1,32 @@
-.wrap {
-  display: grid;
-  gap: 14px;
-  padding: 24px clamp(16px, 3vw, 32px);
+/* 실제 화면의 머리줄과 같은 크기·자리 (reservations·presence·profile·관리자 화면의 .header, .title) */
+.header {
+  display: flex;
+  align-items: center;
+  min-height: 65px; /* 단추가 있는 머리줄(내 예약 등)과 같은 높이 */
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--divider);
+  background: var(--surface);
 }
 
 .title {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
-  color: var(--muted);
+  white-space: nowrap;
 }
 
-.head,
-.block {
-  border-radius: var(--radius);
-  background: linear-gradient(90deg, var(--surface-sunken) 0%, var(--divider) 50%, var(--surface-sunken) 100%);
-  background-size: 200% 100%;
-  animation: shimmer 1.2s linear infinite;
-}
-
-.head {
-  height: 44px;
-  max-width: 420px;
+.body {
+  display: grid;
+  gap: 14px;
+  padding: 24px;
 }
 
 .block {
   height: 120px;
+  border-radius: var(--radius);
+  background: linear-gradient(90deg, var(--surface-sunken) 0%, var(--divider) 50%, var(--surface-sunken) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s linear infinite;
 }
 
 @keyframes shimmer {
@@ -38,7 +39,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .head,
   .block {
     animation: none;
   }

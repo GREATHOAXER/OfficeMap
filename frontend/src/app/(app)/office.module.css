@@ -410,6 +410,13 @@
   gap: 6px;
 }
 
+/* 휴대폰: 네 칸이면 "퇴근 시 (18:00)"이 두 줄로 꺾여서 두 칸씩 */
+@media (max-width: 480px) {
+  .durations div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .durations label {
   position: relative;
   display: flex;
@@ -550,6 +557,7 @@
 }
 
 .floor {
+  position: relative;
   flex: none;
   display: flex;
   flex-direction: column;
@@ -1100,6 +1108,21 @@
   padding: 2px 0;
 }
 
+/* 세로쓰기에서는 글꼴에 따라 글자가 제자리보다 조금 아래에 그려져, 이름 칸 끝에서 마지막 글자 아랫부분이 잘렸다.
+   칸 끝에 여유를 둔다 (글자 크기는 세로 글자 길이를 넉넉히 잡아 정해서 좌석 안에 들어간다) */
+.seat[data-vertical] .seatName {
+  padding-inline: 0.1em 0.8em;
+}
+
+/* 이 자리만 이름 글자가 읽을 수 없을 만큼 작다 (FloorPlan의 markTinySeats): 이름은 숨기고 재실 표시만 */
+.seat[data-tiny] .seatName {
+  display: none;
+}
+
+.seat[data-tiny] .seatMark {
+  margin-right: 0;
+}
+
 .seatEmpty {
   border: 1.5px dashed #8a8a85;
   border-top: 3px solid var(--tc);
@@ -1305,7 +1328,7 @@
   background: var(--surface);
   box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.18);
   font-size: 14px;
-  color: var(--muted);
+  color: var(--ink); /* 데스크톱 카드와 같이 이름은 진하게 (흐린 글은 칸마다 따로 정함) */
   overflow-wrap: anywhere;
 }
 
@@ -1859,4 +1882,38 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 층 탭을 눌러 그 층을 받는 동안 (FloorPending). 늘 자리를 차지하고 보이기만 바꿔서 탭이 들썩이지 않는다 */
+.floor .floorPending {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 2px;
+  height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0;
+  transform-origin: left center;
+  pointer-events: none;
+}
+
+.floor .floorPending[data-pending] {
+  opacity: 0.55;
+  animation: floorPending 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes floorPending {
+  from {
+    transform: scaleX(0.15);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .floor .floorPending[data-pending] {
+    animation: none;
+  }
 }
