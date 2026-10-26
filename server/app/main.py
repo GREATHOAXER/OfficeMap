@@ -3,7 +3,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.config import settings
 from app.db import pool
+from app.db_check import log_problems
 from app.jobs import jobs
 from app.realtime import hub
 from app.routers import admin, auth, employees, grants, moves, office, org, plans, presence, profile, rooms, seating
@@ -11,6 +13,7 @@ from app.routers import admin, auth, employees, grants, moves, office, org, plan
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    log_problems(settings.database_url)  # DB에 못 붙거나 비어 있으면 이유를 로그 맨 앞에 남긴다
     pool.open()
     hub.start()
     jobs.start()

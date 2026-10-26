@@ -33,7 +33,8 @@ def main() -> None:
     except psycopg.OperationalError as error:
         raise SystemExit(
             f"DB에 연결하지 못했습니다: {error}\n"
-            "DB가 켜져 있는지(docker compose up -d db), server/.env의 DATABASE_URL이 맞는지 확인하세요."
+            "DB가 켜져 있는지(docker compose up -d db), server/.env의 DATABASE_URL이 맞는지 확인하세요.\n"
+            "배포 서버에서 막힌 곳 찾기: docker compose run --rm backend python -m scripts.check_db"
         ) from None
 
     # 파일 하나라도 실패하면 전부 되돌린다 (with 블록을 예외로 빠져나가면 롤백)

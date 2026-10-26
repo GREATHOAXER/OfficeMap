@@ -222,8 +222,10 @@ AWS 계정 만들기부터 순서대로: [docs/deploy-aws.md](docs/deploy-aws.md
 
 ```bash
 cd deploy && cp .env.example .env   # DATABASE_URL 등 채우기
-docker compose up -d --build
+docker compose build
+docker compose run --rm backend python -m scripts.check_db   # DB 접속 점검 (막히면 고칠 곳을 알려 줌)
 docker compose run --rm backend python -m scripts.init_db
+docker compose up -d
 ```
 
 - `APP_ENV=production`인 서버에서는 `init_db --reset`(모든 테이블 지우기)이 막힙니다.

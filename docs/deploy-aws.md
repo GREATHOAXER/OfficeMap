@@ -116,18 +116,35 @@ DATABASE_URL=postgresql://officemap:<마스터 암호>@<RDS 엔드포인트>:543
 
 ```bash
 cd ~/OfficeMap/deploy
-docker compose up -d --build      # 처음엔 이미지 빌드로 5~10분
+docker compose build              # 이미지 빌드 (처음엔 5~10분)
+docker compose run --rm backend python -m scripts.check_db   # DB 접속 점검: 끝에 "DB 접속 정상"이 나와야 함
+docker compose run --rm backend python -m scripts.init_db    # 테이블 + 목업 데이터 (처음 한 번)
+docker compose up -d              # 띄우기
 docker compose ps                 # backend가 (healthy), 나머지 Up이면 정상
-docker compose run --rm backend python -m scripts.init_db   # 테이블 + 목업 데이터 (처음 한 번)
 ```
 
 브라우저에서 `http://<서버 IP>` → 로그인 화면. 목업 계정은 [README의 목업 계정](../README.md#목업-계정)과 같습니다.
+
+`check_db`는 DB 주소 찾기 → 5432 포트 연결 → 로그인 → 확장 기능 → 테이블 순서로 보고, 막힌 단계에서 ✘와 고칠 곳(→)을
+보여 줍니다. 암호는 화면에 나오지 않으니 결과를 그대로 다른 사람에게 보여 줘도 됩니다.
+
+```
+DB 접속 점검: officemap@officemap-db.abcdefghijkl.ap-northeast-2.rds.amazonaws.com:5432/officemap?sslmode=require
+  ✔ DB 주소 찾음: officemap-db.abcdefghijkl.ap-northeast-2.rds.amazonaws.com → 172.31.5.20
+  ✘ 5432 포트 연결: 5초 동안 응답 없음
+    → DB 서버가 응답하지 않아요. 대개 RDS 보안 그룹이 이 EC2에서 오는 5432 접속을 막고 있어서예요. ...
+```
 
 **안 될 때**
 
 | 증상 | 확인 |
 |---|---|
-| `docker compose ps`에서 backend가 unhealthy | `docker compose logs backend`. 대개 `DATABASE_URL` 오타, 암호, 엔드포인트, 초기 DB 이름(`officemap`)을 안 만듦 |
+| `up` 중에 `✘ Container officemap-backend-1 Error` / `dependency failed to start: container officemap-backend-1 is unhealthy` | API가 DB에 접속하지 못해서 상태 확인이 실패한 것입니다. `docker compose run --rm backend python -m scripts.check_db`로 막힌 단계를 보고 아래 줄대로 고친 뒤 `docker compose up -d`. 서버 로그(`docker compose logs backend`) 맨 앞에도 "DB에 접속하지 못했어요"와 이유가 남습니다 |
+| check_db: 5432 포트 연결 응답 없음 | RDS 보안 그룹이 EC2를 막고 있음. RDS → 데이터베이스 → `officemap-db` → 작업 → **EC2 연결 설정** → `officemap-app` 선택 (또는 RDS의 VPC 보안 그룹 → 인바운드 규칙 편집 → 유형 PostgreSQL, 소스 `officemap-app-sg`). RDS 상태가 "사용 가능"인지도 확인 |
+| check_db: DB 주소를 찾을 수 없음 | 엔드포인트 오타. RDS → 연결 및 보안 → 엔드포인트를 그대로 복사 |
+| check_db: 암호가 틀림 | `.env`의 `officemap:` 뒤 `@` 앞. 모르면 RDS → 수정 → 마스터 암호 변경(영문·숫자만) |
+| check_db: 데이터베이스가 없음 | RDS를 만들 때 초기 데이터베이스 이름을 비워 둠. `docker compose run --rm backend python -m scripts.check_db --create-db` |
+| check_db: 암호화하지 않은 접속을 막음 | 주소 끝에 `?sslmode=require` |
 | 브라우저가 접속 자체를 못 함 | EC2 보안 그룹의 HTTP(80) 소스가 지금 내 IP인지 (집·회사·휴대폰 망마다 다름) |
 | 로그인 버튼을 눌러도 로그인 화면으로 돌아옴 | HTTP로 접속하는데 `.env`의 `COOKIE_SECURE=true`이면 쿠키가 저장되지 않음 → `false` |
 | init_db가 "이미 테이블이 있어서 멈췄습니다" | 이미 한 번 넣었음. 목업을 처음 상태로: `docker compose run --rm backend python -m scripts.init_db --reset` |
