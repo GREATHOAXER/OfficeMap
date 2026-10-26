@@ -1,0 +1,17 @@
+# 앞단 웹 서버: /api는 FastAPI로 바로, 나머지는 Next.js 화면으로 보낸다.
+# SITE_ADDRESS(deploy/.env)가 ":80"이면 HTTP로만 받고, 도메인 이름(예: officemap.example.com)이면
+# 그 도메인의 HTTPS 인증서를 저절로 받아 HTTPS로 받는다 (80·443 포트가 인터넷에서 열려 있어야 함)
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy backend:8000 {
+			# 실시간 알림(SSE)을 모아 두지 않고 바로 보낸다
+			flush_interval -1
+		}
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

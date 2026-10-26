@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     admin_cookie_name: str = "officemap_admin_session"  # 관리자 페이지 세션은 쿠키부터 따로 쓴다
     admin_session_max_hours: int = 8
     cookie_secure: bool = False
+    app_env: str = "development"  # 실제 데이터가 든 서버는 production: DB를 통째로 지우는 init_db --reset을 막는다
 
 
 settings = Settings()

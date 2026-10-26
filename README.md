@@ -11,6 +11,7 @@ Vibe Coding Project @ KFTC
 | `server/` | API 서버 — Python FastAPI, uvicorn으로 실행 |
 | `frontend/` | 화면 — Next.js 16 |
 | `docs/design/` | 설계 문서 — [도면 편집 · 좌석 배치 편집](docs/design/floor-plan-and-seating.md) |
+| `deploy/` | 서버 배포 설정 — 도커 compose(Caddy · 화면 · API), [AWS에 올리기](docs/deploy-aws.md) |
 
 브라우저는 Next.js(3000번)에만 접속하고, Next.js가 `/api/...` 요청을 FastAPI(8000번)로 넘겨줍니다.
 
@@ -194,6 +195,21 @@ ngrok 안내 화면이 한 번 뜨는데 "Visit Site"를 누르면 됩니다. �
 
 잠긴 계정은 `python -m scripts.init_db --reset`으로 풀립니다. 저장소를 새로 받아 DB 구조나 목업이 바뀌었을 때도
 같은 명령으로 다시 만드세요 (기존 데이터는 지워집니다).
+
+## 서버에 올리기 (AWS)
+
+화면(`frontend/Dockerfile`)과 API(`server/Dockerfile`)를 도커 이미지로 만들어 EC2 한 대에 띄우고, DB는 RDS PostgreSQL을 씁니다.
+앞단의 Caddy가 `/api`는 FastAPI로, 나머지는 화면으로 보내고, 도메인을 넣으면 HTTPS 인증서도 저절로 받습니다.
+AWS 계정 만들기부터 순서대로: [docs/deploy-aws.md](docs/deploy-aws.md)
+
+```bash
+cd deploy && cp .env.example .env   # DATABASE_URL 등 채우기
+docker compose up -d --build
+docker compose run --rm backend python -m scripts.init_db
+```
+
+- `APP_ENV=production`인 서버에서는 `init_db --reset`(모든 테이블 지우기)이 막힙니다.
+- 로컬 개발(`npm run dev`·`npm start`)은 그대로이고, 도커 빌드에서만 Next.js를 standalone(실행에 필요한 파일만)으로 빌드합니다.
 
 ## Claude Code 클라우드 세션에서 임시 공개하기 (데모용)
 

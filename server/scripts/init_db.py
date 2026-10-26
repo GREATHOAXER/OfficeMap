@@ -21,6 +21,8 @@ def main() -> None:
     parser.add_argument("--reset", action="store_true", help="public 스키마의 테이블을 모두 지우고 다시 만든다")
     parser.add_argument("--no-seed", action="store_true", help="목업 데이터는 넣지 않는다")
     args = parser.parse_args()
+    if args.reset and settings.app_env == "production":
+        raise SystemExit("APP_ENV=production인 서버에서는 --reset(모든 테이블 지우기)을 쓸 수 없습니다.")
 
     files = sorted((DB_DIR / "schema").glob("*.sql"))
     if not args.no_seed:

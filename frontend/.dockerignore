@@ -1,0 +1,8 @@
+node_modules
+.next
+public/pdfjs
+.env*
+*.tsbuildinfo
+next-env.d.ts
+Dockerfile
+.dockerignore

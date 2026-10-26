@@ -42,12 +42,15 @@ async function devOrigins(): Promise<string[]> {
 export default async function config(phase: string): Promise<NextConfig> {
   return {
     allowedDevOrigins: phase === PHASE_DEVELOPMENT_SERVER ? await devOrigins() : [],
+    // 도커 이미지(frontend/Dockerfile)는 실행에 필요한 파일만 모은 standalone으로 빌드한다
+    output: process.env.NEXT_OUTPUT === "standalone" ? "standalone" : undefined,
     experimental: {
       // CSS를 화면마다 쓰는 만큼만 묶는다 (기본은 한 덩어리로 합쳐서 직원 화면도 관리자 화면 CSS까지 받는다)
       cssChunking: "graph",
     },
     // 브라우저는 /api 로만 요청하고, Next.js가 FastAPI 서버로 넘겨준다.
-    // 화면과 API가 같은 주소가 되어 로그인 쿠키가 그대로 동작하고 CORS 설정이 필요 없다
+    // 화면과 API가 같은 주소가 되어 로그인 쿠키가 그대로 동작하고 CORS 설정이 필요 없다.
+    // 이 설정은 빌드할 때 굳는다(API_URL도 빌드 시점 값). 서버 배포(deploy/)에서는 앞단 Caddy가 /api를 FastAPI로 바로 보낸다
     async rewrites() {
       return [{ source: "/api/:path*", destination: `${apiUrl}/api/:path*` }];
     },

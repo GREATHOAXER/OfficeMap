@@ -1,0 +1,85 @@
+# OfficeMap 서버 배포 (서버 한 대): Caddy(80/443) → 화면(Next.js) · API(FastAPI) → DB(RDS PostgreSQL)
+#   cd deploy && cp .env.example .env    # 값 채우기
+#   docker compose up -d --build
+# 처음부터의 순서(AWS 계정·EC2·RDS): docs/deploy-aws.md
+
+x-logging: &logging
+  driver: json-file
+  options: # 로그가 디스크를 채우지 않게 컨테이너마다 10MB × 3개까지만
+    max-size: 10m
+    max-file: "3"
+
+name: officemap
+services:
+  caddy:
+    image: public.ecr.aws/docker/library/caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # HTTPS 인증서
+      - caddy-config:/config
+    depends_on: [frontend, backend]
+    logging: *logging
+
+  frontend:
+    build: ../frontend
+    image: officemap-frontend
+    restart: unless-stopped
+    environment:
+      API_URL: http://backend:8000 # 서버 화면이 API를 부르는 주소 (컨테이너끼리)
+    depends_on:
+      backend:
+        condition: service_healthy
+    logging: *logging
+
+  backend:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    image: officemap-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?deploy/.env에 DATABASE_URL을 넣으세요}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      APP_ENV: ${APP_ENV:-staging}
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+    healthcheck: # DB까지 닿아야 정상 (/api/health)
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      db:
+        condition: service_healthy
+        required: false # db는 local-db로 켤 때만 있다
+    logging: *logging
+
+  # 내 PC에서 RDS 없이 전체를 시험할 때만 켠다: docker compose --profile local-db up -d --build
+  # (deploy/.env의 DATABASE_URL을 postgresql://officemap:officemap@db:5432/officemap 로)
+  db:
+    image: pgvector/pgvector:pg16
+    profiles: [local-db]
+    environment:
+      POSTGRES_DB: officemap
+      POSTGRES_USER: officemap
+      POSTGRES_PASSWORD: officemap
+    volumes:
+      - local-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "officemap", "-d", "officemap"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+
+volumes:
+  caddy-data:
+  caddy-config:
+  local-db:
