@@ -17,6 +17,7 @@ import psycopg
 from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
+from app.db import CONNECT_TIMEOUT
 
 log = logging.getLogger(__name__)
 
@@ -77,7 +78,7 @@ class RealtimeHub:
         first = True
         while not self._stop.is_set():
             try:
-                with psycopg.connect(settings.database_url, autocommit=True) as conn:
+                with psycopg.connect(settings.database_url, autocommit=True, connect_timeout=CONNECT_TIMEOUT) as conn:
                     for channel in CHANNELS:
                         conn.execute(f"LISTEN {channel}")
                     if not first:

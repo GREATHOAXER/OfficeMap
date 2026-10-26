@@ -23,8 +23,10 @@ app/
   routers/plans.py     도면 편집 API (초안·자동 저장·편집 잠금·게시 점검·게시·게시 예약)
   routers/moves.py     팀 이사 도우미 API
   realtime.py      재실 상태 변경을 DB에서 받아(LISTEN) 열린 화면마다 나눠 주기
+  db_check.py      DB 접속 오류를 고칠 곳으로 바꾸기 (서버를 켤 때 로그, scripts/check_db.py)
 scripts/
   init_db.py       db/schema + db/seed 실행
+  check_db.py      DB 접속 단계별 점검 (주소 → 포트 → 로그인 → 확장 기능 → 테이블), --create-db
   purge_history.py 보관 기간(5년)이 지난 이력 지우기 (--dry-run, --years)
   gen_dense_floor.py 목업 8F(사람이 많은 층, 68석) 도면·좌석 SQL 만들기 → db/seed/03_dense_floor.sql
 ```

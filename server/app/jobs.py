@@ -11,6 +11,8 @@ import logging
 import threading
 import time
 
+import psycopg
+
 from app.db import pool
 from app.routers.plans import apply_due_plans
 
@@ -19,6 +21,8 @@ log = logging.getLogger(__name__)
 TICK_SECONDS = 60
 PURGE_EVERY_SECONDS = 24 * 60 * 60
 JOB_LOCK = 5152  # pg_advisory_lock 키 (5150 좌석 배치, 5151 예비)
+# 새 DB면 init_db, DB 구조(db/schema)가 바뀐 버전을 올렸으면 init_db --reset (docs/deploy-aws.md 5)
+SCHEMA_HINT = "새 DB면 scripts.init_db, DB 구조가 바뀐 버전을 올렸으면 scripts.init_db --reset"
 
 
 class Jobs:
@@ -26,6 +30,7 @@ class Jobs:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._last_purge: float | None = None  # 서버를 켜면 한 번 바로 정리한다
+        self._warned_schema = False
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self._run, name="officemap-jobs", daemon=True)
@@ -40,6 +45,11 @@ class Jobs:
         while not self._stop.is_set():
             try:
                 self.tick()
+            except psycopg.errors.UndefinedTable as error:
+                # 테이블을 안 넣은 새 DB나 DB 구조가 바뀐 버전: 매분 같은 오류를 쌓지 않게 한 번만 알린다
+                if not self._warned_schema:
+                    self._warned_schema = True
+                    log.warning("정기 작업: DB에 테이블이 없어요 (%s). %s", str(error).splitlines()[0], SCHEMA_HINT)
             except Exception:  # noqa: BLE001 - 작업 하나가 실패해도 다음 주기에 다시 한다
                 log.exception("정기 작업 실패")
             self._stop.wait(TICK_SECONDS)
