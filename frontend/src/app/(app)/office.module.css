@@ -979,28 +979,19 @@
 }
 
 /* 축척 막대 (도면 왼쪽 아래) */
-.scaleBar {
-  position: absolute;
-  left: 1%;
-  bottom: 1%;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  pointer-events: none;
-  font-size: max(9px, 0.8cqw);
-  color: var(--muted);
+/* 축척 막대: 도면 위에 겹치지 않게 아래 범례 줄에 둔다 (길이는 지금 배율에 맞춘다, PlanShapes.ScaleLegend) */
+.scaleLegend {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 6px;
+  white-space: nowrap;
 }
 
-.scaleBar i {
+.scaleLegend i {
   display: block;
   height: 6px;
   border: 2px solid var(--ink);
   border-top: 0;
-}
-
-.scaleBar span {
-  white-space: nowrap;
 }
 
 /* 회의실은 누르면 예약 현황으로 간다 */

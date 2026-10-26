@@ -192,11 +192,12 @@ export default function LoginForm({ ssoEnabled, supportContact, maxFailedCount, 
 
 type InputError = { code: "EMPTY" | "EMPTY_EMP_NO" | "EMPTY_PASSWORD" | "NOT_DIGITS" };
 
-/** 서버에 보내기 전에 확인: 빈 칸, 숫자가 아닌 사번 (관리자 로그인도 같이 쓴다) */
-export function checkInput(empNo: string, password: string): InputError | null {
+/** 서버에 보내기 전에 확인: 빈 칸, 숫자가 아닌 사번 (관리자 로그인도 같이 쓴다).
+ *  관리자 로그인은 최종 관리자의 관리자 ID(admin)도 받으므로 digitsOnly를 끈다 */
+export function checkInput(empNo: string, password: string, digitsOnly = true): InputError | null {
   if (!empNo && !password) return { code: "EMPTY" };
   if (!empNo) return { code: "EMPTY_EMP_NO" };
-  if (!/^\d+$/.test(empNo)) return { code: "NOT_DIGITS" };
+  if (digitsOnly && !/^\d+$/.test(empNo)) return { code: "NOT_DIGITS" };
   if (!password) return { code: "EMPTY_PASSWORD" };
   return null;
 }

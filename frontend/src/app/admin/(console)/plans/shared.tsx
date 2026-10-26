@@ -6,6 +6,7 @@ import { type ReactNode, useEffect, useRef } from "react";
 import type { Admin, FloorEvent, PlanEditorData } from "@/lib/api";
 import { openEventStream } from "@/lib/eventStream";
 import { adminExpiredUrl } from "@/lib/loginRedirect";
+import SiteFloorPicker from "../SiteFloorPicker";
 import ui from "../seating/seating.module.css";
 
 // 도면 편집 화면들(시작·초안 편집·게시 예약)이 같이 쓰는 것
@@ -43,20 +44,14 @@ export function Header({
           <strong>{admin.role_label}</strong> · {data.floor.site.name} {data.floor.name}
         </span>
         {data.floors.length > 1 && (
-          <select
-            className={ui.select}
-            style={{ width: "auto", height: 32 }}
-            aria-label="층 고르기"
+          <SiteFloorPicker
+            floors={data.floors.map((f) => ({
+              ...f,
+              note: f.drafting ? " · 초안 있음" : !f.published ? " · 도면 없음" : "",
+            }))}
             value={data.floor.id}
-            onChange={(e) => goFloor(Number(e.target.value))}
-          >
-            {data.floors.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.site} {f.name}
-                {f.drafting ? " · 초안 있음" : !f.published ? " · 도면 없음" : ""}
-              </option>
-            ))}
-          </select>
+            onChange={goFloor}
+          />
         )}
         {status}
       </div>

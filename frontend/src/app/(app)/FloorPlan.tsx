@@ -26,7 +26,7 @@ import { baseSeatFont, compactAt, minPlanWidth, type SeatBox, seatBox, seatFont 
 import { useNow } from "@/lib/useNow";
 import { zonePieces, zoneRects } from "@/lib/zoneShape";
 import styles from "./office.module.css";
-import PlanShapes, { fitLabelStyle, lineStyle, ScaleBar } from "./PlanShapes";
+import PlanShapes, { fitLabelStyle, lineStyle } from "./PlanShapes";
 
 const HOVER_DELAY_MS = 700; // 자리에 마우스를 이만큼(0.7초) 올려 두면 정보 카드가 뜬다
 const DRAG_THRESHOLD_PX = 5; // 이보다 적게 움직이면 끌기가 아니라 누르기
@@ -51,6 +51,8 @@ type Props = {
   onZoomChange: (zoom: number) => void;
   /** 도면 전체가 영역에 들어오는 배율 (1보다 작으면 100%일 때 도면이 영역보다 크다) */
   onFitZoom?: (zoom: number) => void;
+  /** 지금 화면에서 도면 1 m가 몇 px인지 (도면 아래 범례의 축척 막대). 크기·배율이 바뀔 때만 알린다 */
+  onScale?: (pxPerMeter: number) => void;
   focusZoneId: number | null;
   visibleStatuses: Set<StatusFilter>;
   selectedSeatId: number | null;
@@ -69,9 +71,18 @@ function markTinySeats(plan: HTMLElement, width: number) {
   }
 }
 
+/** 도면 1 m가 지금 몇 px인지 바뀌었으면 알린다 (아래 범례의 축척 막대) */
+function reportScale(scale: { px: number; widthM: number; report?: (px: number) => void }, width: number) {
+  const px = scale.widthM ? width / scale.widthM : 0;
+  if (Math.abs(px - scale.px) > 0.01) {
+    scale.px = px;
+    scale.report?.(px);
+  }
+}
+
 export default function FloorPlan(props: Props) {
   const { map, myEmpNo, zoom, onZoomChange, focusZoneId, visibleStatuses, selectedSeatId, onSelectSeat } = props;
-  const { pinnedSeatId, onUnpin, onFitZoom } = props;
+  const { pinnedSeatId, onUnpin, onFitZoom, onScale } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
   const planRef = useRef<HTMLDivElement>(null);
   const [hoverSeatId, setHoverSeatId] = useState<number | null>(null);
@@ -83,6 +94,7 @@ export default function FloorPlan(props: Props) {
   const onZoomRef = useRef(onZoomChange);
   const onSelectRef = useRef(onSelectSeat);
   const fitRef = useRef({ zoom: 1, report: onFitZoom });
+  const scaleRef = useRef({ px: 0, widthM: map.plan?.width_m ?? 0, report: onScale });
   const hasPlan = map.plan !== null;
   // 좌석 이름 글자 크기 (cqw): 층의 보통 책상에 "● 가나다"가 들어가는 크기. 도면은 이 글자가 읽히는 폭보다 작아지지 않는다
   const aspect = map.plan ? map.plan.height_m / map.plan.width_m : 0.6;
@@ -102,6 +114,8 @@ export default function FloorPlan(props: Props) {
     onSelectRef.current = onSelectSeat;
     baseFontRef.current = baseFont;
     fitRef.current.report = onFitZoom;
+    scaleRef.current.report = onScale;
+    scaleRef.current.widthM = map.plan?.width_m ?? 0;
   });
 
   // 배율이 바뀌면 기준점(손가락·포인터 위치, 버튼이면 화면 가운데)이 제자리에 있도록 스크롤을 맞춘다
@@ -137,6 +151,7 @@ export default function FloorPlan(props: Props) {
         fitRef.current.zoom = fit;
         fitRef.current.report?.(fit);
       }
+      reportScale(scaleRef.current, width);
     };
     const observer = new ResizeObserver(update);
     observer.observe(el);
@@ -144,10 +159,14 @@ export default function FloorPlan(props: Props) {
     return () => observer.disconnect();
   }, [hasPlan]);
 
-  // 층 데이터가 바뀌면(실시간 반영·다른 층) 자리마다 글자 크기가 달라질 수 있어 다시 본다
+  // 층 데이터가 바뀌면(실시간 반영·다른 층) 자리마다 글자 크기가 달라질 수 있어 다시 본다.
+  // 다른 층은 그려지는 폭이 같아도 도면 폭(m)이 달라 축척도 다시 알린다 (크기가 그대로면 ResizeObserver가 부르지 않는다)
   useEffect(() => {
     const plan = planRef.current;
-    if (plan) markTinySeats(plan, plan.getBoundingClientRect().width);
+    if (!plan) return;
+    const width = plan.getBoundingClientRect().width;
+    markTinySeats(plan, width);
+    reportScale(scaleRef.current, width);
   }, [map]);
 
   // 고정한 정보 카드: Esc나 카드·자리 밖을 누르면 닫는다
@@ -444,7 +463,6 @@ export default function FloorPlan(props: Props) {
             onHoverEnd={endHover}
           />
         ))}
-        <ScaleBar width_m={plan.width_m} height_m={plan.height_m} />
         {cardSeat && (
           <SeatCard
             key={cardSeat.id}

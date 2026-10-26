@@ -23,7 +23,7 @@ from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
-from app.admin_auth import CurrentAdmin, grants_of, load_admin
+from app.admin_auth import COMPANY_WIDE, CurrentAdmin, grants_of, load_admin
 from app.config import settings
 from app.db import pool
 from app.plan_geometry import to_ratio
@@ -75,7 +75,7 @@ def _access(admin: dict[str, Any], floor: dict[str, Any]) -> dict[str, Any] | No
     """이 층에서 내가 할 수 있는 것. mode FLOOR: 층 전체 / ZONE: 내 구역만 (zones), apply: 바로 반영 / 승인 후"""
     grants = admin["grants"]
     if any(
-        g["role"] == "COMPANY_ADMIN"
+        g["role"] in COMPANY_WIDE
         or (g["role"] == "SITE_ADMIN" and g["site_id"] == floor["site_id"])
         or (g["role"] == "FLOOR_ADMIN" and g["floor_id"] == floor["id"])
         for g in grants
@@ -148,7 +148,15 @@ def _floor_choices(admin: dict[str, Any], floors: list[dict[str, Any]]) -> list[
     for f in floors:
         access = _access(admin, f)
         if access is not None and f["has_seats"]:
-            out.append({"id": f["id"], "name": f["name"], "site": f["site_name"], "mode": access["mode"]})
+            out.append(
+                {
+                    "id": f["id"],
+                    "name": f["name"],
+                    "site": f["site_name"],
+                    "site_id": f["site_id"],
+                    "mode": access["mode"],
+                }
+            )
     # 구역 관리자는 내 구역이 있는 층, 층 관리자는 맡은 층이 먼저 열리게 범위가 좁은 쪽을 앞에
     return sorted(out, key=lambda f: f["mode"] != "ZONE") if any(f["mode"] == "ZONE" for f in out) else out
 

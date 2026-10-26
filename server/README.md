@@ -9,7 +9,7 @@ app/
   db.py            PostgreSQL 연결 풀, app_settings 읽기
   security.py      비밀번호 해시(bcrypt), 세션 토큰
   session.py       로그인 확인. 로그인이 필요한 API는 CurrentUser 인자를 받는다
-  admin_auth.py    관리자 로그인 확인 (CurrentAdmin)
+  admin_auth.py    관리자 로그인 확인 (CurrentAdmin), 권한 단계·누가 누구의 권한을 다루나 (can_manage)
   plan_geometry.py 도면 모양(JSON v1, 미터) 검사·변환, 책상 칸 위치 계산
   jobs.py          정기 작업: 1분마다 게시 예약 게시, 하루 한 번 이력 정리(5년)
   routers/auth.py      로그인 화면 API
@@ -17,7 +17,8 @@ app/
   routers/presence.py  내 재실 상태 바꾸기, 실시간 알림(SSE) API
   routers/employees.py 직원 검색 API (검색창, 참석자 추가)
   routers/rooms.py     회의실 확인·예약 API
-  routers/admin.py     관리자 로그인·첫 화면 API
+  routers/admin.py     관리자 로그인·비밀번호 변경·첫 화면 API
+  routers/grants.py    관리자 권한 부여·편집·회수, 관리자 비밀번호 초기화 API
   routers/seating.py   좌석 배치 편집·팀 구역 API
   routers/plans.py     도면 편집 API (초안·자동 저장·편집 잠금·게시 점검·게시·게시 예약)
   routers/moves.py     팀 이사 도우미 API
@@ -108,7 +109,7 @@ scripts/
 
 | 요청 | 하는 일 |
 |---|---|
-| `GET /api/rooms/day?date=2026-10-23&site_id=1` | 한 사업장 회의실들의 하루 예약 현황. 날짜·사업장을 빼면 오늘, 내 자리가 있는 사업장 |
+| `GET /api/rooms/day?date=2026-10-23&site_id=1` | 한 사업장 회의실들의 하루 예약 현황과 사업장 목록(`sites`, 화면의 사업장 버튼). 날짜를 빼면 오늘. 사업장은 `site_id`, 없으면 `floor_id`(도면의 회의실을 눌러 온 층)의 사업장, 그것도 없으면 내 자리가 있는 사업장 |
 | `POST /api/reservations` | 예약 만들기 (아래) |
 | `PUT /api/reservations/{id}` | 예약 고치기: 회의실·일시·제목·참석자 (만든 사람만, 끝나기 전에만, 반복은 그 회차만). 본문은 만들기와 같고 `repeat`는 `NONE`. `expected_updated_at`(자세히 보기의 `updated_at`)을 보내면 그 뒤 다른 곳에서 고친 예약은 409 `CHANGED_ELSEWHERE`로 거절 |
 | `GET /api/reservations/mine/clash?start_date&start_min&end_date&end_min&exclude` | 그 시간에 내가 들어가는 다른 회의(`busy`)나 휴가·출장·재택(`absence`). 예약 폼의 "나" 칩 |
@@ -154,11 +155,18 @@ scripts/
 
 | 요청 | 하는 일 |
 |---|---|
-| `POST /api/admin/auth/login` | 사번·관리자 비밀번호 로그인. 관리자 계정과 살아 있는 권한(`admin_grants`)이 있어야 함 |
-| `GET /api/admin/auth/me` | 로그인한 관리자와 권한 목록(가장 넓은 권한이 `role`). 아니면 401 `NOT_ADMIN_LOGGED_IN` |
+| `POST /api/admin/auth/login` | 사번(최종 관리자는 `admin`)·관리자 비밀번호 로그인. 관리자 계정과 살아 있는 권한(`admin_grants`)이 있어야 함 |
+| `GET /api/admin/auth/me` | 로그인한 관리자와 권한 목록(가장 넓은 권한이 `role`), `must_change_password`(임시 비밀번호). 아니면 401 `NOT_ADMIN_LOGGED_IN` |
+| `POST /api/admin/auth/password` | 관리자 비밀번호 변경 `{current_password, new_password}` (직원 비밀번호와 같은 규칙·실패 횟수, 틀리면 400 `WRONG_CURRENT`·잠기면 423). 바꾸면 다른 곳의 관리자 로그인은 끝냄 |
 | `GET /api/admin/auth/session` | 관리자 자동 로그아웃까지 남은 초. 사용 시각은 늘리지 않음 |
 | `POST /api/admin/auth/logout` | 로그아웃. 직원 로그인도 같이 끝냄 (`/api/auth/logout`과 같음) |
-| `GET /api/admin/overview` | 관리자 첫 화면: 요약 숫자, 사업장별 층(입주 팀 구역·좌석·층 관리자·도면 상태·최종 수정), 관리자 목록 |
+| `GET /api/admin/overview` | 관리자 첫 화면: 요약 숫자, 사업장별 층(입주 팀 구역·좌석·층 관리자·도면 상태·최종 수정), 관리자 목록(계정 잠김·임시 비밀번호 `account`) |
+| `GET /api/admin/grants/options` | 권한 부여 창의 고를 거리: 내가 줄 수 있는 역할(`roles`)과 내 범위의 사업장 → 층(층 관리자를 줄 수 있으면 `floor_admin`) → 팀 구역 |
+| `GET /api/admin/grants/people?q=` | 권한을 줄 사람 찾기 (재직 직원 이름·사번, 이미 가진 관리자 권한, 관리자 계정 여부). 구역 관리자는 403 |
+| `POST /api/admin/grants` | 권한 부여 `{emp_no, role, site_id?, floor_id?, zone_id?, apply_mode?}`. 관리자 계정이 없던 사람은 임시 비밀번호로 계정을 만들어 `temporary_password`로 한 번만 돌려줌. 같은 권한이 있으면 409 `ALREADY_GRANTED`, 범위 밖 403 `NOT_IN_SCOPE` |
+| `PUT /api/admin/grants/{ID}` | 권한 편집 `{role, site_id?, floor_id?, zone_id?, apply_mode}`. 반영 방식만 바뀌면 그대로 고치고, 권한·범위가 바뀌면 지금 권한을 회수하고 새로 줌 |
+| `DELETE /api/admin/grants/{ID}` | 권한 회수 (남은 권한이 없으면 그 사람은 관리자 페이지에 못 들어옴) |
+| `POST /api/admin/admins/{사번}/reset-password` | 관리자 비밀번호를 임시 비밀번호로 (잠금도 풀고 그 사람의 관리자 로그인을 끝냄). 그 사람의 권한을 모두 내가 다룰 수 있을 때만 |
 
 - 로그인 실패 `code`는 직원 로그인과 같고(`INVALID_CREDENTIALS`, `LOCKED`, `NOT_ACTIVE`), 권한이 하나도 없으면
   403 `NO_PERMISSION`. 관리자 계정이 없는 사번도 `INVALID_CREDENTIALS`(누가 관리자인지 알려 주지 않음).
@@ -167,7 +175,18 @@ scripts/
 - 권한을 모두 회수하면 로그인해 있던 세션도 바로 401이 됩니다.
 - 직원 화면의 `GET /api/auth/me`의 `role`은 관리자 계정 + 살아 있는 권한이 있으면 `ADMIN`입니다
   (따로 저장하지 않아서 권한을 회수하면 바로 바뀜). 직원 화면에는 관리자 페이지 링크를 두지 않습니다.
-- 권한 단계: `COMPANY_ADMIN` 전사 > `SITE_ADMIN` 사업장 > `FLOOR_ADMIN` 층 > `ZONE_ADMIN` 구역.
+- 권한 단계: `SUPER_ADMIN` 최종 > `COMPANY_ADMIN` 전사 > `SITE_ADMIN` 사업장 > `FLOOR_ADMIN` 층 > `ZONE_ADMIN` 구역.
+  최종 관리자는 사람이 아닌 시스템 계정(`employees.emp_no = 'admin'`, `employment_status = 'SYSTEM'`, 부서 없음)으로
+  `db/schema/07_admin.sql`이 처음 비밀번호 `officemapking`으로 만듭니다. 직원 화면 계정이 없고, 부서가 없어 직원 목록·검색·조직도에
+  나오지 않으며, 조직도 API로 고칠 수 없습니다. 전사 관리자가 하는 일을 모두 하고(`admin_auth.COMPANY_WIDE`), 1~4단계를 지정합니다.
+- 누가 누구의 권한을 다루나(`admin_auth.can_manage`, 부여·편집·회수 모두): 최종은 1~4단계, 전사는 2~4단계, 사업장 관리자는
+  그 사업장의 층·구역 관리자, 층 관리자는 그 층의 구역 관리자. 같은 층에 층 관리자를 여러 명 둘 수 있고, 구역 관리자가 없으면
+  층 관리자가 층 전체(그 구역 포함)를 편집합니다. 최종 관리자 권한은 아무도 주거나 회수할 수 없습니다.
+- 관리자 비밀번호를 5번 틀리면 관리자 계정이 잠기고 상위 관리자가 "관리자 비밀번호 초기화"로 풉니다. 최종 관리자는 풀어 줄
+  상위 관리자가 없어서 30분 뒤 저절로 풀립니다(`admin.SUPER_LOCK_MINUTES`). 로그인 화면은 최종 관리자 ID를 안내하지 않습니다.
+- 권한을 받으며 임시 비밀번호를 받은 관리자(`admin_accounts.must_change_password`)는 비밀번호를 바꾸기 전에는
+  `auth/me`·`auth/password`·`auth/session`·`auth/logout` 말고 모든 관리자 API가 403 `PASSWORD_CHANGE_REQUIRED`입니다.
+- 권한 부여·편집·회수·비밀번호 초기화는 `audit_logs`에 남깁니다(`GRANT_CREATE`·`GRANT_UPDATE`·`GRANT_REVOKE`·`ADMIN_PASSWORD_RESET`).
   `overview`는 전체를 보여 주고, 층마다 `in_scope`(`ALL` 내 관리 / `ZONE` 층 안 내 구역만 / `null`)를 붙입니다.
 - `overview.summary`의 좌석·회의실·오늘 예약·대기 요청은 **내 관리 범위 안** 숫자입니다 (`scope`: `ALL`/`FLOORS`/`ZONES`).
   좌석은 개인석(`seats`, 배정 `occupied`)과 자율석(`flex`)을 나눠 셉니다. `unseated`: 재직 중인데 자리가 없는 사람.

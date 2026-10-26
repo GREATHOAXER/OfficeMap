@@ -1,4 +1,6 @@
-"""관리자 페이지 API: 관리자 로그인(직원 로그인과 다른 비밀번호), 관리자 첫 화면(사업장·층·권한 현황)."""
+"""관리자 페이지 API: 관리자 로그인(직원 로그인과 다른 비밀번호)과 비밀번호 변경, 관리자 첫 화면(사업장·층·권한 현황).
+
+관리자 ID는 사번이다. 최종 관리자만 사번이 아닌 시스템 계정 ID(admin)로 들어온다."""
 
 from datetime import timedelta
 from typing import Any
@@ -8,16 +10,27 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from app.admin_auth import CurrentAdmin, admin_out, grants_of, load_admin
+from app.admin_auth import (
+    COMPANY_WIDE,
+    CurrentAdmin,
+    CurrentAdminAllowTemporary,
+    admin_out,
+    grants_of,
+    is_company_wide,
+    load_admin,
+)
 from app.config import settings
 from app.db import get_setting, pool
-from app.routers.auth import client_info, error_response
-from app.security import new_session_token, verify_password
+from app.routers.auth import PasswordChange, client_info, error_response, password_problems
+from app.security import hash_password, new_session_token, verify_password
 from app.session import end_other_identity, end_sessions
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 SITE_KIND = {"HQ": "본사", "CENTER": "센터"}
+# 최종 관리자(시스템 계정)는 잠금을 풀어 줄 상위 관리자가 없어서, 비밀번호를 여러 번 틀려 잠기면
+# 이만큼(분) 뒤에 저절로 풀린다
+SUPER_LOCK_MINUTES = 30
 
 
 class AdminLoginRequest(BaseModel):
@@ -29,20 +42,21 @@ class AdminLoginRequest(BaseModel):
 def admin_login(body: AdminLoginRequest, request: Request) -> JSONResponse:
     """관리자 로그인. 관리자 계정(admin_accounts)과 살아 있는 권한이 있어야 한다.
 
-    실패 횟수·잠금은 직원 로그인과 따로 센다.
+    실패 횟수·잠금은 직원 로그인과 따로 센다. 최종 관리자의 잠금만 SUPER_LOCK_MINUTES 뒤에 저절로 풀린다.
     """
     ip, user_agent = client_info(request)
     with pool.connection() as conn:
         max_failed = int(get_setting(conn, "login.max_failed_count", 5))
         admin = conn.execute(
             """
-            SELECT e.id, e.employment_status, a.password_hash, a.failed_login_count, a.locked_at
+            SELECT e.id, e.employment_status, a.password_hash, a.failed_login_count, a.locked_at,
+                   e.employment_status = 'SYSTEM' AND a.locked_at < now() - make_interval(mins => %s) AS lock_expired
             FROM employees e
             JOIN admin_accounts a ON a.employee_id = e.id
             WHERE e.emp_no = %s
             FOR UPDATE OF a
             """,
-            (body.emp_no,),
+            (SUPER_LOCK_MINUTES, body.emp_no),
         ).fetchone()
         employee_id = admin["id"] if admin else None
         if employee_id is None:  # 관리자 계정이 없어도 직원이면 누가 시도했는지 남긴다
@@ -64,11 +78,11 @@ def admin_login(body: AdminLoginRequest, request: Request) -> JSONResponse:
             record("NO_ACCOUNT")
             return error_response(401, "INVALID_CREDENTIALS")
         # 비밀번호가 맞기 전에는 퇴사 여부·실패 횟수를 알려 주지 않는다 (누가 관리자인지 드러나지 않게)
-        if admin["locked_at"] is not None:
+        if admin["locked_at"] is not None and not admin["lock_expired"]:
             record("LOCKED")
             return error_response(423, "LOCKED", max_failed_count=max_failed)
         if not verify_password(body.password, admin["password_hash"]):
-            failed = admin["failed_login_count"] + 1
+            failed = (0 if admin["lock_expired"] else admin["failed_login_count"]) + 1
             locked = failed >= max_failed
             conn.execute(
                 """
@@ -82,7 +96,7 @@ def admin_login(body: AdminLoginRequest, request: Request) -> JSONResponse:
             if locked:
                 return error_response(423, "LOCKED", max_failed_count=max_failed)
             return error_response(401, "INVALID_CREDENTIALS")
-        if admin["employment_status"] != "ACTIVE":
+        if admin["employment_status"] not in ("ACTIVE", "SYSTEM"):
             record("NOT_ACTIVE")
             return error_response(403, "NOT_ACTIVE")
         if not grants_of(conn, admin["id"]):
@@ -92,7 +106,8 @@ def admin_login(body: AdminLoginRequest, request: Request) -> JSONResponse:
         token, token_hash = new_session_token()
         conn.execute(
             """
-            UPDATE admin_accounts SET failed_login_count = 0, last_login_at = now(), updated_at = now()
+            UPDATE admin_accounts
+            SET failed_login_count = 0, locked_at = NULL, last_login_at = now(), updated_at = now()
             WHERE employee_id = %s
             """,
             (admin["id"],),
@@ -125,8 +140,59 @@ def admin_login(body: AdminLoginRequest, request: Request) -> JSONResponse:
 
 
 @router.get("/auth/me")
-def admin_me(admin: CurrentAdmin) -> dict[str, Any]:
+def admin_me(admin: CurrentAdminAllowTemporary) -> dict[str, Any]:
+    """로그인한 관리자. 임시 비밀번호 상태(must_change_password)면 화면이 비밀번호 변경으로 보낸다"""
     return {"admin": admin_out(admin)}
+
+
+@router.post("/auth/password", status_code=204)
+def change_admin_password(body: PasswordChange, admin: CurrentAdminAllowTemporary) -> Response:
+    """관리자 비밀번호 변경 (직원 화면 비밀번호와 따로). 임시 비밀번호 상태에서도 쓸 수 있다.
+
+    현재 비밀번호를 틀리면 관리자 로그인과 같은 실패 횟수를 올리고, 같은 횟수에서 잠근다.
+    바꾸면 이 브라우저 말고 다른 곳의 관리자 로그인은 끝낸다."""
+    with pool.connection() as conn:
+        account = conn.execute(
+            "SELECT password_hash, failed_login_count FROM admin_accounts WHERE employee_id = %s FOR UPDATE",
+            (admin["employee_id"],),
+        ).fetchone()
+        if not verify_password(body.current_password, account["password_hash"]):
+            max_failed = int(get_setting(conn, "login.max_failed_count", 5))
+            failed = account["failed_login_count"] + 1
+            locked = failed >= max_failed
+            conn.execute(
+                """
+                UPDATE admin_accounts
+                SET failed_login_count = %s, locked_at = CASE WHEN %s THEN now() END, updated_at = now()
+                WHERE employee_id = %s
+                """,
+                (failed, locked, admin["employee_id"]),
+            )
+            if locked:
+                return error_response(423, "LOCKED", max_failed_count=max_failed)
+            return error_response(400, "WRONG_CURRENT", max_failed_count=max_failed)
+        problems = password_problems(body.new_password, admin["emp_no"])
+        if problems:
+            return error_response(422, "WEAK_PASSWORD", problems=problems)
+        if body.new_password == body.current_password:
+            return error_response(422, "SAME_AS_OLD")
+        conn.execute(
+            """
+            UPDATE admin_accounts
+            SET password_hash = %s, must_change_password = false, password_changed_at = now(),
+                failed_login_count = 0, updated_at = now()
+            WHERE employee_id = %s
+            """,
+            (hash_password(body.new_password), admin["employee_id"]),
+        )
+        conn.execute(
+            """
+            UPDATE user_sessions SET revoked_at = now(), revoked_reason = 'PASSWORD_CHANGED'
+            WHERE employee_id = %s AND kind = 'ADMIN' AND token_hash <> %s AND revoked_at IS NULL
+            """,
+            (admin["employee_id"], admin["token_hash"]),
+        )
+    return Response(status_code=204)
 
 
 @router.get("/auth/session")
@@ -152,13 +218,13 @@ def _scope(grants: list[dict[str, Any]], floors: list[dict[str, Any]]) -> dict[s
     for g in grants:
         for f in floors:
             if (
-                g["role"] == "COMPANY_ADMIN"
+                g["role"] in COMPANY_WIDE
                 or (g["role"] == "SITE_ADMIN" and g["site_id"] == f["site_id"])
                 or (g["role"] == "FLOOR_ADMIN" and g["floor_id"] == f["id"])
             ):
                 full.add(f["id"])
     zone_grants = [g for g in grants if g["role"] == "ZONE_ADMIN" and g["floor_id"] not in full]
-    kind = "ALL" if any(g["role"] == "COMPANY_ADMIN" for g in grants) else "FLOORS" if full else "ZONES"
+    kind = "ALL" if is_company_wide(grants) else "FLOORS" if full else "ZONES"
     return {
         "kind": kind,
         "full": sorted(full),
@@ -255,7 +321,7 @@ def overview(admin: CurrentAdmin) -> dict[str, Any]:
     def in_scope(floor: dict[str, Any]) -> str | None:
         """내가 이 층을 관리하나: "ALL"(층 전체) / "ZONE"(층 안 일부 구역) / None"""
         for g in mine:
-            if g["role"] == "COMPANY_ADMIN" or (g["role"] == "SITE_ADMIN" and g["site_id"] == floor["site_id"]):
+            if g["role"] in COMPANY_WIDE or (g["role"] == "SITE_ADMIN" and g["site_id"] == floor["site_id"]):
                 return "ALL"
             if g["role"] == "FLOOR_ADMIN" and g["floor_id"] == floor["id"]:
                 return "ALL"

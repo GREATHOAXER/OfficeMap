@@ -12,6 +12,7 @@ import AiPanel from "./AiPanel";
 import EmployeeSearch from "./EmployeeSearch";
 import FloorPlan, { clampZoom, ZOOM_MAX, ZOOM_MIN, ZOOM_STEPS } from "./FloorPlan";
 import MyStatus from "./MyStatus";
+import { ScaleLegend } from "./PlanShapes";
 import SeatPanel, { NoSeatCard } from "./SeatPanel";
 import { useFloorUpdates } from "./useFloorUpdates";
 import styles from "./office.module.css";
@@ -77,6 +78,7 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
   const setZoom = (zoom: number) => setZoomState({ floorId, zoom });
   // 도면 전체가 들어오는 배율. 사람이 많아 책상이 작은 층은 100%에서도 이름이 읽히게 도면이 영역보다 크다
   const [fitZoom, setFitZoom] = useState(1);
+  const [pxPerMeter, setPxPerMeter] = useState(0); // 도면 1 m가 지금 몇 px인지 (범례의 축척 막대)
   const minZoom = Math.min(ZOOM_MIN, fitZoom);
   const zoom = clampZoom(zoomState.floorId === floorId ? zoomState.zoom : 1, minZoom);
   const [visible, setVisible] = useState<Set<StatusFilter>>(() => new Set(STATUS_FILTERS));
@@ -419,6 +421,7 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
               zoom={zoom}
               onZoomChange={setZoom}
               onFitZoom={setFitZoom}
+              onScale={setPxPerMeter}
               focusZoneId={focusZoneId}
               visibleStatuses={visible}
               selectedSeatId={selectedSeatId}
@@ -449,6 +452,7 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
               <span className={styles.hatchSample} aria-hidden="true" />
               빗금 = 출입 제한·공용 설비
             </span>
+            {map.plan && pxPerMeter > 0 && <ScaleLegend pxPerMeter={pxPerMeter} />}
             {hasSeats && (
               <span className={styles.hint}>
                 <span className={styles.hintMouse}>

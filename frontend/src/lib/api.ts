@@ -326,6 +326,7 @@ export type RoomsDay = {
   now_min: number | null; // 오늘이면 지금 시각
   past: boolean;
   site: { id: number; name: string };
+  sites: { id: number; name: string }[]; // 사업장 바꾸기 (사업장끼리는 섞어 보여 주지 않는다)
   policy: RoomPolicy;
   rooms: RoomDay[];
 };
@@ -403,10 +404,17 @@ export type ReservationDetail = {
 /** 팀·본부. 참석자 칸에서 "$총무팀"처럼 찾아 팀 전체를 한 번에 넣는다. member_count는 아래 팀 사람까지 */
 export type TeamHit = { id: number; name: string; parent: string | null; member_count: number; has_children: boolean };
 
-export function fetchRoomsDay(cookieHeader: string | null, date: string | null, siteId: number | null) {
+/** siteId가 없으면 floorId(도면의 회의실을 눌러 온 층)의 사업장, 그것도 없으면 내 자리가 있는 사업장 */
+export function fetchRoomsDay(
+  cookieHeader: string | null,
+  date: string | null,
+  siteId: number | null,
+  floorId: number | null = null,
+) {
   const query = new URLSearchParams();
   if (date) query.set("date", date);
   if (siteId) query.set("site_id", String(siteId));
+  else if (floorId) query.set("floor_id", String(floorId));
   return apiGet<RoomsDay>(`/api/rooms/day?${query}`, cookieHeader);
 }
 
@@ -433,12 +441,13 @@ export function fetchMyTeam(cookieHeader: string | null) {
 /** 관리자 세션 쿠키 이름 (server/app/config.py 의 admin_cookie_name 과 같아야 한다) */
 export const ADMIN_COOKIE = "officemap_admin_session";
 
-export type AdminRole = "COMPANY_ADMIN" | "SITE_ADMIN" | "FLOOR_ADMIN" | "ZONE_ADMIN";
+/** SUPER_ADMIN: 최종 관리자(관리자 ID admin, 사람이 아닌 시스템 계정). 1~4단계 위에서 모든 관리를 한다 */
+export type AdminRole = "SUPER_ADMIN" | "COMPANY_ADMIN" | "SITE_ADMIN" | "FLOOR_ADMIN" | "ZONE_ADMIN";
 
 export type AdminGrant = {
   id: number;
   role: AdminRole;
-  level: number; // 1 전사 ~ 4 구역
+  level: number; // 0 최종, 1 전사 ~ 4 구역
   label: string;
   scope: string; // "전체 사업장", "서울 본사 · 7F" …
   site_id: number | null;
@@ -447,18 +456,38 @@ export type AdminGrant = {
   apply_mode: "IMMEDIATE" | "NEEDS_APPROVAL"; // 구역 관리자의 변경 반영
   granted_at: string;
   granted_by: string | null;
-  employee: { emp_no: string; name: string; rank: string | null; department: string };
+  employee_id: number;
+  /** 관리자 계정 상태: 비밀번호를 여러 번 틀려 잠김 / 임시 비밀번호(아직 첫 로그인 전) */
+  account: { locked: boolean; temporary_password: boolean };
+  employee: { emp_no: string; name: string; rank: string | null; department: string | null };
 };
 
 export type Admin = {
-  emp_no: string;
+  emp_no: string; // 최종 관리자는 "admin"
   name: string;
   rank: string | null;
-  department: string;
+  department: string | null; // 최종 관리자는 부서가 없다
   role: AdminRole; // 가장 넓은 권한
   role_label: string;
   grants: AdminGrant[];
   idle_minutes: number;
+  /** 권한을 받으며 임시 비밀번호를 받았다: 다른 화면에 가기 전에 관리자 비밀번호를 바꾼다 */
+  must_change_password: boolean;
+};
+
+/** 권한 부여 창의 고를 거리 (GET /api/admin/grants/options): 내가 줄 수 있는 역할과 내 범위의 사업장 → 층 → 구역 */
+export type GrantOptions = {
+  roles: { role: Exclude<AdminRole, "SUPER_ADMIN">; level: number; label: string }[];
+  sites: {
+    id: number;
+    name: string;
+    floors: {
+      id: number;
+      name: string;
+      floor_admin: boolean; // 이 층의 층 관리자를 줄 수 있다 (사업장 관리자 이상)
+      zones: { id: number; code: string; name: string }[];
+    }[];
+  }[];
 };
 
 /** 도면 상태: 작성 완료 / 작성 완료 + 수정 중 / 초안만 / 없음 */
@@ -645,7 +674,7 @@ export type ChangeRequestRow = {
   can_cancel: boolean;
 };
 
-export type SeatingFloorChoice = { id: number; name: string; site: string; mode: "FLOOR" | "ZONE" };
+export type SeatingFloorChoice = { id: number; name: string; site: string; site_id: number; mode: "FLOOR" | "ZONE" };
 
 export type SeatingData = {
   floor: FloorMap["floor"];

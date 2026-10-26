@@ -28,7 +28,9 @@ export default async function AdminLoginPage({ searchParams }: PageProps<"/admin
       ? `${info.admin_idle_minutes}분 넘게 사용하지 않았거나 권한이 바뀌어 로그아웃되었습니다. 다시 로그인하세요.`
       : params.reason === "logout"
         ? "로그아웃했습니다. 이 브라우저의 관리자 페이지와 직원 화면 로그인이 모두 끝났습니다."
-        : null;
+        : params.reason === "locked"
+          ? `관리자 비밀번호를 여러 번 잘못 입력해 관리자 계정이 잠겼습니다. 상위 관리자에게 잠금 해제(비밀번호 초기화)를 요청하세요. 문의: ${contact}`
+          : null;
 
   return (
     <div className={styles.page}>
@@ -43,13 +45,13 @@ export default async function AdminLoginPage({ searchParams }: PageProps<"/admin
             맡은 범위 안에서 관리합니다.
           </h1>
           <p className={styles.lead}>
-            관리자 권한이 있는 직원만 들어올 수 있습니다. 상위 관리자가 바로 아래 관리자를 지정하고, 각자 맡은 범위
-            안에서만 편집합니다.
+            관리자 권한이 있는 직원만 들어올 수 있습니다. 상위 관리자가 맡은 범위 안의 아래 단계 관리자를 지정하고,
+            각자 맡은 범위 안에서만 편집합니다.
           </p>
           <ol className={own.levels}>
             {LEVELS.map((l) => (
               <li key={l.level}>
-                <span className="mono">LEVEL {l.level}</span>
+                <span className="mono">{l.level === 0 ? "최종" : `LEVEL ${l.level}`}</span>
                 <strong>{l.name}</strong>
                 <span>범위: {l.scope}</span>
               </li>

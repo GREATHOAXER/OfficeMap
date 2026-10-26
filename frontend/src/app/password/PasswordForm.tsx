@@ -6,14 +6,20 @@ import { AlertIcon } from "@/app/login/LoginForm";
 import styles from "@/app/login/login.module.css";
 import own from "./password.module.css";
 
-// 서버(POST /api/auth/password)와 같은 규칙. 화면에서는 입력하는 동안 맞았는지 보여 준다
+// 서버(POST /api/auth/password, 관리자는 /api/admin/auth/password)와 같은 규칙. 화면에서는 입력하는 동안 맞았는지 보여 준다
 const MIN_LENGTH = 8;
 
-function rulesOf(password: string, confirm: string, empNo: string) {
+/** 직원 화면 비밀번호(user)와 관리자 페이지 비밀번호(admin)는 따로다 */
+const KIND = {
+  user: { endpoint: "/api/auth/password", login: "/login", id: "사번" },
+  admin: { endpoint: "/api/admin/auth/password", login: "/admin/login", id: "사번(관리자 ID)" },
+} as const;
+
+function rulesOf(password: string, confirm: string, empNo: string, idLabel: string) {
   return [
     { label: `${MIN_LENGTH}자 이상`, ok: password.length >= MIN_LENGTH },
     { label: "영문과 숫자를 모두 포함", ok: /[A-Za-z]/.test(password) && /\d/.test(password) },
-    { label: "사번이 들어가지 않음", ok: password.length > 0 && !password.includes(empNo) },
+    { label: `${idLabel}이 들어가지 않음`, ok: password.length > 0 && !password.includes(empNo) },
     { label: "새 비밀번호 확인과 같음", ok: confirm.length > 0 && password === confirm },
   ];
 }
@@ -34,7 +40,18 @@ function errorText(code: string, forced: boolean, maxFailed: number) {
 }
 
 /** next: 바꾼 뒤 갈 화면 (임시 비밀번호로 로그인했을 때 가려던 화면, 없으면 첫 화면) */
-export default function PasswordForm({ empNo, forced, next }: { empNo: string; forced: boolean; next: string }) {
+export default function PasswordForm({
+  empNo,
+  forced,
+  next,
+  kind = "user",
+}: {
+  empNo: string;
+  forced: boolean;
+  next: string;
+  kind?: keyof typeof KIND;
+}) {
+  const api = KIND[kind];
   const router = useRouter();
   const currentRef = useRef<HTMLInputElement>(null);
   const [password, setPassword] = useState("");
@@ -43,7 +60,7 @@ export default function PasswordForm({ empNo, forced, next }: { empNo: string; f
   const [maxFailed, setMaxFailed] = useState(5);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
-  const rules = rulesOf(password, confirm, empNo);
+  const rules = rulesOf(password, confirm, empNo, api.id);
 
   useEffect(() => {
     currentRef.current?.focus();
@@ -63,17 +80,17 @@ export default function PasswordForm({ empNo, forced, next }: { empNo: string; f
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch("/api/auth/password", {
+      const res = await fetch(api.endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ current_password: current, new_password: password }),
       });
       if (res.status === 401) {
-        router.replace("/login"); // 로그인이 끊겼다 (현재 비밀번호가 틀리면 400 WRONG_CURRENT)
+        router.replace(api.login); // 로그인이 끊겼다 (현재 비밀번호가 틀리면 400 WRONG_CURRENT)
         return;
       }
       if (res.status === 423) {
-        router.replace("/login?reason=locked"); // 여러 번 틀려 잠겼다: 이 로그인도 끝났다
+        router.replace(`${api.login}?reason=locked`); // 여러 번 틀려 잠겼다: 이 로그인도 끝났다
         return;
       }
       if (res.ok) {
@@ -99,8 +116,9 @@ export default function PasswordForm({ empNo, forced, next }: { empNo: string; f
   if (done) {
     return (
       <p role="status" className={own.done}>
-        비밀번호를 바꿨습니다. 다음 로그인부터 새 비밀번호를 쓰세요. 다른 기기에 로그인되어 있었다면 그쪽은
-        로그아웃됩니다. 잠시 후 {next === "/" ? "첫 화면" : "보던 화면"}으로 이동합니다…
+        {kind === "admin" ? "관리자 비밀번호를" : "비밀번호를"} 바꿨습니다. 다음 로그인부터 새 비밀번호를 쓰세요. 다른
+        기기에 로그인되어 있었다면 그쪽은 로그아웃됩니다. 잠시 후{" "}
+        {next === "/" || next === "/admin" ? "첫 화면" : "보던 화면"}으로 이동합니다…
       </p>
     );
   }
