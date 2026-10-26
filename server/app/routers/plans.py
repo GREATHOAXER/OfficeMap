@@ -70,9 +70,11 @@ def _floor_list(conn: Connection, admin: dict[str, Any]) -> list[dict[str, Any]]
         """
         SELECT f.id, f.name, f.site_id, s.name AS site_name,
                EXISTS (SELECT 1 FROM floor_plans p WHERE p.floor_id = f.id AND p.status = 'PUBLISHED') AS published,
-               EXISTS (SELECT 1 FROM floor_plans p
-                       WHERE p.floor_id = f.id AND p.status IN ('DRAFT', 'SCHEDULED')) AS drafting
+               d.id IS NOT NULL AS drafting, d.status = 'SCHEDULED' AS scheduled,
+               d.updated_at AS draft_updated_at, e.name AS draft_updated_by
         FROM floors f JOIN sites s ON s.id = f.site_id
+        LEFT JOIN floor_plans d ON d.floor_id = f.id AND d.status IN ('DRAFT', 'SCHEDULED')
+        LEFT JOIN employees e ON e.id = d.updated_by
         WHERE f.is_active AND s.is_active
         ORDER BY s.sort_order, s.id, f.sort_order DESC
         """
@@ -89,6 +91,10 @@ def _floor_list(conn: Connection, admin: dict[str, Any]) -> list[dict[str, Any]]
                     "site_id": f["site_id"],
                     "published": f["published"],
                     "drafting": f["drafting"],
+                    "scheduled": bool(f["scheduled"]),  # 초안을 게시 예약해 둠
+                    # 도면 편집 첫 화면(층 고르기)에 보이는 초안의 마지막 저장
+                    "draft_updated_at": f["draft_updated_at"],
+                    "draft_updated_by": f["draft_updated_by"],
                 }
             )
     return out

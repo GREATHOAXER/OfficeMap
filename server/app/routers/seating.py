@@ -557,6 +557,55 @@ def _summaries(conn: Connection, request_ids: list[int]) -> dict[int, list[str]]
     return out
 
 
+@router.get("/approvals")
+def approvals(admin: CurrentAdmin) -> dict[str, Any]:
+    """승인함 (관리자 첫 화면): 내가 승인할 요청(그 층의 층 관리자 이상)과 승인을 기다리는 내 요청. 오래된 요청부터"""
+    with pool.connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT c.id, c.request_type, c.note, c.effective_at, c.submitted_at, c.requested_by = %s AS mine,
+                   f.id AS floor_id, f.name AS floor_name, f.site_id, s.name AS site_name,
+                   rq.name AS requester_name, rq.rank_name AS requester_rank,
+                   (SELECT count(*) FROM change_request_items i WHERE i.request_id = c.id)::int AS item_count,
+                   EXISTS (SELECT 1 FROM change_request_items i
+                           WHERE i.request_id = c.id AND i.action = 'MOVE_ZONE') AS zone_moves
+            FROM change_requests c
+            JOIN floors f ON f.id = c.floor_id
+            JOIN sites s ON s.id = f.site_id
+            JOIN employees rq ON rq.id = c.requested_by
+            WHERE c.status = 'PENDING'
+            ORDER BY c.submitted_at, c.id
+            """,
+            (admin["employee_id"],),
+        ).fetchall()
+        shown = []
+        for r in rows:
+            access = _access(admin, {"id": r["floor_id"], "site_id": r["site_id"]})
+            review = access is not None and access["mode"] == "FLOOR"
+            if review or r["mine"]:
+                shown.append({**r, "can_review": review})
+        summaries = _summaries(conn, [r["id"] for r in shown])
+    return {
+        "requests": [
+            {
+                "id": r["id"],
+                "type": r["request_type"],
+                "note": r["note"],
+                "floor": {"id": r["floor_id"], "name": r["floor_name"], "site": r["site_name"]},
+                "requester": f"{r['requester_name']} {r['requester_rank'] or ''}".strip(),
+                "mine": r["mine"],
+                "submitted_at": r["submitted_at"],
+                "effective_at": r["effective_at"],  # 반영할 날짜를 정한 요청 (없으면 승인하는 즉시)
+                "item_count": r["item_count"],
+                "zone_moves": r["zone_moves"],
+                "summary": summaries.get(r["id"], []),
+                "can_review": r["can_review"],
+            }
+            for r in shown
+        ]
+    }
+
+
 @router.get("/change-sets/{request_id}")
 def change_set(request_id: int, admin: CurrentAdmin) -> dict[str, Any]:
     """묶음 하나 (승인할 요청을 도면 위에서 미리 보기)"""

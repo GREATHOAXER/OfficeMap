@@ -556,6 +556,26 @@ export function fetchAdminOverview(cookieHeader: string | null) {
   return apiGet<AdminOverview>("/api/admin/overview", cookieHeader);
 }
 
+/** 승인함 한 줄: 구역 관리자가 올린 좌석 배치 변경 요청 */
+export type ApprovalRow = {
+  id: number;
+  type: "SEAT_ASSIGNMENT" | "ZONE_CHANGE";
+  note: string | null;
+  floor: { id: number; name: string; site: string };
+  requester: string;
+  mine: boolean; // 내가 올려 승인을 기다리는 요청
+  submitted_at: string | null;
+  effective_at: string | null; // 반영할 날짜를 정한 요청 (없으면 승인하는 즉시)
+  item_count: number;
+  zone_moves: boolean; // 구역 경계 변경이 들어 있다
+  summary: string[];
+  can_review: boolean; // 그 층의 층 관리자 이상: 승인·반려
+};
+
+export function fetchApprovals(cookieHeader: string | null) {
+  return apiGet<{ requests: ApprovalRow[] }>("/api/admin/approvals", cookieHeader);
+}
+
 // 조직도 (관리자 페이지) ------------------------------------------------------------
 
 /** 부서 하나. members: 재직·휴직 인원, zones: 이 부서 팀 구역 */
@@ -753,9 +773,22 @@ export type PlanSummary = {
   note: string | null;
 };
 
+/** 도면을 편집할 수 있는 층과 도면 상태 (도면 편집 첫 화면·층 고르기) */
+export type PlanFloor = {
+  id: number;
+  name: string;
+  site: string;
+  site_id: number;
+  published: boolean;
+  drafting: boolean; // 초안이 있다 (작성 중 또는 게시 예약)
+  scheduled: boolean; // 초안을 게시 예약해 둠
+  draft_updated_at: string | null;
+  draft_updated_by: string | null;
+};
+
 export type PlanEditorData = {
   floor: FloorMap["floor"];
-  floors: { id: number; name: string; site: string; site_id: number; published: boolean; drafting: boolean }[];
+  floors: PlanFloor[];
   size: { width_m: number; height_m: number };
   /** 밑그림: 도면 파일 그림 (편집 화면에서만 요소 밑에 깐다). 층마다 하나 */
   background: {

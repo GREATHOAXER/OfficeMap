@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import office from "@/app/(app)/office.module.css";
-import { labelStyle, wallLineStyle } from "@/app/(app)/PlanShapes";
+import { labelStyle, lineAxis, wallLineStyle } from "@/app/(app)/PlanShapes";
 import type { DeskGroup, PlanEditorData, PlanElement, PlanGeometry, PlanRect, WallLine } from "@/lib/api";
 import {
   boxOf,
@@ -552,12 +552,15 @@ export default function PlanCanvas(props: Props) {
                     key={el.id}
                     {...common}
                     className={`${office.wallLine} ${styles.lineEl} ${styles.el}`}
+                    data-axis={lineAxis(el.x, el.y, el.x2, el.y2) ?? undefined}
                     style={wallLineStyle(
-                      px(el.x),
-                      py(el.y),
-                      px(lineLength(el)),
+                      el.x / width,
+                      el.y / height,
+                      el.x2 / width,
+                      el.y2 / height,
+                      width,
+                      height,
                       thick,
-                      Math.atan2(el.y2 - el.y, el.x2 - el.x),
                     )}
                   >
                     <i aria-hidden="true" />

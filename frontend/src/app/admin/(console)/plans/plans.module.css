@@ -385,6 +385,17 @@ div.body[data-cols="3"] {
   margin-top: -7px;
 }
 
+/* 세로 선은 돌리지 않은 사각형이라(PlanShapes.tsx wallLineStyle) 잡는 영역도 세로로 */
+.lineEl[data-axis="v"] > i {
+  left: 50%;
+  right: auto;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  height: auto;
+  margin: 0 0 0 -7px;
+}
+
 .lineEl[data-selected] {
   outline: 2px solid var(--link);
   outline-offset: 3px;
@@ -835,6 +846,78 @@ div.body[data-cols="3"] {
 
 .startCard[data-main] {
   border: 2px solid var(--ink);
+}
+
+/* 도면 편집 첫 화면 (PlanHome.tsx): 사업장마다 층 카드 */
+.homeLead {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.homeSite {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.homeFloors {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.homeFloor {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 6px 8px;
+  height: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--divider);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.homeFloor:hover {
+  border-color: var(--ink);
+}
+
+.homeFloor[data-tone="draft"] {
+  border-left: 3px solid var(--ink);
+}
+
+.homeFloor[data-tone="draft"] .homeChip {
+  background: var(--ink);
+  color: #fff;
+}
+
+.homeFloor[data-tone="none"] {
+  border-style: dashed;
+}
+
+.homeFloor strong {
+  font-size: 15px;
+}
+
+.homeMeta,
+.homeAction {
+  grid-column: 1 / -1;
+  font-size: 12px;
+}
+
+.homeMeta {
+  color: var(--muted);
+}
+
+.homeAction {
+  color: var(--link);
 }
 
 .history {

@@ -8,7 +8,8 @@ import styles from "./seating.module.css";
 
 export const metadata: Metadata = { title: "좌석 배치 편집 · 오피스 안내" };
 
-// ⑤ 좌석 배치 편집. 주소의 ?floor=층ID 로 층을 고른다. 없거나 내 범위가 아니면 맡은 층 중 첫 층
+// ⑤ 좌석 배치 편집. 주소의 ?floor=층ID 로 층을 고른다. 없거나 내 범위가 아니면 맡은 층 중 첫 층.
+// ?review=요청ID 면 그 승인 요청을 바로 검토한다 (관리자 첫 화면 승인함에서)
 export default async function SeatingPage({ searchParams }: PageProps<"/admin/seating">) {
   const cookieHeader = (await headers()).get("cookie");
   const params = await searchParams;
@@ -41,5 +42,13 @@ export default async function SeatingPage({ searchParams }: PageProps<"/admin/se
       </div>
     );
   }
-  return <SeatingEditor key={loaded.data.floor.id} admin={loaded.admin} initial={loaded.data} notice={loaded.notice} />;
+  return (
+    <SeatingEditor
+      key={loaded.data.floor.id}
+      admin={loaded.admin}
+      initial={loaded.data}
+      notice={loaded.notice}
+      reviewId={Number(params.review) || null}
+    />
+  );
 }

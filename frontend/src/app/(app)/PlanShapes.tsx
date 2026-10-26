@@ -21,20 +21,55 @@ export const wallBorder = (line: number | undefined, width_m: number): CSSProper
   borderWidth: `max(2px, ${cqw(line ?? (DEFAULT_LINE.wall ?? 0.3) / width_m)})`,
 });
 
+/** 가로(h)·세로(v) 선인지. 좌표는 도면 너비·높이 대비 비율 */
+export function lineAxis(x1: number, y1: number, x2: number, y2: number): "h" | "v" | null {
+  if (Math.abs(y2 - y1) < 1e-7) return "h";
+  if (Math.abs(x2 - x1) < 1e-7) return "v";
+  return null;
+}
+
 /**
- * 선 벽 막대 (돌린 div). 양 끝을 굵기 절반씩 늘려(네모 끝) 모서리에서 다른 벽과 빈틈 없이 만난다.
- * left·top은 시작점, length는 길이(도면 폭 대비 %), thick은 화면 굵기
+ * 선 벽 막대. 양 끝을 굵기 절반씩 늘려(네모 끝) 모서리에서 다른 벽과 빈틈 없이 만난다.
+ * 가로·세로 선은 돌리지 않은 사각형으로 그린다: 90도 돌린 막대는 브라우저가 경계를 흐리게 칠해서
+ * 옆의 가로선·벽과 1px쯤 어긋나 보인다. 비스듬한 선만 시작점을 기준으로 돌린다.
+ * 좌표는 도면 너비·높이 대비 비율(0~1), width_m·height_m은 도면 크기(m), thick은 화면 굵기
  */
-export function wallLineStyle(left: string, top: string, length: string, thick: string, angle: number): CSSProperties {
+export function wallLineStyle(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  width_m: number,
+  height_m: number,
+  thick: string,
+): CSSProperties {
   const half = `(${thick} / 2)`;
+  const axis = lineAxis(x1, y1, x2, y2);
+  if (axis === "h")
+    return {
+      left: `calc(${pct(Math.min(x1, x2))} - ${half})`,
+      top: `calc(${pct(y1)} - ${half})`,
+      width: `calc(${pct(Math.abs(x2 - x1))} + ${thick})`,
+      height: thick,
+    };
+  if (axis === "v")
+    return {
+      left: `calc(${pct(x1)} - ${half})`,
+      top: `calc(${pct(Math.min(y1, y2))} - ${half})`,
+      width: thick,
+      height: `calc(${pct(Math.abs(y2 - y1))} + ${thick})`,
+    };
+  // 도면 비율이 실제 비율과 같아서, 미터로 바꿔 길이(도면 폭 대비)·각도를 구하면 화면에서도 맞는다
+  const dx = (x2 - x1) * width_m;
+  const dy = (y2 - y1) * height_m;
   return {
-    left: `calc(${left} - ${half})`,
-    top,
-    width: `calc(${length} + ${thick})`,
+    left: `calc(${pct(x1)} - ${half})`,
+    top: pct(y1),
+    width: `calc(${pct(Math.hypot(dx, dy) / width_m)} + ${thick})`,
     height: thick,
     marginTop: `calc(${thick} / -2)`,
     transformOrigin: `calc(${half}) 50%`,
-    transform: `rotate(${angle.toFixed(5)}rad)`,
+    transform: `rotate(${Math.atan2(dy, dx).toFixed(5)}rad)`,
   };
 }
 
@@ -67,19 +102,13 @@ export default function PlanShapes({ geometry, width_m, height_m }: Props) {
           style={{ ...rectStyle(wall), ...wallBorder(wall.line, width_m) }}
         />
       ))}
-      {geometry.lines?.map((l, i) => {
-        // 도면 비율이 실제 비율과 같아서, 미터로 바꿔 길이·각도를 구하면 화면에서도 맞는다
-        const dx = (l.x2 - l.x1) * width_m;
-        const dy = (l.y2 - l.y1) * height_m;
-        const thick = `max(2px, ${cqw(l.line)})`;
-        return (
-          <div
-            key={`line-${i}`}
-            className={styles.wallLine}
-            style={wallLineStyle(pct(l.x1), pct(l.y1), pct(Math.hypot(dx, dy) / width_m), thick, Math.atan2(dy, dx))}
-          />
-        );
-      })}
+      {geometry.lines?.map((l, i) => (
+        <div
+          key={`line-${i}`}
+          className={styles.wallLine}
+          style={wallLineStyle(l.x1, l.y1, l.x2, l.y2, width_m, height_m, `max(2px, ${cqw(l.line)})`)}
+        />
+      ))}
       {geometry.spaces?.map((space, i) => (
         <div
           key={`space-${i}`}

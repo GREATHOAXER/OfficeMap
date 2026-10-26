@@ -20,9 +20,11 @@ import {
   ApiError,
   fetchAdmin,
   fetchAdminOverview,
+  fetchApprovals,
 } from "@/lib/api";
 import { kstDate, shortDate } from "@/lib/dates";
 import { redirectToAdminLogin } from "@/lib/expiredRedirect";
+import ApprovalInbox from "./ApprovalInbox";
 import { GrantButton, GrantEditButton, type GrantPreset } from "./GrantActions";
 import { FloorButton, SiteButton } from "./SiteActions";
 import styles from "./admin.module.css";
@@ -32,17 +34,23 @@ export default async function AdminHomePage() {
   const cookieHeader = (await headers()).get("cookie");
   let data;
   try {
-    const [admin, overview] = await Promise.all([fetchAdmin(cookieHeader), fetchAdminOverview(cookieHeader)]);
+    const [admin, overview, approvals] = await Promise.all([
+      fetchAdmin(cookieHeader),
+      fetchAdminOverview(cookieHeader),
+      fetchApprovals(cookieHeader),
+    ]);
     if (!admin) return redirectToAdminLogin();
-    data = { admin, overview };
+    data = { admin, overview, approvals: approvals.requests };
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) return redirectToAdminLogin();
     throw error;
   }
-  const { admin, overview } = data;
+  const { admin, overview, approvals } = data;
   const { summary } = overview;
   // 최종·전사 관리자: 사업장·층 추가와 조직도
   const isCompany = isCompanyWide(admin);
+  // 층 관리자 이상: 구역 관리자가 올린 요청을 승인·반려한다 (구역 관리자는 내 요청이 있을 때만 승인함이 보인다)
+  const reviewer = admin.grants.some((g) => g.role !== "ZONE_ADMIN");
 
   // 전사 관리자는 전체 숫자, 그 아래 단계는 내 관리 범위 안의 숫자 (재직 직원·관리자 수는 전사만)
   const scoped = summary.scope !== "ALL";
@@ -71,6 +79,7 @@ export default async function AdminHomePage() {
       label: summary.scope === "ZONES" ? "승인 기다리는 내 요청" : "내가 승인할 요청",
       value: `${summary.pending_requests}건`,
       note: summary.scope === "ZONES" ? "층 관리자가 승인하면 반영" : "구역 관리자가 올린 배치 변경",
+      href: reviewer || approvals.length > 0 ? "#approvals" : undefined,
     },
     ...(scoped ? [] : [{ label: "관리자", value: `${summary.admins}명` }]),
   ];
@@ -116,9 +125,16 @@ export default async function AdminHomePage() {
               <span>{s.label}</span>
               <strong className="mono">{s.value}</strong>
               {s.note && <span className={styles.statNote}>{s.note}</span>}
+              {"href" in s && s.href && (
+                <a className={styles.statLink} href={s.href}>
+                  승인함 보기 ↓
+                </a>
+              )}
             </li>
           ))}
         </ul>
+
+        {(reviewer || approvals.length > 0) && <ApprovalInbox requests={approvals} reviewer={reviewer} />}
 
         {overview.sites.map((site) => (
           <SiteSection key={site.id} site={site} admin={admin} isCompany={isCompany} />
