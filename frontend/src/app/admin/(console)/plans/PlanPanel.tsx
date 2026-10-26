@@ -120,7 +120,7 @@ function Summary(props: Props) {
               value={width}
               min={MIN_SIZE}
               max={MAX_SIZE}
-              step={0.5}
+              step={0.1}
               onChange={(w) => onResize({ width: w, height })}
             />
             <Num
@@ -128,7 +128,7 @@ function Summary(props: Props) {
               value={height}
               min={MIN_SIZE}
               max={MAX_SIZE}
-              step={0.5}
+              step={0.1}
               onChange={(h) => onResize({ width, height: h })}
             />
           </div>

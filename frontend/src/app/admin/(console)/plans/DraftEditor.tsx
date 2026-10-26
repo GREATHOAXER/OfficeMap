@@ -23,6 +23,8 @@ import {
   problemsOf,
   rotateElements,
   scaleElement,
+  DEFAULT_SNAP_M,
+  SNAP_STEPS,
   snapTo,
   SPACE_KINDS,
   TYPE_LABEL,
@@ -118,7 +120,9 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
   const [entranceMain, setEntranceMain] = useState(true);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [zoom, setZoom] = useState(1);
-  const [snap, setSnap] = useState(true);
+  const [snapOn, setSnapOn] = useState(true);
+  const [snapStep, setSnapStep] = useState<number>(DEFAULT_SNAP_M);
+  const snap = snapOn ? snapStep : 0; // 칸에 맞추기 간격 (m), 0이면 맞추지 않음
   const [showDims, setShowDims] = useState(false);
   const [resizing, setResizing] = useState(false);
   const [tidying, setTidying] = useState(false);
@@ -713,7 +717,7 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
       event.preventDefault();
       const els = docRef.current.geometry.elements.filter((e) => selectedIds.includes(e.id));
       if (els.length === 0) return;
-      const step = event.shiftKey ? 1 : snap ? 0.5 : 0.1;
+      const step = event.shiftKey ? 1 : snap || 0.1;
       replaceElements(
         els.map((el) => moveElement(el, dir[0] * step, dir[1] * step)),
         `${selectedIds.join(",")}:arrow`,
@@ -1075,10 +1079,28 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
             >
               {width} × {height} m
             </button>
-            <label className={ui.check}>
-              <input type="checkbox" checked={snap} onChange={(e) => setSnap(e.target.checked)} />
-              0.5m 칸에 맞추기
-            </label>
+            {/* 맞추기 켜고 끄기와 칸 크기는 한 덩어리로 (도구 줄이 넘쳐 줄이 바뀌어도 떨어지지 않게) */}
+            <span className={styles.snapGroup}>
+              <label className={ui.check}>
+                <input type="checkbox" checked={snapOn} onChange={(e) => setSnapOn(e.target.checked)} />
+                칸에 맞추기
+              </label>
+              <select
+                className={ui.select}
+                style={{ width: "auto", height: 32 }}
+                aria-label="칸 크기"
+                title="끌기·크기 바꾸기·방향키가 이 간격으로 움직여요 (Shift+방향키는 1 m)"
+                value={snapStep}
+                disabled={!snapOn}
+                onChange={(e) => setSnapStep(Number(e.target.value))}
+              >
+                {SNAP_STEPS.map((s) => (
+                  <option key={s} value={s}>
+                    {s} m
+                  </option>
+                ))}
+              </select>
+            </span>
             <label className={ui.check}>
               <input type="checkbox" checked={showDims} onChange={(e) => setShowDims(e.target.checked)} />
               치수 보기

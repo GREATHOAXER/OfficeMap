@@ -403,7 +403,7 @@ export default function ImportWizard({ mode, data, onClose, onExpired, onCreated
             source: "import",
             width_m: Math.max(MIN_SIZE, size.widthM),
             height_m: Math.max(MIN_SIZE, size.heightM),
-            geometry: { schema: 1, grid_m: 0.5, desk, elements: found?.elements ?? [] },
+            geometry: { schema: 1, grid_m: 0.1, desk, elements: found?.elements ?? [] },
           }),
         });
         if (res.status === 401) return onExpired();

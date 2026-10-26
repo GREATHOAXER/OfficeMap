@@ -101,7 +101,7 @@ export default function ScheduledView({ admin, data, setData, reload, showToast,
               zoom={zoom}
               onZoom={setZoom}
               tool="select"
-              snap
+              snap={0}
               readOnly
               selectedIds={selectedIds}
               live={data.live}

@@ -3,7 +3,9 @@
 
 import type { DeskGroup, PlanElement, PlanGeometry, PlanRect, SpaceKind } from "./api";
 
-export const GRID_M = 0.5;
+/** 칸에 맞추기 간격(m). 도면 편집기 도구 줄에서 고른다 (기본 0.1 m: 크기·위치를 10 cm 단위로) */
+export const SNAP_STEPS = [0.1, 0.5, 1] as const;
+export const DEFAULT_SNAP_M = 0.1;
 
 // 책상 기본 크기와 책상 사이 간격 (m). 서버(server/app/plan_geometry.py)와 같아야 한다.
 // 직원 화면은 좌석을 "책상 크기 ÷ 도면 크기" 비율로 그린다. 기본 책상을 50 × 30 m 도면에 두면 0.0533 × 0.0556
@@ -281,7 +283,9 @@ export function distributeElements(els: PlanElement[], axis: "x" | "y"): PlanEle
   return els.map((el) => moved.get(el.id) ?? el);
 }
 
-export const snapTo = (v: number, on: boolean) => (on ? Math.round(v / GRID_M) * GRID_M : Math.round(v * 100) / 100);
+/** 칸에 맞추기: step(m)의 배수로 (0.1 × 13 = 1.3000000000000003 같은 끝자리는 mm에서 자른다). step이 0이면 1 cm 단위 */
+export const snapTo = (v: number, step: number) =>
+  step > 0 ? Math.round(Math.round(v / step) * step * 1000) / 1000 : Math.round(v * 100) / 100;
 
 export function newId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;

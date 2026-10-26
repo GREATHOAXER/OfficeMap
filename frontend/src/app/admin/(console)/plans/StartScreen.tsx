@@ -132,7 +132,7 @@ export default function StartScreen({ admin, data, setData, reload, showToast, g
                   inputMode="decimal"
                   min={MIN_SIZE}
                   max={MAX_SIZE}
-                  step={0.5}
+                  step={0.1}
                   value={blank.w}
                   aria-invalid={!sizeOk || undefined}
                   onChange={(e) => setBlank({ ...blank, w: e.target.value })}
@@ -145,7 +145,7 @@ export default function StartScreen({ admin, data, setData, reload, showToast, g
                   inputMode="decimal"
                   min={MIN_SIZE}
                   max={MAX_SIZE}
-                  step={0.5}
+                  step={0.1}
                   value={blank.h}
                   aria-invalid={!sizeOk || undefined}
                   onChange={(e) => setBlank({ ...blank, h: e.target.value })}

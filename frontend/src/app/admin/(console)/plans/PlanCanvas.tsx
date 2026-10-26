@@ -49,6 +49,8 @@ const HANDLES: Handle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 const MOVE_THRESHOLD_PX = 3;
 const SNAP_PX = 10; // 선 벽 끝이 이음 자리에 붙는 거리 (화면 px)
 const MIN_SIZE_M = 0.3;
+/** 칸에 맞춘 두 끝의 차(크기)를 mm에서 자른다 (27.5 − 24.8 같은 뺄셈이 2.6999999999999993이 되지 않게) */
+const mm = (v: number) => Math.round(v * 1000) / 1000;
 const RULER_PX = 22; // 눈금자 두께
 const MIN_CANVAS_PX = 620; // 100%일 때 도면 폭의 하한 (좁은 화면에서는 옆으로 밀어서 본다)
 const DESK_READABLE_PX = 7; // 100%일 때 책상 번호 글자의 하한 (작은 책상이 많은 층은 도면을 넓힌다)
@@ -94,7 +96,8 @@ type Props = {
   zoom: number;
   onZoom: (zoom: number) => void;
   tool: Tool;
-  snap: boolean;
+  /** 칸에 맞추기 간격 (m). 0이면 맞추지 않는다 */
+  snap: number;
   readOnly: boolean;
   selectedIds: string[];
   live: PlanEditorData["live"];
@@ -119,7 +122,7 @@ type Props = {
 const fmt = (v: number) => String(Math.round(v * 100) / 100);
 
 /** 각도를 45도씩으로 맞춘다 (Shift). 가로·세로가 되면 남은 한 축은 칸에 맞춘다 */
-function angleSnap(from: Point, to: Point, snap: boolean): Point {
+function angleSnap(from: Point, to: Point, snap: number): Point {
   const len = Math.hypot(to.x - from.x, to.y - from.y);
   const step = Math.PI / 4;
   const angle = Math.round(Math.atan2(to.y - from.y, to.x - from.x) / step) * step;
@@ -381,8 +384,8 @@ export default function PlanCanvas(props: Props) {
       setDrawRect({
         x: Math.min(drag.start.x, end.x),
         y: Math.min(drag.start.y, end.y),
-        w: Math.abs(end.x - drag.start.x),
-        h: Math.abs(end.y - drag.start.y),
+        w: mm(Math.abs(end.x - drag.start.x)),
+        h: mm(Math.abs(end.y - drag.start.y)),
       });
     } else if (drag.kind === "move") {
       if (!drag.moved && Math.hypot(event.clientX - drag.px, event.clientY - drag.py) < MOVE_THRESHOLD_PX) return;
@@ -848,15 +851,15 @@ export function ZoomControls({ zoom, onZoom }: { zoom: number; onZoom: (zoom: nu
 }
 
 /** 손잡이로 크기 바꾸기. 반대쪽 모서리는 그대로 두고, 너무 작아지지 않게 */
-function resized(orig: RectElement, handle: Handle, dx: number, dy: number, snap: boolean): PlanElement {
+function resized(orig: RectElement, handle: Handle, dx: number, dy: number, snap: number): PlanElement {
   let { x, y, w, h } = orig;
   const right = x + w;
   const bottom = y + h;
   if (handle.includes("w")) x = Math.min(snapTo(orig.x + dx, snap), right - MIN_SIZE_M);
-  if (handle.includes("e")) w = Math.max(snapTo(right + dx, snap) - x, MIN_SIZE_M);
+  if (handle.includes("e")) w = Math.max(mm(snapTo(right + dx, snap) - x), MIN_SIZE_M);
   if (handle.includes("n")) y = Math.min(snapTo(orig.y + dy, snap), bottom - MIN_SIZE_M);
-  if (handle.includes("s")) h = Math.max(snapTo(bottom + dy, snap) - y, MIN_SIZE_M);
-  if (handle.includes("w")) w = right - x;
-  if (handle.includes("n")) h = bottom - y;
+  if (handle.includes("s")) h = Math.max(mm(snapTo(bottom + dy, snap) - y), MIN_SIZE_M);
+  if (handle.includes("w")) w = mm(right - x);
+  if (handle.includes("n")) h = mm(bottom - y);
   return { ...orig, x, y, w, h };
 }
