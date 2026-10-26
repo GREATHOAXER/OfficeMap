@@ -1447,3 +1447,10 @@ div.body[data-cols="3"] {
   align-items: center;
   gap: 6px;
 }
+
+/* 도구 줄의 "칸에 맞추기" + 칸 크기(0.1·0.5·1 m) */
+.snapGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

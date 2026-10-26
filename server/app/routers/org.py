@@ -18,7 +18,7 @@ from psycopg import Connection
 from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field, field_validator
 
-from app.admin_auth import CurrentAdmin
+from app.admin_auth import CurrentAdmin, is_company_wide
 from app.db import pool
 from app.routers.auth import client_info
 from app.security import hash_password
@@ -32,7 +32,7 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def _is_company(admin: dict[str, Any]) -> bool:
-    return any(g["role"] == "COMPANY_ADMIN" for g in admin["grants"])
+    return is_company_wide(admin["grants"])
 
 
 def _can_site(admin: dict[str, Any], site_id: int) -> bool:
@@ -716,7 +716,7 @@ def update_employee(emp_no: str, body: EmployeeUpdate, admin: CurrentAdmin, requ
             """,
             (emp_no,),
         ).fetchone()
-        if before is None or before["employment_status"] == "RETIRED":
+        if before is None or before["employment_status"] in ("RETIRED", "SYSTEM"):
             raise HTTPException(status_code=404, detail={"code": "EMPLOYEE_NOT_FOUND"})
         if before["id"] == admin["employee_id"] and fields.get("status") == "RETIRED":
             raise HTTPException(status_code=422, detail={"code": "CANNOT_RETIRE_SELF"})
@@ -757,7 +757,8 @@ def reset_password(emp_no: str, admin: CurrentAdmin, request: Request) -> dict[s
     password = _temp_password()
     with pool.connection() as conn:
         emp = conn.execute(
-            "SELECT id FROM employees WHERE emp_no = %s AND employment_status <> 'RETIRED'", (emp_no,)
+            "SELECT id FROM employees WHERE emp_no = %s AND employment_status NOT IN ('RETIRED', 'SYSTEM')",
+            (emp_no,),
         ).fetchone()
         if emp is None:
             raise HTTPException(status_code=404, detail={"code": "EMPLOYEE_NOT_FOUND"})

@@ -1,16 +1,31 @@
 import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import Link from "next/link";
-import PendingButton from "@/components/PendingButton";
-import { applyModeText, canEditPlan, canManage, canManageSite, LEVELS, PLAN_LABEL, ROLE_TASKS } from "@/lib/admin";
-import { type Admin, type AdminFloor, type AdminSite, ApiError, fetchAdmin, fetchAdminOverview } from "@/lib/api";
+import {
+  applyModeText,
+  canEditPlan,
+  canGrant,
+  canManage,
+  canManageSite,
+  isCompanyWide,
+  LEVELS,
+  PLAN_LABEL,
+  ROLE_TASKS,
+} from "@/lib/admin";
+import {
+  type Admin,
+  type AdminFloor,
+  type AdminGrant,
+  type AdminSite,
+  ApiError,
+  fetchAdmin,
+  fetchAdminOverview,
+} from "@/lib/api";
 import { kstDate, shortDate } from "@/lib/dates";
 import { redirectToAdminLogin } from "@/lib/expiredRedirect";
+import { GrantButton, GrantEditButton, type GrantPreset } from "./GrantActions";
 import { FloorButton, SiteButton } from "./SiteActions";
 import styles from "./admin.module.css";
-
-// 아직 화면이 없는 작업 버튼 (누르면 "준비 중" 말풍선)
-const Pending = PendingButton;
 
 /** 관리자 첫 화면 (디자인 ④ 사업장·층·권한): 사업장별 층 현황, 관리자 권한 체계와 관리자 목록 */
 export default async function AdminHomePage() {
@@ -26,7 +41,8 @@ export default async function AdminHomePage() {
   }
   const { admin, overview } = data;
   const { summary } = overview;
-  const isCompany = admin.role === "COMPANY_ADMIN";
+  // 최종·전사 관리자: 사업장·층 추가와 조직도
+  const isCompany = isCompanyWide(admin);
 
   // 전사 관리자는 전체 숫자, 그 아래 단계는 내 관리 범위 안의 숫자 (재직 직원·관리자 수는 전사만)
   const scoped = summary.scope !== "ALL";
@@ -87,12 +103,12 @@ export default async function AdminHomePage() {
           <span className={styles.muted}>현황은 전체를 보고, 편집은 맡은 범위 안에서만 해요</span>
         </p>
 
-        {/* 사업장·층 추가와 조직도는 전사 관리자만 할 수 있다 */}
-        <p className={styles.readyNote}>
-          {isCompany
-            ? "사업장·층 추가와 조직도 관리가 열렸어요. 점선 버튼(권한 부여 등)은 다음 단계에서 열려요."
-            : "점선 버튼(권한 부여 등)은 다음 단계에서 열려요."}
-        </p>
+        {admin.role === "SUPER_ADMIN" && (
+          <p className={styles.readyNote}>
+            최종 관리자(admin)로 들어왔어요. 1~4단계 관리자를 지정·편집하고 모든 관리 작업을 할 수 있어요. 처음
+            비밀번호를 쓰고 있다면 왼쪽 아래 계정 메뉴의 &ldquo;관리자 비밀번호 변경&rdquo;으로 바꿔 두세요.
+          </p>
+        )}
 
         <ul className={styles.stats} aria-label={scoped ? "내 관리 범위 현황" : "전체 현황"}>
           {stats.map((s) => (
@@ -112,12 +128,12 @@ export default async function AdminHomePage() {
           <div className={styles.sectionHead}>
             <h2 id="levels-title">관리자 권한 체계</h2>
             <span className={styles.muted}>
-              상위 관리자가 바로 아래 관리자를 지정 · 각자 맡은 범위 안에서만 편집 · 좌석·도면 조회는 직원 화면에서
-              누구나
+              상위 관리자가 맡은 범위 안의 아래 단계 관리자를 지정·편집 · 각자 맡은 범위 안에서만 편집 · 좌석·도면
+              조회는 직원 화면에서 누구나
             </span>
-            {admin.role !== "ZONE_ADMIN" && (
+            {canGrant(admin) && (
               <span className={styles.sectionAction}>
-                <Pending label="권한 부여" primary />
+                <GrantButton />
               </span>
             )}
           </div>
@@ -127,7 +143,7 @@ export default async function AdminHomePage() {
               return (
                 <li key={l.level} data-mine={mine || undefined}>
                   <span className="mono">
-                    LEVEL {l.level}
+                    {l.level === 0 ? "최종" : `LEVEL ${l.level}`}
                     {mine && <span className={styles.mineTag}>내 권한</span>}
                   </span>
                   <strong>{l.name}</strong>
@@ -163,8 +179,14 @@ export default async function AdminHomePage() {
                       <td data-label="사용자">
                         <strong>{g.employee.name}</strong> {g.employee.rank}
                         {me && <span className={styles.mineTag}>나</span>}
+                        {g.account.locked && (
+                          <span className={styles.accountTag} data-tone="danger">
+                            잠김
+                          </span>
+                        )}
+                        {g.account.temporary_password && <span className={styles.accountTag}>첫 로그인 전</span>}
                       </td>
-                      <td data-label="부서">{g.employee.department}</td>
+                      <td data-label="부서">{g.employee.department ?? "—"}</td>
                       <td data-label="역할">
                         <span className={styles.chip}>{g.label}</span>
                       </td>
@@ -172,7 +194,11 @@ export default async function AdminHomePage() {
                       <td data-label="가능 작업">{ROLE_TASKS[g.role]}</td>
                       <td data-label="변경 반영">{applyModeText(g)}</td>
                       <td data-label="지정한 사람">{g.granted_by ?? "—"}</td>
-                      <td className={styles.actions}>{canManage(admin, g) && <Pending label="편집" />}</td>
+                      <td className={styles.actions}>
+                        {canManage(admin, g) && (
+                          <GrantEditButton grant={g} canReset={canResetPassword(admin, g, overview.grants)} />
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
@@ -185,6 +211,21 @@ export default async function AdminHomePage() {
       </div>
     </main>
   );
+}
+
+/** 그 사람의 관리자 비밀번호를 초기화할 수 있나: 그 사람의 권한을 모두 내가 다룰 수 있을 때 (서버와 같은 규칙) */
+function canResetPassword(admin: Admin, target: AdminGrant, all: AdminGrant[]) {
+  if (target.employee.emp_no === admin.emp_no) return false;
+  return all.filter((g) => g.employee_id === target.employee_id).every((g) => canManage(admin, g));
+}
+
+/** 이 층에서 "+ 지정"으로 바로 줄 수 있는 권한: 층 관리자(사업장 관리자 이상), 아니면 구역 관리자(층 관리자) */
+function floorPreset(admin: Admin, siteId: number, floor: AdminFloor): GrantPreset | null {
+  const scope = { site_id: siteId, floor_id: floor.id };
+  if (canManage(admin, { level: 3, ...scope })) return { role: "FLOOR_ADMIN", siteId, floorId: floor.id };
+  if (floor.zones.length > 0 && canManage(admin, { level: 4, ...scope }))
+    return { role: "ZONE_ADMIN", siteId, floorId: floor.id };
+  return null;
 }
 
 function SiteSection({ site, admin, isCompany }: { site: AdminSite; admin: Admin; isCompany: boolean }) {
@@ -257,6 +298,7 @@ function SiteSection({ site, admin, isCompany }: { site: AdminSite; admin: Admin
               <FloorRow
                 key={floor.id}
                 floor={floor}
+                preset={floorPreset(admin, site.id, floor)}
                 siteWide={siteWide}
                 editPlan={canEditPlan(admin, { id: floor.id, siteId: site.id })}
                 edit={siteWide ? <FloorButton siteId={site.id} floors={site.floors} floor={floor} /> : null}
@@ -273,11 +315,14 @@ function SiteSection({ site, admin, isCompany }: { site: AdminSite; admin: Admin
  *  editPlan: 이 층 도면을 고칠 수 있다 (층 관리자 이상) */
 function FloorRow({
   floor,
+  preset,
   siteWide,
   editPlan,
   edit,
 }: {
   floor: AdminFloor;
+  /** "+ 지정"으로 바로 줄 권한 (내가 줄 수 없으면 null) */
+  preset: GrantPreset | null;
   siteWide: boolean;
   editPlan: boolean;
   /** 층 고치기 (사업장 관리자 이상) */
@@ -317,7 +362,21 @@ function FloorRow({
       </td>
       <td data-label="층 관리자">
         {admins || <span className={styles.muted}>미지정</span>}
-        {floor.zone_admins > 0 && <span className={styles.subLine}>구역 관리자 {floor.zone_admins}명</span>}
+        {floor.zone_admins > 0 ? (
+          <span className={styles.subLine}>구역 관리자 {floor.zone_admins}명</span>
+        ) : (
+          floor.zones.length > 0 && (
+            <span className={styles.subLine}>
+              구역 관리자 없음{floor.floor_admins.length > 0 ? " · 층 관리자가 맡음" : ""}
+            </span>
+          )
+        )}
+        {preset && (
+          <GrantButton
+            preset={preset}
+            label={preset.role === "FLOOR_ADMIN" ? "+ 층 관리자 지정" : "+ 구역 관리자 지정"}
+          />
+        )}
       </td>
       <td data-label="도면">
         <span className={styles.plan} data-plan={floor.plan}>

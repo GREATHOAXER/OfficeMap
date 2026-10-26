@@ -95,7 +95,7 @@ type Account = {
   name: string;
   rank: string | null;
   emp_no: string;
-  department: string;
+  department: string | null; // 최종 관리자(시스템 계정)는 부서가 없다
   roleLabel: string;
   photo?: string | null; // 내 정보 사진 (관리자 페이지에는 없음)
   scopes?: string[]; // 관리자: 맡은 범위
@@ -167,6 +167,7 @@ export default function AppShell(props: Props) {
           ...props.admin,
           roleLabel: props.admin.role_label,
           scopes: props.admin.grants.map((g) => `${g.label} · ${g.scope}`),
+          links: [{ label: "관리자 비밀번호 변경", href: "/admin/password", icon: <KeyIcon size={18} /> }],
           logout: { endpoint: "/api/admin/auth/logout", redirectTo: "/admin/login?reason=logout" },
         }
       : {
@@ -542,15 +543,13 @@ function UserCard({ account: user }: { account: Account }) {
       </span>
       <span className={styles.userText}>
         <strong>{user.name}</strong>
-        <span>
-          {user.department} · {user.roleLabel}
-        </span>
+        <span>{user.department ? `${user.department} · ${user.roleLabel}` : user.roleLabel}</span>
       </span>
       {/* 펼쳤을 때는 ⋯ 버튼, 접었을 때는 아바타가 계정 메뉴 버튼. 안 보이는 쪽은 CSS가 숨긴다 */}
       <button {...menuButtonProps} className={`${styles.iconButton} ${styles.userButton}`}>
         <MoreIcon />
       </button>
-      <button {...menuButtonProps} className={styles.avatarButton} title={`${user.name} · ${user.department}`}>
+      <button {...menuButtonProps} className={styles.avatarButton} title={user.department ? `${user.name} · ${user.department}` : user.name}>
         <Avatar name={user.name} photo={user.photo} />
       </button>
       {open &&

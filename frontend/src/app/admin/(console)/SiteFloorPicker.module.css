@@ -1,0 +1,59 @@
+/* 사업장 → 층 고르기 (도면 편집·좌석 배치 편집 머리줄) */
+.picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 사업장 버튼은 서로 붙이지 않고, 층 고르기와도 세로줄로 나눈다 */
+.sites {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-right: 8px;
+  border-right: 1px solid var(--divider);
+}
+
+.site {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.site:hover {
+  border-color: var(--ink);
+}
+
+.site[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fff;
+  font-weight: 600;
+}
+
+.floor {
+  height: 32px;
+  padding: 0 28px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+.only {
+  font-size: 13px;
+  font-weight: 600;
+}

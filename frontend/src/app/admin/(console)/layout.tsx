@@ -18,6 +18,11 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
     const expired = (await cookies()).has(ADMIN_COOKIE);
     redirect(loginUrl("/admin/login", headerList.get("x-pathname"), expired ? "expired" : null));
   }
+  // 권한을 받으며 임시 비밀번호를 받았으면 관리자 비밀번호부터 정한다 (그 전에는 다른 관리자 API가 막혀 있다)
+  if (admin.must_change_password) {
+    const here = headerList.get("x-pathname");
+    redirect(here && here !== "/admin" ? `/admin/password?next=${encodeURIComponent(here)}` : "/admin/password");
+  }
 
   const saved = (await cookies()).get(SIDEBAR_COOKIE)?.value;
   const collapsed = saved === "collapsed" ? true : saved === "expanded" ? false : null;

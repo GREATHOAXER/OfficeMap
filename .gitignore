@@ -4,6 +4,9 @@ __pycache__/
 *.pyc
 server/.env
 
+# 서버 배포 설정 (DB 비밀번호)
+deploy/.env
+
 # OS
 .DS_Store
 Thumbs.db

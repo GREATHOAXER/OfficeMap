@@ -43,12 +43,20 @@ def _error(status: int, code: str, **extra: Any) -> HTTPException:
 
 
 @router.get("/rooms/day")
-def rooms_day(user: CurrentUser, date: dt.date | None = None, site_id: int | None = None) -> dict[str, Any]:
-    """한 사업장 회의실들의 하루 예약 현황. 시간은 모두 서울 기준 그날 0시부터 분(start_min, end_min)."""
+def rooms_day(
+    user: CurrentUser, date: dt.date | None = None, site_id: int | None = None, floor_id: int | None = None
+) -> dict[str, Any]:
+    """한 사업장 회의실들의 하루 예약 현황. 시간은 모두 서울 기준 그날 0시부터 분(start_min, end_min).
+
+    사업장: site_id, 없으면 floor_id(도면의 회의실을 눌러 온 층)의 사업장, 그것도 없으면 내 자리가 있는 사업장.
+    사업장끼리는 섞지 않고, 화면이 사업장을 바꿀 수 있게 열려 있는 사업장 목록(sites)을 같이 준다."""
     now = dt.datetime.now(KST)
     day = date or now.date()
     with pool.connection() as conn:
         policy = _policy(conn)
+        if site_id is None and floor_id is not None:
+            row = conn.execute("SELECT site_id FROM floors WHERE id = %s AND is_active", (floor_id,)).fetchone()
+            site_id = row["site_id"] if row else None
         if site_id is None:  # 내 자리가 있는 사업장, 없으면 첫 사업장
             row = conn.execute(
                 """
@@ -65,6 +73,7 @@ def rooms_day(user: CurrentUser, date: dt.date | None = None, site_id: int | Non
         site = conn.execute("SELECT id, name FROM sites WHERE id = %s AND is_active", (site_id,)).fetchone()
         if site is None:
             raise _error(404, "SITE_NOT_FOUND")
+        sites = conn.execute("SELECT id, name FROM sites WHERE is_active ORDER BY sort_order, id").fetchall()
 
         rooms = conn.execute(
             """
@@ -111,6 +120,7 @@ def rooms_day(user: CurrentUser, date: dt.date | None = None, site_id: int | Non
         "now_min": now.hour * 60 + now.minute if day == now.date() else None,
         "past": day < now.date(),
         "site": site,
+        "sites": sites,
         "policy": policy,
         "rooms": [
             {

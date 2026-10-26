@@ -294,7 +294,8 @@ JOIN floors f ON f.name = v.floor_name;
 -- ⑤ 권한: 위 단계가 바로 아래 단계를 지정 --------------------------------------
 
 INSERT INTO admin_grants (employee_id, role, granted_by, granted_at)
-VALUES ((SELECT id FROM employees WHERE emp_no = '20090001'), 'COMPANY_ADMIN', NULL, '2026-09-01 09:00+09');
+VALUES ((SELECT id FROM employees WHERE emp_no = '20090001'), 'COMPANY_ADMIN',
+        (SELECT id FROM employees WHERE emp_no = 'admin'), '2026-09-01 09:00+09');
 INSERT INTO admin_grants (employee_id, role, site_id, granted_by, granted_at)
 VALUES ((SELECT id FROM employees WHERE emp_no = '20120002'), 'SITE_ADMIN', (SELECT id FROM sites WHERE name = '서울 본사'),
         (SELECT id FROM employees WHERE emp_no = '20090001'), '2026-09-01 09:10+09');
@@ -312,7 +313,7 @@ SELECT g.employee_id,
        '$2b$12$oqrqjAGZROKv0F//QSpNveyZFOBQz7sjAMJuSOMuSvHliUhwjqeC2',  -- officemap-admin
        g.granted_at, g.granted_by
 FROM admin_grants g
-WHERE g.revoked_at IS NULL;
+WHERE g.revoked_at IS NULL AND g.role <> 'SUPER_ADMIN';
 
 -- ④ 좌석 배정 ----------------------------------------------------------------
 

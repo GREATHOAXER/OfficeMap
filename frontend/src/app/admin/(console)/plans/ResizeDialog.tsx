@@ -61,7 +61,7 @@ export default function ResizeDialog({ width, height, onClose, onApply }: Props)
               inputMode="decimal"
               min={MIN_SIZE}
               max={MAX_SIZE}
-              step={0.5}
+              step={0.1}
               value={w}
               aria-invalid={!ok || undefined}
               onChange={(e) => {
@@ -78,7 +78,7 @@ export default function ResizeDialog({ width, height, onClose, onApply }: Props)
               inputMode="decimal"
               min={MIN_SIZE}
               max={MAX_SIZE}
-              step={0.5}
+              step={0.1}
               value={h}
               aria-invalid={!ok || undefined}
               onChange={(e) => {

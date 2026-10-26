@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import DatePicker from "@/components/DatePicker";
 import Dialog from "@/components/Dialog";
-import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from "@/components/icons";
+import { BuildingIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon } from "@/components/icons";
 import ReservationDetail from "@/components/ReservationDetail";
 import type { ReservationDetail as Detail, RoomDay, RoomsDay } from "@/lib/api";
 import { addDays, daysBetween, formatShortDay, kstDate, minToHHMM } from "@/lib/dates";
@@ -208,6 +208,11 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
     router.push(`/rooms?date=${iso}&site=${day.site.id}`, { scroll: false });
   }
 
+  /** 사업장 바꾸기: 그 사업장의 회의실만 보여 준다 (사업장끼리는 섞지 않는다) */
+  function goToSite(siteId: number) {
+    if (siteId !== day.site.id) router.push(`/rooms?date=${day.date}&site=${siteId}`, { scroll: false });
+  }
+
   function openForm() {
     setError(null);
     setSkipDates(null);
@@ -394,7 +399,24 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
       </header>
 
       <div className={styles.filters}>
-        <div className={styles.seg} role="group" aria-label="층">
+        {/* 사업장은 층 버튼과 붙이지 않고 서로 떨어진 버튼으로: 고른 사업장의 층·회의실만 아래에 보인다 */}
+        {day.sites.length > 1 && (
+          <div className={styles.sites} role="group" aria-label="사업장">
+            {day.sites.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className={styles.siteButton}
+                aria-pressed={s.id === day.site.id}
+                onClick={() => goToSite(s.id)}
+              >
+                <BuildingIcon size={16} />
+                {s.name}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className={styles.seg} role="group" aria-label={`${day.site.name} 층`}>
           <button type="button" aria-pressed={floorFilter === "all"} onClick={() => chooseFloor("all")}>
             전체 층
           </button>

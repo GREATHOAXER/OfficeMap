@@ -86,6 +86,50 @@
   padding: 12px 24px 0;
 }
 
+/* 사업장: 한 덩어리로 붙은 층 버튼(.seg)과 달리 버튼마다 떨어뜨리고, 층 버튼과도 세로줄로 나눈다 */
+.sites {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-right: 16px;
+  border-right: 1px solid var(--divider);
+}
+
+.siteButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.siteButton:hover {
+  border-color: var(--ink);
+}
+
+.siteButton[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fff;
+  font-weight: 600;
+}
+
+@media (max-width: 720px) {
+  .sites {
+    flex-basis: 100%;
+    padding-right: 0;
+    border-right: 0;
+  }
+}
+
 .seg {
   display: inline-flex;
   flex-wrap: wrap;

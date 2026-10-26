@@ -43,7 +43,7 @@ export default function AdminLoginForm({ supportContact, maxFailedCount, next, k
     const form = new FormData(event.currentTarget);
     const empNo = String(form.get("empNo") ?? "").trim();
     const password = String(form.get("password") ?? "");
-    const invalid = checkInput(empNo, password);
+    const invalid = checkInput(empNo, password, false);
     if (invalid) {
       setError(invalid);
       (invalid.code === "EMPTY_PASSWORD" ? passwordRef : empNoRef).current?.focus();
@@ -95,7 +95,8 @@ export default function AdminLoginForm({ supportContact, maxFailedCount, next, k
           className="mono"
           placeholder="예: 20231234"
           autoComplete="username"
-          inputMode="numeric"
+          autoCapitalize="none"
+          spellCheck={false}
           maxLength={20}
           defaultValue={knownEmpNo ?? undefined}
           aria-invalid={empNoError || undefined}

@@ -20,18 +20,20 @@ CREATE TABLE employees (
     id                bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     emp_no            varchar(20)  NOT NULL UNIQUE,      -- 사번
     name              varchar(50)  NOT NULL,
-    department_id     bigint       NOT NULL REFERENCES departments(id),
+    department_id     bigint       REFERENCES departments(id),  -- 시스템 계정(최종 관리자)만 비어 있다
     rank_name         varchar(30),                       -- 직급: 대리, 과장, 차장
     position_name     varchar(30),                       -- 직책: 팀장 등
     email             varchar(100),
     extension         varchar(20),                       -- 내선
     mobile            varchar(20),                       -- 화면 비노출. MVP에서는 받지 않는 것을 권장
     photo_path        varchar(255),
+    -- SYSTEM: 사람이 아닌 시스템 계정(최종 관리자 admin). 직원 화면·조직도·검색에 나오지 않는다
     employment_status varchar(10)  NOT NULL DEFAULT 'ACTIVE'
-                      CHECK (employment_status IN ('ACTIVE', 'LEAVE', 'RETIRED')),
+                      CHECK (employment_status IN ('ACTIVE', 'LEAVE', 'RETIRED', 'SYSTEM')),
     hired_on          date,
     created_at        timestamptz  NOT NULL DEFAULT now(),
-    updated_at        timestamptz  NOT NULL DEFAULT now()
+    updated_at        timestamptz  NOT NULL DEFAULT now(),
+    CHECK (department_id IS NOT NULL OR employment_status = 'SYSTEM')
 );
 CREATE INDEX employees_department_id_idx ON employees (department_id);
 CREATE INDEX employees_name_idx ON employees (name);  -- 이름 검색, 동명이인

@@ -3,7 +3,7 @@
 v0 (목업): {"walls": [rect], "pillars": [{x, y}], "spaces": [{kind, label, x, y, w, h}]}. 좌표는 도면 대비 비율(0~1).
     좌석·회의실은 seats·meeting_rooms 테이블에만 있다.
 
-v1 (도면 편집기): {"schema": 1, "grid_m": 0.5, "desk": {w, h}?, "elements": [...]}. 좌표는 미터.
+v1 (도면 편집기): {"schema": 1, "grid_m": 0.1, "desk": {w, h}?, "elements": [...]}. 좌표는 미터.
     wall        {id, type, x, y, w, h, line_w?}                벽 (사각형 테두리). 가늘고 길게 그리면 칸막이
     wall_line   {id, type, x, y, x2, y2, line_w?}              벽 (선). (x, y)에서 (x2, y2)까지, 굵기 line_w
     pillar      {id, type, x, y, w, h}                         기둥
@@ -25,7 +25,7 @@ import re
 from typing import Any
 
 SCHEMA = 1
-GRID_M = 0.5
+GRID_M = 0.1  # 편집기의 기본 칸 맞추기 간격 (m). 편집기에서 0.1·0.5·1 m를 고른다
 
 # 책상 기본 크기와 책상 사이 간격 (m). 화면(frontend/src/lib/planGeometry.ts)과 같아야 한다
 DESK_W = 2.665

@@ -120,16 +120,16 @@ export default function PlanShapes({ geometry, width_m, height_m }: Props) {
 }
 
 const NICE = [1, 2, 5, 10, 20, 50, 100];
+const SCALE_MIN_PX = 44; // 축척 막대가 이보다 짧으면 다음 길이로
 
-/** 축척 막대: 도면 폭의 10~20% 안팎인 깔끔한 길이 (예: 5 m)와 도면 전체 크기 */
-export function ScaleBar({ width_m, height_m }: { width_m: number; height_m: number }) {
-  const length = NICE.find((n) => n / width_m >= 0.08) ?? NICE[NICE.length - 1];
+/** 축척 막대: 도면 아래 범례 줄에 두고(도면 위에 겹쳐 그리지 않는다), 지금 배율에서 1 m가 pxPerMeter px일 때
+ *  44 px 이상이 되는 가장 짧은 깔끔한 길이(1·2·5·10… m)를 그린다. 확대·축소하면 길이가 따라 바뀐다 */
+export function ScaleLegend({ pxPerMeter }: { pxPerMeter: number }) {
+  const meters = NICE.find((n) => n * pxPerMeter >= SCALE_MIN_PX) ?? NICE[NICE.length - 1];
   return (
-    <div className={styles.scaleBar} aria-label={`축척: 막대 하나 ${length} m, 도면 ${width_m} × ${height_m} m`}>
-      <i style={{ width: cqw(length / width_m) }} aria-hidden="true" />
-      <span>
-        {length} m · 도면 {width_m} × {height_m} m
-      </span>
-    </div>
+    <span className={styles.scaleLegend} aria-label={`축척: 막대 하나 ${meters} m`}>
+      <i style={{ width: Math.round(meters * pxPerMeter) }} aria-hidden="true" />
+      {meters} m
+    </span>
   );
 }

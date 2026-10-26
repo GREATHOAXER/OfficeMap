@@ -47,6 +47,7 @@ import {
   toPanel,
   unassign,
 } from "@/lib/seating";
+import SiteFloorPicker from "../SiteFloorPicker";
 import SeatingCanvas, { type SeatView } from "./SeatingCanvas";
 import ZoneDialog, { type ZoneDialogState } from "./ZoneDialog";
 import styles from "./seating.module.css";
@@ -920,23 +921,15 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
   else status = changeCount ? `미반영 변경 ${changeCount}건 · 자동 저장됨` : "변경 없음";
 
   const floorCard = data.floors.length > 1 && (
-    <section className={styles.card}>
-      <label className={styles.cardTitle} htmlFor="seating-floor">
-        층
-      </label>
-      <select
-        id="seating-floor"
-        className={styles.select}
+    <section className={styles.card} aria-labelledby="seating-floor-title">
+      <h2 id="seating-floor-title" className={styles.cardTitle}>
+        사업장 · 층
+      </h2>
+      <SiteFloorPicker
+        floors={data.floors.map((f) => ({ ...f, note: f.mode === "ZONE" ? " (내 구역)" : "" }))}
         value={floorId}
-        onChange={(event) => void goFloor(Number(event.target.value))}
-      >
-        {data.floors.map((f) => (
-          <option key={f.id} value={f.id}>
-            {f.site} {f.name}
-            {f.mode === "ZONE" ? " (내 구역)" : ""}
-          </option>
-        ))}
-      </select>
+        onChange={(id) => void goFloor(id)}
+      />
     </section>
   );
   const toolChoices: [Tool, string][] = [
