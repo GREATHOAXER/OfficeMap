@@ -65,6 +65,7 @@ function storeConversation(id: number | null) {
 
 export default function AiPanel({ onClose }: { onClose: () => void }) {
   const router = useRouter();
+  const panelRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -95,6 +96,35 @@ export default function AiPanel({ onClose }: { onClose: () => void }) {
     return () => {
       live = false;
       abortRef.current?.abort();
+    };
+  }, []);
+
+  // 좁은 화면(휴대폰)에서는 화면 가득 띄운다 (office.module.css .ai). iPhone은 키보드가 올라와도 화면 높이는 그대로라
+  // 보이는 영역(visualViewport)에 패널을 맞춰야 입력칸이 키보드 위에 남는다. 그동안 뒤 화면은 스크롤되지 않게 막는다
+  useEffect(() => {
+    const panel = panelRef.current;
+    const narrow = window.matchMedia("(max-width: 720px)");
+    const vv = window.visualViewport;
+    if (!panel) return;
+    function fit() {
+      if (narrow.matches && vv) {
+        panel!.style.setProperty("--vv-h", `${vv.height}px`);
+        panel!.style.setProperty("--vv-top", `${vv.offsetTop}px`);
+      } else {
+        panel!.style.removeProperty("--vv-h");
+        panel!.style.removeProperty("--vv-top");
+      }
+      document.documentElement.style.overflow = narrow.matches ? "hidden" : "";
+    }
+    fit();
+    vv?.addEventListener("resize", fit);
+    vv?.addEventListener("scroll", fit);
+    narrow.addEventListener("change", fit);
+    return () => {
+      vv?.removeEventListener("resize", fit);
+      vv?.removeEventListener("scroll", fit);
+      narrow.removeEventListener("change", fit);
+      document.documentElement.style.overflow = "";
     };
   }, []);
 
@@ -205,6 +235,7 @@ export default function AiPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <aside
+      ref={panelRef}
       id="ai-panel"
       className={styles.ai}
       aria-labelledby="ai-title"

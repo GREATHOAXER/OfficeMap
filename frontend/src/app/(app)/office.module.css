@@ -1991,8 +1991,19 @@
     position: static;
   }
 
+  /* 좁은 화면: AI 도우미는 화면 가득 띄운다 (도면 아래에 열면 단추를 눌러도 아무 일 없는 것처럼 보인다).
+     높이·위치는 키보드에 가려지지 않게 보이는 영역에 맞춘다 (AiPanel.tsx가 --vv-h, --vv-top을 넣는다) */
   .ai {
-    height: min(640px, calc(100dvh - 160px));
+    position: fixed;
+    z-index: 65;
+    top: var(--vv-top, 0px);
+    left: 0;
+    right: 0;
+    height: var(--vv-h, 100dvh);
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
 
   .hint {
