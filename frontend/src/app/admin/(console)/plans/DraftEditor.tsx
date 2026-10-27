@@ -138,6 +138,8 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
   const [conflict, setConflict] = useState<{ revision: number } | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [discarding, setDiscarding] = useState(false);
+  // 왼쪽 메뉴 "도면 편집"을 다시 눌렀다: 묻고 첫 화면(층 고르기)으로. unsaved: 마지막 변경을 저장하지 못했다
+  const [leaving, setLeaving] = useState<{ href: string; unsaved: boolean } | null>(null);
   const [exporting, setExporting] = useState(false);
   const [busy, setBusy] = useState(false);
   const pageRef = useRef<HTMLDivElement>(null);
@@ -250,6 +252,38 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, []);
+
+  // 편집 중에 다른 화면으로 가는 링크: "도면 편집" 첫 화면이면 한 번 묻고, 다른 메뉴면 고친 것을 먼저 저장하고 간다
+  // (자동 저장은 마지막 변경 뒤 잠깐 기다렸다 하므로, 바로 떠나면 그 변경이 저장되지 않는다)
+  useEffect(() => {
+    function onClick(event: MouseEvent) {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; // 새 탭·새 창
+      const link = (event.target as Element | null)?.closest?.("a[href]");
+      if (!(link instanceof HTMLAnchorElement) || (link.target && link.target !== "_self") || link.download) return;
+      const url = new URL(link.href);
+      if (url.origin !== window.location.origin) return;
+      const href = url.pathname + url.search + url.hash;
+      const home = url.pathname === "/admin/plans" && !url.searchParams.has("floor");
+      if (!home && !dirtyRef.current && !inflight.current) return;
+      // 앱의 링크 처리(Next.js)보다 먼저 받아서 멈춘다
+      event.preventDefault();
+      event.stopPropagation();
+      if (home) setLeaving({ href, unsaved: false });
+      else void flush().then(() => router.push(href));
+    }
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, [flush, router]);
+
+  async function leaveToHome() {
+    if (!leaving) return;
+    if (!leaving.unsaved && !(await flush())) {
+      setLeaving({ ...leaving, unsaved: true });
+      return;
+    }
+    router.push(leaving.href);
+  }
 
   /** 서버의 초안으로 화면을 다시 맞춘다 (넘겨받기·충돌에서 다시 불러오기·보기 전용 새로 읽기) */
   const adopt = useCallback((fresh: PlanEditorData) => {
@@ -1272,6 +1306,40 @@ export default function DraftEditor({ admin, data, reload, showToast, goFloor, n
           onClose={() => setExporting(false)}
         />
       )}
+
+      <Dialog
+        open={leaving !== null}
+        onClose={() => setLeaving(null)}
+        title="도면 편집 첫 화면으로 갈까요?"
+        footer={
+          <>
+            <button type="button" className={ui.btn} onClick={() => setLeaving(null)}>
+              계속 편집
+            </button>
+            <button
+              type="button"
+              className={`${ui.btn} ${leaving?.unsaved ? ui.danger : ui.pri}`}
+              onClick={() => void leaveToHome()}
+            >
+              {leaving?.unsaved ? "저장하지 않고 나가기" : "첫 화면으로"}
+            </button>
+          </>
+        }
+      >
+        <div className={ui.dialogBody}>
+          {leaving?.unsaved ? (
+            <p role="alert">
+              마지막으로 고친 내용을 저장하지 못했어요 ({save.state === "error" ? save.message : "저장 중"}). 지금
+              나가면 그 변경은 사라져요.
+            </p>
+          ) : (
+            <p>
+              {data.floor.site.name} {data.floor.name} 초안 편집을 닫고 층 고르기 화면으로 가요. 고친 내용은 초안에 자동
+              저장되고, 첫 화면에서 이 층을 다시 고르면 이어서 고칠 수 있어요. 직원 화면은 게시하기 전까지 그대로예요.
+            </p>
+          )}
+        </div>
+      </Dialog>
 
       <Dialog
         open={discarding}

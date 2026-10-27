@@ -11,17 +11,18 @@ export type SnapTargets = { points: Pt[]; segs: Seg[] };
 /** point: 끝점·모서리에 붙음, edge: 선 위에 붙음, axis: 다른 점과 가로·세로 줄을 맞춤 */
 export type Snapped = Pt & { kind: "point" | "edge" | "axis" | "none"; guides: Seg[] };
 
-const r2 = (v: number) => Math.round(v * 100) / 100;
+// 붙인 자리는 1 mm 단위로: cm로 반올림하면 벽 가운데선(굵기 25 cm면 끝이 12.5 cm)과 몇 mm 어긋나서 확대하면 이음매가 보인다
+const mm = (v: number) => Math.round(v * 1000) / 1000;
 const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y);
 const SAME_M = 0.015; // 이만큼 가까우면 같은 점 (이어진 끝)
 
 /** 벽(사각형) 띠의 가운데 선. 선 벽이 여기서 끝나면 네모 끝이 벽 밖으로 삐져나오지 않는다 */
 function wallCenter(el: Extract<PlanElement, { type: "wall" }>): Pt[] {
   const t = Math.min(el.line_w ?? DEFAULT_LINE.wall ?? 0.3, el.w / 2, el.h / 2) / 2;
-  const x1 = r2(el.x + t);
-  const y1 = r2(el.y + t);
-  const x2 = r2(el.x + el.w - t);
-  const y2 = r2(el.y + el.h - t);
+  const x1 = mm(el.x + t);
+  const y1 = mm(el.y + t);
+  const x2 = mm(el.x + el.w - t);
+  const y2 = mm(el.y + el.h - t);
   return [
     { x: x1, y: y1 },
     { x: x2, y: y1 },
@@ -113,7 +114,7 @@ export function snapPoint(
     bd = dist(f, p);
     edge = f;
   }
-  if (edge) return { x: r2(edge.x), y: r2(edge.y), kind: "edge", guides: [] };
+  if (edge) return { x: mm(edge.x), y: mm(edge.y), kind: "edge", guides: [] };
 
   // 가로·세로 줄 맞춤: 반대쪽 끝을 먼저 본다 (곧은 선)
   let rx: Pt | null = null;
@@ -320,7 +321,7 @@ export function tidyWalls(elements: PlanElement[], opts: TidyOptions): TidyResul
       const v = pinned.length
         ? pinned.reduce((s, x) => s + x, 0) / pinned.length
         : g.reduce((s, c) => s + center.get(c)![axis], 0) / g.length;
-      for (const c of g) out.set(c, r2(v));
+      for (const c of g) out.set(c, mm(v));
     }
     return out;
   };

@@ -8,7 +8,21 @@ from app.db import pool
 from app.db_check import log_problems
 from app.jobs import jobs
 from app.realtime import hub
-from app.routers import admin, auth, employees, grants, moves, office, org, plans, presence, profile, rooms, seating
+from app.routers import (
+    admin,
+    auth,
+    employees,
+    grants,
+    moves,
+    office,
+    org,
+    personnel,
+    plans,
+    presence,
+    profile,
+    rooms,
+    seating,
+)
 
 
 @asynccontextmanager
@@ -37,6 +51,7 @@ app.include_router(plans.router)
 app.include_router(moves.router)
 app.include_router(profile.router)
 app.include_router(org.router)
+app.include_router(personnel.router)
 
 
 @app.get("/api/health")

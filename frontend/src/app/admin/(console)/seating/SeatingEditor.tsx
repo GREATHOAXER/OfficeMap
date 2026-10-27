@@ -88,10 +88,11 @@ function noteOf(p: UnassignedPerson): string {
   return "자리 없음";
 }
 
-type Props = { admin: Admin; initial: SeatingData; notice: string | null };
+/** reviewId: 승인함(관리자 첫 화면)의 "배치도에서 검토"로 들어오면 그 요청을 바로 검토한다 */
+type Props = { admin: Admin; initial: SeatingData; notice: string | null; reviewId?: number | null };
 
 /** ⑤ 좌석 배치 편집: 끌어다 놓아 배치하고, 작업 묶음으로 모아 한 번에 반영(또는 승인 요청)한다 */
-export default function SeatingEditor({ admin, initial, notice }: Props) {
+export default function SeatingEditor({ admin, initial, notice, reviewId = null }: Props) {
   const router = useRouter();
   const [data, setData] = useState(initial);
   const floorId = data.floor.id;
@@ -769,6 +770,13 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
     setReview((await res.json()) as ChangeSet);
   }
 
+  useEffect(() => {
+    const row = initial.requests.find((r) => r.id === reviewId && r.can_review);
+    if (!row) return;
+    const timer = setTimeout(() => void openReview(row));
+    return () => clearTimeout(timer);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- 처음 열 때 한 번만
+
   async function approve() {
     if (!review) return;
     setBusy(true);
@@ -989,7 +997,11 @@ export default function SeatingEditor({ admin, initial, notice }: Props) {
           {data.floor.name} 팀 구역 · 관리자
         </h2>
         {perms.mode === "FLOOR" && !readOnly && (
-          <button type="button" className={styles.linkButton} onClick={() => setZoneDialog({ mode: "create" })}>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.headBtn}`}
+            onClick={() => setZoneDialog({ mode: "create" })}
+          >
             + 팀 구역 추가
           </button>
         )}

@@ -1,6 +1,7 @@
 """서버 안에서 도는 정기 작업.
 
-- 1분마다: 날짜가 된 도면 게시 예약을 게시한다 (routers/plans.py의 apply_due_plans)
+- 1분마다: 날짜가 된 도면 게시 예약을 게시하고 (routers/plans.py의 apply_due_plans),
+  날짜가 된 인사이동 예약을 반영한다 (routers/personnel.py의 apply_due_personnel)
 - 하루 한 번: 보관 기간(5년)이 지난 이력을 지운다 (db/schema/09_retention.sql의 purge_history)
 
 서버를 여러 개 띄워도 한 번에 하나만 돌도록 DB 잠금(pg_try_advisory_lock)을 잡는다.
@@ -14,6 +15,7 @@ import time
 import psycopg
 
 from app.db import pool
+from app.routers.personnel import apply_due_personnel
 from app.routers.plans import apply_due_plans
 
 log = logging.getLogger(__name__)
@@ -62,6 +64,8 @@ class Jobs:
             try:
                 for result in apply_due_plans():
                     log.info("예약한 도면 게시: v%s", result["version"])
+                for result in apply_due_personnel():
+                    log.info("예약한 인사이동 반영: %s", result["title"])
                 if self._last_purge is None or time.monotonic() - self._last_purge >= PURGE_EVERY_SECONDS:
                     with pool.connection() as conn:
                         result = conn.execute("SELECT purge_history() AS result").fetchone()["result"]

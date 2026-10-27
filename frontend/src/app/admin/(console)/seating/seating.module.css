@@ -113,6 +113,13 @@
   color: var(--link);
 }
 
+/* 카드 머리줄 오른쪽의 작은 단추 (예: + 팀 구역 추가). 제목이 길면 제목이 줄을 바꾼다 */
+.headBtn {
+  flex: none;
+  height: 30px;
+  padding: 0 10px;
+}
+
 .linkButton {
   margin-left: 4px;
   padding: 0;

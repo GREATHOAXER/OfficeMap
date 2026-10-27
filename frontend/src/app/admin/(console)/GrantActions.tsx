@@ -262,6 +262,12 @@ function RoleScopeFields({
             />{" "}
             즉시 반영
           </label>
+          {choice.applyMode === "NEEDS_APPROVAL" && (
+            <span className={ui.hint}>
+              구역 관리자가 올린 변경은 그 층의 층 관리자 이상(층·사업장·전사·최종 관리자)이 관리자 첫 화면의 승인함에서
+              승인하면 반영돼요.
+            </span>
+          )}
         </fieldset>
       )}
     </>

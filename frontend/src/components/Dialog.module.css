@@ -6,6 +6,10 @@
   border-radius: 12px;
   background: var(--surface);
   color: var(--ink);
+  /* 표의 "편집" 칸(오른쪽 정렬·줄바꿈 안 함) 안에서 열려도 그 글자 설정을 물려받지 않게 */
+  font-weight: 400;
+  text-align: start;
+  white-space: normal;
 }
 
 /* 예약 폼: 화면이 넓을수록 넓게 (안의 폼은 폭에 따라 한 단 / 두 단) */

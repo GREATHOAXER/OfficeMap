@@ -15,7 +15,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
-import { hasPlanRole } from "@/lib/admin";
+import { hasPlanRole, isCompanyWide } from "@/lib/admin";
 import type { Admin, SiteSummary, User } from "@/lib/api";
 import { SIDEBAR_COOKIE } from "@/lib/sidebar";
 import {
@@ -36,6 +36,7 @@ import {
   PersonIcon,
   ShieldIcon,
   SparkleIcon,
+  TransferIcon,
   TruckIcon,
 } from "./icons";
 import Avatar from "./Avatar";
@@ -76,6 +77,8 @@ function consoleMenu(admin: Admin): MenuGroup[] {
               { label: "팀 이사", icon: <TruckIcon />, href: "/admin/moves" },
             ]
           : []),
+        // 인사이동(여러 사람의 소속을 엑셀로 한 번에)은 조직도처럼 최종·전사 관리자만
+        ...(isCompanyWide(admin) ? [{ label: "인사이동", icon: <TransferIcon />, href: "/admin/personnel" }] : []),
       ],
     },
   ];
