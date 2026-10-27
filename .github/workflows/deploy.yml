@@ -59,6 +59,39 @@ jobs:
     outputs:
       sha: ${{ steps.sha.outputs.sha }}
     steps:
+      # 빌드하기 전에 배포에 쓰는 저장소 변수가 다 있는지 본다 (빠졌으면 어디에 넣을지 알려 주고 멈춘다)
+      - name: 배포 설정 확인
+        env:
+          AWS_REGION_VALUE: ${{ vars.AWS_REGION }}
+          AWS_ROLE_ARN_VALUE: ${{ vars.AWS_ROLE_ARN }}
+          EC2_INSTANCE_ID_VALUE: ${{ vars.EC2_INSTANCE_ID }}
+          # 같은 이름을 Secrets 탭에 넣었는지 (값은 보지 않는다)
+          IN_SECRETS: >-
+            ${{ (secrets.AWS_REGION != '' || secrets.AWS_ROLE_ARN != '' || secrets.EC2_INSTANCE_ID != '') && 'yes' || '' }}
+        run: |
+          problems=()
+          [[ -n "$AWS_REGION_VALUE" ]] || problems+=("AWS_REGION이 없어요 (예: ap-northeast-2)")
+          [[ -n "$AWS_ROLE_ARN_VALUE" ]] || problems+=("AWS_ROLE_ARN이 없어요 (예: arn:aws:iam::123456789012:role/officemap-github-deploy)")
+          [[ -n "$EC2_INSTANCE_ID_VALUE" ]] || problems+=("EC2_INSTANCE_ID가 없어요 (예: i-0123456789abcdef0)")
+          if [[ -n "$AWS_REGION_VALUE" && ! "$AWS_REGION_VALUE" =~ ^[a-z]{2}(-[a-z]+)+-[0-9]$ ]]; then
+            problems+=("AWS_REGION 모양이 이상해요: '$AWS_REGION_VALUE' (예: ap-northeast-2, 앞뒤 빈칸·따옴표 없이)")
+          fi
+          if [[ -n "$AWS_ROLE_ARN_VALUE" && ! "$AWS_ROLE_ARN_VALUE" =~ ^arn:aws:iam::[0-9]{12}:role/.+$ ]]; then
+            problems+=("AWS_ROLE_ARN 모양이 이상해요 (arn:aws:iam::<계정ID 12자리>:role/<역할 이름>, 앞뒤 빈칸·따옴표 없이)")
+          fi
+          if [[ -n "$EC2_INSTANCE_ID_VALUE" && ! "$EC2_INSTANCE_ID_VALUE" =~ ^i-[0-9a-f]+$ ]]; then
+            problems+=("EC2_INSTANCE_ID 모양이 이상해요: '$EC2_INSTANCE_ID_VALUE' (i-로 시작)")
+          fi
+          if (( ${#problems[@]} )); then
+            for p in "${problems[@]}"; do echo "::error title=배포 설정::$p"; done
+            echo "::error title=넣는 곳::Settings → Secrets and variables → Actions → Variables 탭 → Repository variables (docs/cicd.md 3)"
+            [[ -z "$IN_SECRETS" ]] ||
+              echo "::error title=Secrets 탭에 있음::같은 이름이 Secrets 탭에 있어요. 이 값들은 비밀이 아니라서 Variables 탭에 넣어야 읽혀요"
+            echo "::notice::Environments → production 안에 넣은 변수는 이 단계에서 보이지 않아요. 저장소 변수(Repository variables)로 넣으세요"
+            echo "::notice::AWS 쪽을 아직 만들지 않았다면 변수 DEPLOY_ENABLED를 false로 두고 docs/cicd.md 1~3을 먼저 하세요"
+            exit 1
+          fi
+          echo "배포 설정 확인: $AWS_REGION_VALUE · ${AWS_ROLE_ARN_VALUE##*/} · $EC2_INSTANCE_ID_VALUE"
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref || github.sha }}

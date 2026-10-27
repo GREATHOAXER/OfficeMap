@@ -114,6 +114,7 @@ AWS 콘솔 → **Systems Manager → Fleet Manager**에 `officemap-app`이 "온�
 
 | 증상 | 확인 |
 |---|---|
+| 이미지 빌드: "배포 설정" 오류, 또는 `Input required and not supplied: aws-region` | 저장소 변수 `AWS_REGION`·`AWS_ROLE_ARN`·`EC2_INSTANCE_ID`가 없거나 다른 곳에 있음. **Variables 탭**(Secrets 탭 아님)의 **Repository variables**(Environments → production 안 아님)에 넣습니다. AWS 쪽(1)을 아직 안 했으면 `DEPLOY_ENABLED`를 `false`로 |
 | 이미지 빌드: `Not authorized to perform sts:AssumeRoleWithWebIdentity` | main이 아닌 브랜치에서 Run workflow를 눌렀거나, 역할의 신뢰 정책에 적힌 저장소 이름(`GREATHOAXER/OfficeMap`, 대소문자까지)이 다름. 저장소 이름을 바꿨으면 `github-oidc-trust.json`을 고치고 1을 다시 |
 | 이미지 빌드가 "Waiting for a runner"에서 오래 멈춤 | arm 러너는 공개 저장소에서만 무료. 저장소를 비공개로 바꿨다면 변수 `BUILD_RUNNER=ubuntu-24.04` |
 | 서버에 올리기: "SSM 명령을 보내지 못했어요" / `InvalidInstanceId` | Fleet Manager에 인스턴스가 온라인인지 (2의 `snap restart`), `EC2_INSTANCE_ID`·`AWS_REGION` |
