@@ -79,6 +79,23 @@ textarea {
   color: inherit;
 }
 
+/* 고르기 칸(select)은 운영체제마다 모양이 달라서(맥·iPhone은 위아래 화살표 알약, 윈도는 회색 단추) 기본 모양을 끄고
+   같은 꺾쇠를 그린다. 화면마다 정한 배경(background 한꺼번에 쓰기)·안쪽 여백보다 앞서야 해서 이 몇 가지만 !important */
+select:not([multiple]) {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231c1c1c' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 10px center !important;
+  background-size: 14px !important;
+  padding-right: 32px !important;
+  text-overflow: ellipsis;
+}
+
+select:not([multiple]):disabled {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a3a3a0' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+}
+
 /* iPhone Safari는 글자가 16px보다 작은 입력칸을 누르면 화면을 확대하고, 다 쓴 뒤에도 그대로 둔다.
    그러면 화면 오른쪽이 잘려 보이고, 도면 위에서는 두 손가락이 도면 배율을 바꿔 되돌리기도 어렵다.
    손가락으로 쓰는 기기에서만 입력칸 글자를 16px 이상으로 (화면마다 작게 정한 크기보다 앞서야 해서 !important) */
@@ -88,6 +105,12 @@ textarea {
   textarea {
     font-size: max(16px, 1em) !important;
   }
+}
+
+/* 체크·라디오 칸은 운영체제 기본색(맥은 파랑, 윈도는 짙은 파랑, 안드로이드는 초록 등) 대신 서비스의 검정 */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--ink);
 }
 
 a {

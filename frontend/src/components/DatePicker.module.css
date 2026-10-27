@@ -7,7 +7,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  height: 36px;
+  height: 40px; /* 옆의 시간 고르기 칸·예약하기 단추와 같은 높이 */
   padding: 0 12px;
   border: 1px solid var(--ink);
   border-radius: 6px;

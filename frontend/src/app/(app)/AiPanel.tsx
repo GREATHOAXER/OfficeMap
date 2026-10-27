@@ -63,10 +63,11 @@ function storeConversation(id: number | null) {
   }
 }
 
-export default function AiPanel({ onClose }: { onClose: () => void }) {
+/** asPage: 패널이 도면 아래로 내려가는 좁은 화면이라 도면 화면 대신 이 화면만 보일 때 (페이지째 스크롤) */
+export default function AiPanel({ onClose, asPage = false }: { onClose: () => void; asPage?: boolean }) {
   const router = useRouter();
-  const panelRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -99,40 +100,17 @@ export default function AiPanel({ onClose }: { onClose: () => void }) {
     };
   }, []);
 
-  // 좁은 화면(휴대폰)에서는 화면 가득 띄운다 (office.module.css .ai). iPhone은 키보드가 올라와도 화면 높이는 그대로라
-  // 보이는 영역(visualViewport)에 패널을 맞춰야 입력칸이 키보드 위에 남는다. 그동안 뒤 화면은 스크롤되지 않게 막는다
+  // 좁은 화면에서는 도면 화면 대신 이 화면만 보인다 (office.module.css .page[data-ai][data-stacked]): 맨 위부터 보여 준다
   useEffect(() => {
-    const panel = panelRef.current;
-    const narrow = window.matchMedia("(max-width: 720px)");
-    const vv = window.visualViewport;
-    if (!panel) return;
-    function fit() {
-      if (narrow.matches && vv) {
-        panel!.style.setProperty("--vv-h", `${vv.height}px`);
-        panel!.style.setProperty("--vv-top", `${vv.offsetTop}px`);
-      } else {
-        panel!.style.removeProperty("--vv-h");
-        panel!.style.removeProperty("--vv-top");
-      }
-      document.documentElement.style.overflow = narrow.matches ? "hidden" : "";
-    }
-    fit();
-    vv?.addEventListener("resize", fit);
-    vv?.addEventListener("scroll", fit);
-    narrow.addEventListener("change", fit);
-    return () => {
-      vv?.removeEventListener("resize", fit);
-      vv?.removeEventListener("scroll", fit);
-      narrow.removeEventListener("change", fit);
-      document.documentElement.style.overflow = "";
-    };
-  }, []);
+    if (asPage) window.scrollTo(0, 0);
+  }, [asPage]);
 
-  // 새 글이 붙으면 맨 아래로
+  // 새 글이 붙으면 맨 아래로 (좁은 화면은 대화 칸이 아니라 페이지가 스크롤된다: 입력칸과 그 아래 안내까지 보이게)
   useEffect(() => {
     const list = listRef.current;
     if (list) list.scrollTop = list.scrollHeight;
-  }, [turns]);
+    if (turns.length && asPage) panelRef.current?.scrollIntoView({ block: "end" });
+  }, [turns, asPage]);
 
   const enabled = status?.enabled === true;
 

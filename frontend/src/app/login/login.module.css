@@ -204,6 +204,12 @@
   border-color: var(--danger);
 }
 
+/* 틀린 칸에 초점이 오면 테두리 색만으로는 구별되지 않아 바깥 테두리를 더 그린다 */
+.field input[aria-invalid="true"]:focus {
+  outline: 2px solid var(--danger);
+  outline-offset: 1px;
+}
+
 .alert {
   display: flex;
   gap: 8px;
@@ -272,18 +278,22 @@
   margin-top: -8px;
 }
 
+/* "비밀번호 재설정": 작은 테두리 단추 */
 .linkButton {
-  padding: 0;
-  min-height: 32px;
-  border: 0;
-  background: none;
-  color: var(--link);
-  text-decoration: underline;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
   cursor: pointer;
 }
 
-.linkButton:hover {
-  color: var(--link-hover);
+@media (hover: hover) {
+  .linkButton:hover {
+    border-color: var(--ink);
+  }
 }
 
 .muted {
@@ -327,21 +337,30 @@
   margin: 0;
 }
 
-@media (max-width: 640px) {
+/* 소개와 로그인이 위아래로 쌓이는 폭(휴대폰·태블릿 세로): 소개를 짧게 줄여 로그인 단추가 첫 화면에 보이게 */
+@media (max-width: 900px) {
   .intro {
-    padding: 32px 20px;
-    gap: 16px;
+    flex-basis: 100%;
+    padding: 20px 20px 18px;
+    gap: 8px;
+  }
+
+  .introBody {
+    gap: 6px;
   }
 
   .headline {
-    font-size: 28px;
+    font-size: 22px;
   }
 
-  .illustration {
+  .lead,
+  .illustration,
+  .introFoot {
     display: none;
   }
 
   .formSide {
-    padding: 32px 16px 48px;
+    align-items: flex-start;
+    padding: 24px 16px 40px;
   }
 }

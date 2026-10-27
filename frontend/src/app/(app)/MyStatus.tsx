@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDownIcon } from "@/components/icons";
+import { ChevronDownIcon, CloseIcon } from "@/components/icons";
 import type { MyPresenceInfo } from "@/lib/api";
 import { PRESENCE_LABEL } from "@/lib/presence";
 import PresenceForm from "./PresenceForm";
@@ -23,11 +23,12 @@ export default function MyStatus({ info }: { info: MyPresenceInfo }) {
     wasOpen.current = open;
   }, [open]);
 
-  // 패널 밖을 누르면 닫는다
+  // 패널 밖을 누르면 닫는다 (자동 로그아웃 알림의 "계속 사용"을 누른 것은 빼고: 고르던 상태가 날아가지 않게)
   useEffect(() => {
     if (!open) return;
     function onPointerDown(event: PointerEvent) {
-      if (!boxRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Element;
+      if (!boxRef.current?.contains(target) && !target.closest?.("[role=alertdialog]")) setOpen(false);
     }
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
@@ -58,6 +59,8 @@ export default function MyStatus({ info }: { info: MyPresenceInfo }) {
         <ChevronDownIcon size={16} />
       </button>
 
+      {/* 휴대폰: 아래에서 올라오는 시트 뒤를 어둡게 (누르면 닫힌다) */}
+      {open && <div className={styles.statusBackdrop} aria-hidden="true" onClick={() => setOpen(false)} />}
       {open && (
         <div
           ref={panelRef}
@@ -66,6 +69,9 @@ export default function MyStatus({ info }: { info: MyPresenceInfo }) {
           aria-labelledby="my-status-title"
           className={styles.statusPanel}
         >
+          <button type="button" className={styles.cardClose} aria-label="닫기" onClick={() => setOpen(false)}>
+            <CloseIcon size={18} />
+          </button>
           {/* 열 때마다 새로 그려서 지금 상태로 채운다 */}
           <PresenceForm
             info={info}

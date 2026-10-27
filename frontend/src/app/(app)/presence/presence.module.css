@@ -166,10 +166,20 @@
   list-style: none;
 }
 
+/* 다른 화면으로 가는 작은 단추 (카드 머리의 오른쪽) */
 .textLink {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
   font-size: 12px;
-  color: var(--link);
   text-decoration: none;
+  white-space: nowrap;
 }
 
 /* 오늘 내 일정 */
@@ -209,28 +219,53 @@
 }
 
 .counts {
-  display: flex;
-  flex-wrap: wrap;
+  /* 상태 다섯 개를 늘 한 줄에 (알약 모양으로 늘어놓으면 카드 폭에 따라 두 줄로 갈라졌다) */
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 6px;
 }
 
+/* 한 칸: 위에 표시·인원, 아래에 상태 이름 (읽는 순서는 "방문 가능 8" 그대로) */
 .count {
-  display: inline-flex;
+  display: grid;
+  /* 양옆 빈 칸(1fr)으로 표시·인원을 가운데에 붙여 둔다 (아래 이름이 더 넓어도 벌어지지 않게) */
+  grid-template-columns: 1fr auto auto 1fr;
+  grid-template-areas:
+    ". mark num ."
+    "label label label label";
   align-items: center;
-  gap: 6px;
-  height: 34px;
-  padding: 0 10px;
+  gap: 2px 6px;
+  min-height: 52px;
+  padding: 6px 2px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--surface);
   color: var(--ink);
   font: inherit;
   font-size: 12px;
+  white-space: nowrap;
   cursor: pointer;
 }
 
+.count > span:first-child {
+  grid-area: mark;
+}
+
+.countLabel {
+  grid-area: label;
+  text-align: center;
+}
+
 .count strong {
-  font-size: 13px;
+  grid-area: num;
+  font-size: 15px;
+}
+
+/* 아주 좁은 휴대폰: 상태 이름이 칸에서 잘리지 않게 글자를 조금 줄인다 */
+@media (max-width: 380px) {
+  .count {
+    font-size: 11px;
+  }
 }
 
 .count[aria-pressed="true"] {
@@ -275,10 +310,14 @@
   min-width: 0;
 }
 
+/* 상태 메시지: 두 줄까지 보이고 넘치면 … (전체는 title·화면 낭독기로) */
 .memberMain .muted {
+  display: -webkit-box;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
 }
 
 .me {

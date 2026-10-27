@@ -159,6 +159,13 @@ export default function FloorPlan(props: Props) {
     return () => observer.disconnect();
   }, [hasPlan]);
 
+  // 다른 층으로 가면 왼쪽 위부터 보여 준다 (앞 층에서 옆으로 민 만큼 남으면 새 층의 왼쪽이 잘려 보인다).
+  // 검색으로 고른 자리는 이 뒤에 화면(OfficeView)이 그 자리로 다시 옮긴다
+  const floorKey = map.floor.id;
+  useEffect(() => {
+    scrollRef.current?.scrollTo(0, 0);
+  }, [floorKey]);
+
   // 층 데이터가 바뀌면(실시간 반영·다른 층) 자리마다 글자 크기가 달라질 수 있어 다시 본다.
   // 다른 층은 그려지는 폭이 같아도 도면 폭(m)이 달라 축척도 다시 알린다 (크기가 그대로면 ResizeObserver가 부르지 않는다)
   useEffect(() => {
@@ -746,7 +753,7 @@ export function PresenceLine({ occupant }: { occupant: Occupant }) {
       <span className={styles.popoverStatus}>
         <span className="mk" data-status={presence.status} aria-hidden="true" />
         <strong>{PRESENCE_LABEL[presence.status]}</strong>
-        {message && <span>· {message}</span>}
+        {message && <span className={styles.popoverMessage}>{message}</span>}
       </span>
       {(ago || presence.expires_at) && (
         <span className={styles.popoverMuted}>

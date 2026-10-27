@@ -29,6 +29,17 @@
   animation: shimmer 1.2s linear infinite;
 }
 
+/* 휴대폰: 실제 화면과 같은 여백 (불러온 뒤 제목이 옆으로 움직이지 않게) */
+@media (max-width: 720px) {
+  .header {
+    padding: 12px 16px;
+  }
+
+  .body {
+    padding: 12px;
+  }
+}
+
 @keyframes shimmer {
   from {
     background-position: 100% 0;

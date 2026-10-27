@@ -1,7 +1,7 @@
 "use client";
 
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
-import { SearchIcon } from "@/components/icons";
+import { CloseIcon, SearchIcon } from "@/components/icons";
 import type { EmployeeHit } from "@/lib/api";
 import { PRESENCE_LABEL } from "@/lib/presence";
 import { useEmployeeSearch } from "@/lib/useEmployeeSearch";
@@ -16,6 +16,7 @@ export default function EmployeeSearch({ onPick }: { onPick: (hit: EmployeeHit) 
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const boxRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const listId = useId();
   const { results, loading, failed } = useEmployeeSearch(query);
   const showList = open && query.trim() !== "";
@@ -65,6 +66,7 @@ export default function EmployeeSearch({ onPick }: { onPick: (hit: EmployeeHit) 
         <SearchIcon size={16} />
         <span className="visually-hidden">직원 검색</span>
         <input
+          ref={inputRef}
           type="search"
           role="combobox"
           aria-expanded={showList}
@@ -82,6 +84,21 @@ export default function EmployeeSearch({ onPick }: { onPick: (hit: EmployeeHit) 
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
         />
+        {/* 지우기 단추는 직접 그린다 (브라우저 기본 ×는 운영체제·브라우저마다 모양이 다르고 없는 곳도 있다) */}
+        {query && (
+          <button
+            type="button"
+            className={styles.searchClear}
+            aria-label="검색어 지우기"
+            onClick={() => {
+              setQuery("");
+              setActive(-1);
+              inputRef.current?.focus();
+            }}
+          >
+            <CloseIcon size={14} />
+          </button>
+        )}
       </label>
       {showList && (
         <div className={styles.searchPanel}>

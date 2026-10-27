@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReservationDetail as Detail } from "@/lib/api";
 import { formatDuration, formatShortDay, kstDate } from "@/lib/dates";
 import { NO_STATUS_LABEL, PRESENCE_LABEL } from "@/lib/presence";
@@ -35,6 +35,12 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
   const [confirming, setConfirming] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  // "예약 취소"를 누르면 그 단추가 사라진다. 초점이 창 밖으로 떨어지지 않게 확인 질문의 "아니요"로 옮긴다
+  // (Enter를 한 번 더 눌러도 바로 취소되지 않게 지우지 않는 쪽으로)
+  const keepRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (confirming) keepRef.current?.focus();
+  }, [confirming]);
 
   useEffect(() => {
     if (reservationId === null) return;
@@ -178,63 +184,67 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
   const timetable = detail && `/rooms?date=${day}&site=${detail.room.site_id}`;
   const others = detail ? detail.attendees.filter((a) => !a.is_organizer).length : 0; // 나 말고 알려 줄 사람
   const series = detail?.series && detail.series.left > 1 ? detail.series : null;
+  // 단추는 두 묶음: 다른 화면으로 가기(왼쪽) · 이 예약 바꾸기(오른쪽). 좁으면 묶음째 줄을 바꿔 한 묶음이 갈라지지 않게
   const footer = detail && (
-    <>
-      <Link className={styles.link} onClick={close} href={`/?floor=${detail.room.floor_id}`}>
-        도면에서 보기
-      </Link>
-      {showTimetableLink && (
-        <Link className={styles.link} onClick={close} href={`${timetable}&floor=${detail.room.floor_id}`}>
-          예약 현황표에서 보기
+    <div className={styles.footer}>
+      <div className={styles.group}>
+        <Link className={styles.link} onClick={close} href={`/?floor=${detail.room.floor_id}`}>
+          도면에서 보기
         </Link>
-      )}
-      {detail.status === "CANCELLED" && detail.is_organizer && !detail.ended && (
-        <Link className={styles.link} onClick={close} href={`${timetable}&floor=${detail.room.floor_id}`}>
-          다시 예약하기
-        </Link>
-      )}
-      <span className={styles.spacer} />
+        {showTimetableLink && (
+          <Link className={styles.link} onClick={close} href={`${timetable}&floor=${detail.room.floor_id}`}>
+            예약 현황표에서 보기
+          </Link>
+        )}
+        {detail.status === "CANCELLED" && detail.is_organizer && !detail.ended && (
+          <Link className={styles.link} onClick={close} href={`${timetable}&floor=${detail.room.floor_id}`}>
+            다시 예약하기
+          </Link>
+        )}
+      </div>
       {detail.can_cancel &&
         (confirming ? (
-          <span className={styles.confirm} role="group" aria-label="예약 취소 확인">
-            <span>
+          <div className={styles.confirm} role="group" aria-label="예약 취소 확인">
+            <p>
               이 회의를 취소할까요?
               {others > 0 && ` 참석자 ${others}명의 내 예약에 ‘취소됨’으로 표시돼요.`}
-            </span>
-            {series ? (
-              <>
+            </p>
+            <div className={styles.group}>
+              {series ? (
+                <>
+                  <button type="button" className={styles.danger} disabled={cancelling} onClick={() => cancel("one")}>
+                    이 회차만
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.danger}
+                    disabled={cancelling}
+                    onClick={() => cancel("following")}
+                  >
+                    이후 회차 모두 ({series.left}회)
+                  </button>
+                </>
+              ) : (
                 <button type="button" className={styles.danger} disabled={cancelling} onClick={() => cancel("one")}>
-                  이 회차만
+                  {cancelling ? "취소하는 중…" : "취소하기"}
                 </button>
-                <button
-                  type="button"
-                  className={styles.danger}
-                  disabled={cancelling}
-                  onClick={() => cancel("following")}
-                >
-                  이후 회차 모두 ({series.left}회)
-                </button>
-              </>
-            ) : (
-              <button type="button" className={styles.danger} disabled={cancelling} onClick={() => cancel("one")}>
-                {cancelling ? "취소하는 중…" : "취소하기"}
+              )}
+              <button ref={keepRef} type="button" className={styles.secondary} onClick={() => setConfirming(false)}>
+                아니요
               </button>
-            )}
-            <button type="button" className={styles.secondary} onClick={() => setConfirming(false)}>
-              아니요
-            </button>
-          </span>
+            </div>
+          </div>
         ) : (
-          <>
+          <div className={`${styles.group} ${styles.end}`}>
             <Link className={styles.secondary} onClick={close} href={`${timetable}&edit=${detail.id}`}>
               수정
             </Link>
             <button type="button" className={styles.secondary} onClick={() => setConfirming(true)}>
               예약 취소
             </button>
-          </>
+          </div>
         ))}
-    </>
+    </div>
   );
 
   return (

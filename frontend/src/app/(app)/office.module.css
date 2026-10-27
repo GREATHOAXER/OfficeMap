@@ -2,8 +2,17 @@
 
 .page {
   min-height: 100vh;
+  min-height: calc(100dvh - env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
+}
+
+/* 휴대폰: 위쪽 메뉴 막대(AppShell .mobileBar, 52px) 아래만 채운다. 100vh로 두면 내용이 짧아도 막대만큼 늘 스크롤되고,
+   AI 화면에서는 입력칸을 누를 때마다 화면이 그만큼 오르내렸다. 아래 홈 막대 자리는 body가 이미 비워 둔다(globals.css) */
+@media (max-width: 720px) {
+  .page {
+    min-height: calc(100dvh - 52px - env(safe-area-inset-bottom));
+  }
 }
 
 .header {
@@ -54,6 +63,28 @@
   font: inherit;
   font-size: 14px;
   background: transparent;
+}
+
+.searchField input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+
+.searchClear {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-right: -8px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
 }
 
 .searchPanel {
@@ -195,7 +226,7 @@
 }
 
 .planBanner button {
-  height: 28px;
+  height: 32px;
   padding: 0 10px;
   border: 1px solid #fff;
   border-radius: 6px;
@@ -238,19 +269,32 @@
   background: var(--link);
 }
 
+/* 안내 속 "보기": 흰 테두리 단추 (글자 링크로 두면 누를 곳인지 모른다) */
 .liveNotice a {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid #fff;
+  border-radius: 6px;
   color: #fff;
   font-weight: 600;
+  text-decoration: none;
   white-space: nowrap;
 }
 
 .liveNotice button {
+  flex: none;
   margin-left: auto;
-  padding: 0 4px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
   border: 0;
+  border-radius: 6px;
   background: none;
   color: #fff;
-  font-size: 16px;
+  font-size: 18px;
   cursor: pointer;
 }
 
@@ -304,6 +348,10 @@
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
 }
 
+.statusBackdrop {
+  display: none;
+}
+
 .statusForm {
   padding: 16px;
   display: flex;
@@ -313,6 +361,7 @@
 
 .statusForm h2 {
   margin: 0;
+  padding-right: 40px; /* 오른쪽 위 닫기 단추 자리 */
   font-size: 16px;
 }
 
@@ -397,24 +446,18 @@
   color: var(--ink);
 }
 
-.durations legend {
-  padding: 0;
+.durationsLabel {
+  display: block;
   margin-bottom: 6px;
   font-size: 13px;
   color: var(--muted);
 }
 
+/* 칸 폭은 글자("퇴근 시 (18:00)", "그대로 (00:52)")가 한 줄에 들어갈 만큼: 좁으면 칸 수가 줄어든다 */
 .durations div {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
   gap: 6px;
-}
-
-/* 휴대폰: 네 칸이면 "퇴근 시 (18:00)"이 두 줄로 꺾여서 두 칸씩 */
-@media (max-width: 480px) {
-  .durations div {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 .durations label {
@@ -422,7 +465,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 40px;
+  min-height: 40px;
+  padding: 2px 8px;
+  text-align: center;
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 13px;
@@ -456,13 +501,13 @@
 }
 
 .statusClear {
-  min-height: 40px;
-  padding: 0 4px;
-  border: 0;
-  background: none;
-  color: var(--link);
-  font-size: 13px;
-  text-decoration: underline;
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
   cursor: pointer;
 }
 
@@ -487,12 +532,14 @@
 
 /* 본문: 도면(main)과 오른쪽 패널(side). 폭이 모자라면 패널이 아래로 내려간다 */
 .body {
+  /* 여백을 변수로도 둔다: AI 화면(여백 0)에서도 OfficeView가 평소 여백으로 도면·패널이 나란히 들어가는지 잰다 */
+  --body-pad: 16px;
   flex: 1;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 16px;
-  padding: 16px;
+  padding: var(--body-pad);
 }
 
 .main {
@@ -521,13 +568,14 @@
   display: flex;
   gap: 6px;
   overflow-x: auto;
+  padding-top: 4px; /* 키보드 초점 테두리가 위에서 잘리지 않게 (가로 스크롤 칸은 넘친 것을 자른다) */
   padding-bottom: 6px;
   scrollbar-width: thin;
 }
 
 .floorsMore {
   position: absolute;
-  top: 0;
+  top: 4px;
   bottom: 6px;
   z-index: 1;
   display: none;
@@ -722,7 +770,7 @@
 }
 
 .filterNotice button {
-  height: 28px;
+  height: 32px;
   padding: 0 10px;
   border: 1px solid var(--ink);
   border-radius: 6px;
@@ -871,7 +919,13 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 2px 6px;
+}
+
+/* 상태 메시지는 길면 다음 줄 전체를 쓴다 (줄 첫머리가 "·"로 시작하지 않게 구분점은 넣지 않는다) */
+.popoverMessage {
+  flex-basis: 100%;
+  color: var(--ink);
 }
 
 .popoverMuted {
@@ -1235,10 +1289,8 @@
   border: 0;
 }
 
-.filter legend {
-  float: left;
+.filterLabel {
   margin-right: 4px;
-  padding: 0;
   font-weight: 600;
   color: var(--ink);
 }
@@ -1328,9 +1380,19 @@
   color: var(--muted);
 }
 
+/* 오른쪽 카드의 "내 재실 상태 바꾸기 ›" 같은 다른 화면으로 가는 단추 */
 .cardLink {
+  display: inline-flex;
   align-self: flex-start;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
   font-size: 13px;
+  text-decoration: none;
 }
 
 /* 오른쪽 패널 공통 카드 */
@@ -1577,6 +1639,7 @@
 }
 
 .aiHead > div {
+  flex: 1;
   min-width: 0;
 }
 
@@ -1597,7 +1660,7 @@
 .aiNew {
   margin-left: auto;
   flex: none;
-  height: 30px;
+  height: 36px; /* 옆의 닫기 단추와 같은 높이 */
   padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -1729,7 +1792,8 @@
 }
 
 .aiExamples button {
-  padding: 6px 10px;
+  min-height: 36px;
+  padding: 6px 12px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--surface);
@@ -1855,7 +1919,7 @@
 
 .aiBook,
 .aiEdit {
-  height: 32px;
+  height: 36px;
   padding: 0 12px;
   border-radius: 6px;
   font-size: 12.5px;
@@ -1884,9 +1948,18 @@
   font-weight: 600;
 }
 
+/* 예약한 뒤 "내 예약 보기": 작은 테두리 단추 */
 .aiBooked a {
-  margin-left: 4px;
-  color: var(--link);
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  margin-left: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  color: var(--ink);
+  font-weight: 400;
+  text-decoration: none;
 }
 
 .aiPrivacy {
@@ -1929,6 +2002,16 @@
   cursor: pointer;
 }
 
+/* 태블릿 세로·좁은 창: 제목·AI·내 상태가 한 줄에 다 안 들어가 "내 상태"만 아래로 엇갈려 내려가므로,
+   검색창을 버튼들 아래 한 줄로 내린다 */
+@media (max-width: 1024px) {
+  .search {
+    flex-basis: 100%;
+    max-width: none;
+    order: 5;
+  }
+}
+
 @media (max-width: 720px) {
   /* 휴대폰 머리글: 제목·AI·내 상태를 한 줄에, 검색은 아래 한 줄. 도면에 자리를 더 준다 */
   .header {
@@ -1958,15 +2041,21 @@
     margin: 12px 12px 0;
   }
 
-  /* 좁은 화면: 검색창은 버튼들 아래 한 줄을 다 쓴다 */
-  .search {
-    flex-basis: 100%;
-    max-width: none;
-    order: 5;
+  /* 팀 구역 칩이 여러 줄이면 "서울 본사 › 7F" 뒤 구분선이 줄 끝에 홀로 남는다 */
+  .sep {
+    display: none;
   }
 
   .searchPanel {
     width: 100%;
+  }
+
+  .statusBackdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 29;
+    background: rgba(0, 0, 0, 0.35);
   }
 
   /* 좁은 화면: 상태 패널은 화면 아래에서 올라오는 시트로 */
@@ -1984,31 +2073,56 @@
   }
 
   .body {
-    padding: 12px;
+    --body-pad: 12px;
   }
 
   .side {
     position: static;
   }
 
-  /* 좁은 화면: AI 도우미는 화면 가득 띄운다 (도면 아래에 열면 단추를 눌러도 아무 일 없는 것처럼 보인다).
-     높이·위치는 키보드에 가려지지 않게 보이는 영역에 맞춘다 (AiPanel.tsx가 --vv-h, --vv-top을 넣는다) */
-  .ai {
-    position: fixed;
-    z-index: 65;
-    top: var(--vv-top, 0px);
-    left: 0;
-    right: 0;
-    height: var(--vv-h, 100dvh);
-    min-height: 0;
-    border: 0;
-    border-radius: 0;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-  }
+
 
   .hint {
     margin-left: 0;
   }
+}
+
+/* 패널이 도면 아래로 내려가는 좁은 화면(휴대폰·태블릿 세로, OfficeView가 data-stacked를 붙인다)에서 AI 도우미를 열면
+   도면 화면 대신 그 화면만 보인다 (도면 아래에 열리면 단추를 눌러도 아무 일 없는 것처럼 보인다).
+   화면 위에 띄우지(fixed) 않고 보통 페이지처럼 흐르게 둔다: iPhone은 키보드가 올라오면 띄운 창 뒤로 원래 화면이 비치고
+   스크롤할 때 위아래로 튄다. 대화가 길어지면 페이지가 스크롤되고, 입력칸은 맨 아래(키보드 바로 위)에 온다 */
+.page[data-ai][data-stacked] > .header,
+.page[data-ai][data-stacked] .main {
+  display: none;
+}
+
+.page[data-ai][data-stacked] .body {
+  padding: 0;
+}
+
+.page[data-ai][data-stacked] .side {
+  position: static;
+  flex-basis: 100%;
+}
+
+.page[data-ai][data-stacked] .ai {
+  height: auto;
+  min-height: calc(100dvh - env(safe-area-inset-bottom)); /* 태블릿(왼쪽 메뉴, 위쪽 막대 없음): 화면 끝까지 (홈 막대 자리는 body가 비운다) */
+  border: 0;
+  border-radius: 0;
+}
+
+/* 휴대폰: 위쪽 메뉴 막대(AppShell .mobileBar, 720px 이하) 아래를 채운다 */
+@media (max-width: 720px) {
+  .page[data-ai][data-stacked] .ai {
+    min-height: calc(100dvh - 52px - env(safe-area-inset-bottom));
+  }
+}
+
+.page[data-ai][data-stacked] .aiBody,
+.page[data-ai][data-stacked] .aiLog {
+  flex: 1 0 auto;
+  overflow: visible;
 }
 
 /* 내 정보: 사진·부르는 이름·한 줄 소개·하는 일 ------------------------------------- */

@@ -124,8 +124,14 @@
   cursor: pointer;
 }
 
-.btn:hover:not(:disabled) {
-  background: var(--bg);
+@media (hover: hover) {
+  .btn:hover:not(:disabled) {
+    background: var(--bg);
+  }
+
+  .btn.pri:hover:not(:disabled) {
+    background: #000;
+  }
 }
 
 .btn:focus-within {
@@ -138,6 +144,11 @@
   color: #fff;
 }
 
+.btn[data-tone="danger"] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .btn:disabled,
 .btn.disabled {
   border-color: var(--border);
@@ -146,28 +157,19 @@
   cursor: not-allowed;
 }
 
-.linkButton {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--link);
-  font: inherit;
-  font-size: 13px;
-  text-decoration: underline;
-  cursor: pointer;
-}
 
-.linkButton[data-tone="danger"] {
-  color: var(--danger);
-}
-
-/* 사진 지우기 확인: "사진을 지울까요? 지우기 취소" 한 줄 */
+/* 사진 지우기 확인: "사진을 지울까요?" 아래에 [지우기] [취소] 한 줄 */
 .confirmRow {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
   font-size: 13px;
+}
+
+.confirmButtons {
+  display: flex;
+  gap: 6px;
 }
 
 .hint {
@@ -247,6 +249,7 @@
 }
 
 .chip button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -258,6 +261,13 @@
   background: transparent;
   color: inherit;
   cursor: pointer;
+}
+
+/* 누르는 곳은 32px (보이는 ×는 작게): 휴대폰에서 손가락으로 빼기 쉽게 */
+.chip button::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
 }
 
 .chip button:hover {

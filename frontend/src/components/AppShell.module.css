@@ -423,7 +423,9 @@
   border: 0;
   border-radius: 6px;
   background: transparent;
+  color: var(--ink); /* 링크(내 정보·비밀번호 변경)도 단추(로그아웃)와 같은 모양 */
   font-size: 13px;
+  text-decoration: none;
   text-align: left;
   cursor: pointer;
 }
@@ -528,6 +530,7 @@
     z-index: 50;
     height: 100dvh;
     max-width: calc(100vw - 48px);
+    padding-bottom: calc(12px + env(safe-area-inset-bottom)); /* 아래 사용자 칸이 iPhone 홈 막대에 걸리지 않게 */
     transform: translateX(-100%);
     visibility: hidden; /* 닫혀 있을 때 Tab으로 들어가지 않게 */
     transition:
@@ -535,10 +538,14 @@
       visibility 0.2s;
   }
 
+  /* 열 때는 바로 보이게 (visibility를 0.2초 늦추면 그동안 메뉴로 초점을 옮기지 못한다). 닫을 때만 늦춘다 */
   .shell[data-drawer="open"] .sidebar {
     transform: none;
     visibility: visible;
     box-shadow: 4px 0 24px rgba(0, 0, 0, 0.18);
+    transition:
+      transform 0.2s ease,
+      visibility 0s;
   }
 
   .shell[data-drawer="open"] .backdrop {

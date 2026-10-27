@@ -145,7 +145,7 @@ export default function LoginForm({ ssoEnabled, supportContact, maxFailedCount, 
         {error && (
           <div id="login-error" role="alert" className={styles.alert}>
             <AlertIcon />
-            <span>{errorMessage(error, supportContact, maxFailedCount)}</span>
+            <span>{errorMessage(error, supportContact)}</span>
           </div>
         )}
 
@@ -235,7 +235,7 @@ function toLoginError(body: Record<string, unknown>): LoginError {
   }
 }
 
-function errorMessage(error: LoginError, contact: string, max: number): string {
+function errorMessage(error: LoginError, contact: string): string {
   switch (error.code) {
     case "EMPTY":
       return "사번과 비밀번호를 입력하세요.";
@@ -247,7 +247,7 @@ function errorMessage(error: LoginError, contact: string, max: number): string {
       return "사번은 숫자로만 입력하세요.";
     // 실패 횟수는 알려 주지 않는다: 있는 사번에만 횟수가 붙으면 어떤 사번이 있는지 드러난다
     case "INVALID_CREDENTIALS":
-      return `사번 또는 비밀번호가 맞지 않습니다. ${max}회 연속 틀리면 계정이 잠깁니다.`;
+      return "사번 또는 비밀번호가 맞지 않습니다."; // 잠금 규칙은 바로 아래 줄에 늘 보인다
     // 문의처는 설정값이라 끝 글자에 따라 조사(로/으로)가 달라지므로 조사 없이 붙인다
     case "LOCKED":
       return `비밀번호를 ${error.maxFailedCount}회 잘못 입력해 계정이 잠겼습니다. 잠금 해제 문의: ${contact}`;
