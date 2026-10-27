@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
+import CopyButton from "@/components/CopyButton";
 import Dialog from "@/components/Dialog";
 import type { AdminGrant, GrantOptions } from "@/lib/api";
 import { adminExpiredUrl } from "@/lib/loginRedirect";
@@ -295,9 +296,7 @@ function TempPassword({
       </p>
       <p className={styles.password}>
         <span className="mono">{password}</span>
-        <button type="button" className={ui.btn} onClick={() => void navigator.clipboard?.writeText(password)}>
-          복사
-        </button>
+        <CopyButton text={password} className={ui.btn} />
       </p>
       <p className={ui.hint}>
         첫 로그인 때 새 관리자 비밀번호를 정하게 돼요. 직원 화면 비밀번호와는 따로예요. 메신저·메일로 본인에게만 전해

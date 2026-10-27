@@ -103,5 +103,7 @@
 
   .foot {
     border-radius: 0;
+    /* iPhone 홈 막대 위로 (단추가 화면 맨 아래에 붙으면 첫 누름이 Safari 주소창을 펼치는 데 쓰인다) */
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
   }
 }

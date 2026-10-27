@@ -148,6 +148,7 @@ DB 접속 점검: officemap@officemap-db.abcdefghijkl.ap-northeast-2.rds.amazona
 | 브라우저가 접속 자체를 못 함 | EC2 보안 그룹의 HTTP(80) 소스가 지금 내 IP인지 (집·회사·휴대폰 망마다 다름) |
 | 로그인 버튼을 눌러도 로그인 화면으로 돌아옴 | HTTP로 접속하는데 `.env`의 `COOKIE_SECURE=true`이면 쿠키가 저장되지 않음 → `false` |
 | init_db가 "이미 테이블이 있어서 멈췄습니다" | 이미 한 번 넣었음. 목업을 처음 상태로: `docker compose run --rm backend python -m scripts.init_db --reset` |
+| 어떤 화면만 "화면을 불러오지 못했습니다" | 새 버전의 DB 테이블이 빠졌을 때가 많음. `docker compose run --rm backend python -m scripts.check_db`가 빠진 파일을 알려 주고, `docker compose run --rm backend python -m scripts.init_db --upgrade`로 넣습니다 (데이터는 그대로). 아니면 `docker compose logs --tail 50 backend`에서 이유를 봅니다 |
 
 ## 5. 새 버전 올리기
 
@@ -158,18 +159,21 @@ cd ~/OfficeMap && git pull && cd deploy && docker compose up -d --build
 ```
 
 바뀐 이미지만 다시 빌드하고, 바뀐 컨테이너만 다시 띄웁니다(몇십 초 끊김).
-DB 구조(`db/schema`)가 바뀐 버전이면 둘 중 하나:
+새 버전에서 DB 테이블·컬럼·함수(`db/schema`)가 늘었으면 이어서 (데이터는 그대로, 넣을 것이 없으면 아무것도 안 함):
 
-- 새 스키마 파일만 넣기 (데이터는 그대로): 새로 생긴 파일과 바뀐 함수 파일을 고릅니다. 예) 인사이동이 들어간 버전:
-  ```bash
-  docker compose run --rm backend python -m scripts.init_db --only 12_personnel.sql 09_retention.sql
-  ```
-  AI 도우미가 들어간 버전은 `13_ai_chat.sql` (켜는 법: [docs/ai.md](ai.md)).
-  이미 있는 테이블을 다시 만들려 하면 아무것도 바꾸지 않고 멈춥니다.
+```bash
+docker compose run --rm backend python -m scripts.init_db --upgrade
+```
+
+자동 배포([docs/cicd.md](cicd.md))는 이것을 띄우기 전에 알아서 돌립니다. 빠뜨리면 그 테이블을 쓰는 화면만
+"화면을 불러오지 못했습니다"로 나오고, API 서버 로그(`docker compose logs backend`)와
+`docker compose run --rm backend python -m scripts.check_db`가 빠진 파일을 알려 줍니다.
+
+- `--upgrade`는 파일마다 만드는 테이블이 DB에 있는지로 넣었는지 판단합니다(`server/app/schema.py`). 그래서 이미 있는 테이블을
+  바꾸는 변경은 기존 파일을 고치지 않고 새 파일에 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`로 씁니다(`13_ai_chat.sql`처럼).
+  일부만 들어간 파일은 건드리지 않고 "주의:"로 알려 줍니다.
+- 특정 파일만 다시 돌리기: `docker compose run --rm backend python -m scripts.init_db --only 09_retention.sql`
 - 목업을 처음부터 다시 (시험 서버만, 데이터가 지워짐): `docker compose run --rm backend python -m scripts.init_db --reset`
-
-기존 테이블의 열이 바뀐 버전은 `--only`로 넣을 수 없어서, 실제 데이터가 들어가기 전에 마이그레이션(바뀐 부분만 적용) 도구를
-들여옵니다(아래 8).
 
 ## 6. HTTPS 켜기 (도메인 연결)
 
@@ -250,7 +254,8 @@ docker compose logs -f caddy   # "certificate obtained successfully"가 나오�
 
 ## 8. 실제 데이터를 넣기 전에 (다음 단계)
 
-1. **마이그레이션 도구**: 지금 `init_db`는 "빈 DB에 전부 만들기"와 "`--reset` 전부 지우고 다시"뿐입니다.
+1. **마이그레이션 도구**: 지금 `init_db --upgrade`는 새로 생긴 테이블·컬럼·함수만 넣습니다. 컬럼 형식·제약을 바꾸거나
+   데이터를 옮기는 변경이 생기면 버전 번호로 관리하는 도구(Alembic 등)를 들여옵니다.
 2. **`APP_ENV=production`**: `.env`에서 바꾸면 `init_db --reset`이 막힙니다.
 3. **앱 전용 DB 계정**: 마스터 계정 대신 읽기·쓰기만 되는 계정으로 접속합니다.
 4. **접속 범위**: 사내망에서만 열기(ALB + VPN 등), 정보보호팀 검토.

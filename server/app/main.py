@@ -1,8 +1,12 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+import psycopg
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
+from app import schema
 from app.config import settings
 from app.db import pool
 from app.db_check import log_problems
@@ -54,6 +58,27 @@ app.include_router(profile.router)
 app.include_router(org.router)
 app.include_router(personnel.router)
 app.include_router(ai.router)
+
+log = logging.getLogger(__name__)
+
+
+@app.exception_handler(psycopg.errors.UndefinedTable)
+@app.exception_handler(psycopg.errors.UndefinedColumn)
+@app.exception_handler(psycopg.errors.UndefinedFunction)
+async def db_outdated(request: Request, error: psycopg.Error) -> JSONResponse:
+    """새 버전의 테이블·컬럼이 DB에 없을 때(init_db --upgrade를 안 돌림): 빠진 파일과 고칠 명령을 로그에 남긴다"""
+    file = schema.file_for(str(error))
+    if file is None:  # db/schema에 없는 이름: 코드 오류
+        raise error
+    log.error(
+        "%s %s: DB에 이 버전의 db/schema/%s가 들어가지 않았어요 (%s)\n  → 데이터는 그대로 두고 빠진 것만 넣기: %s",
+        request.method,
+        request.url.path,
+        file,
+        error.diag.message_primary,
+        schema.UPGRADE_COMMAND,
+    )
+    return JSONResponse(status_code=503, content={"detail": {"code": "DB_OUTDATED", "file": file}})
 
 
 @app.get("/api/health")

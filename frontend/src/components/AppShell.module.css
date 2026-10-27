@@ -22,6 +22,7 @@
   position: sticky;
   top: 0;
   height: 100vh;
+  height: 100dvh; /* iPhone Safari의 100vh는 주소창 아래까지라 아래쪽 계정 칸이 가려진다 */
   overflow-x: hidden;
   overflow-y: auto;
   background: var(--surface-sunken);

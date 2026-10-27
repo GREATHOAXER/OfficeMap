@@ -485,14 +485,18 @@ function UserCard({ account: user }: { account: Account }) {
   const menuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
 
-  // 메뉴 밖을 누르거나 창 크기가 바뀌면 닫는다
+  // 메뉴 밖을 누르거나 창 폭이 바뀌면 닫는다 (높이만 바뀌는 것은 두고: iPhone Safari는 주소창이 접히고 펼쳐질 때마다
+  // resize를 보낸다. 그때 닫으면 메뉴를 열자마자 사라진다)
   useEffect(() => {
     if (!open) return;
     function onPointerDown(event: PointerEvent) {
       const target = event.target as Node;
       if (!boxRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
     }
-    const close = () => setOpen(false);
+    const width = window.innerWidth;
+    const close = () => {
+      if (window.innerWidth !== width) setOpen(false);
+    };
     document.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("resize", close);
     // 메뉴 자체로 포커스 (로그아웃 버튼에 두면 Enter를 두 번 눌러 바로 로그아웃될 수 있다)

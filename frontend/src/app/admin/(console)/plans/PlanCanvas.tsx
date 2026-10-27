@@ -26,6 +26,7 @@ import {
   SPACE_KINDS,
 } from "@/lib/planGeometry";
 import { baseSeatFont, minPlanWidth, type SeatBox, seatFont } from "@/lib/seatLabel";
+import { useTouchPan } from "@/lib/useTouchPan";
 import { joinedEnds, setEnd, type Snapped, snapMove, snapPoint, type SnapTargets, snapTargets } from "@/lib/wallSnap";
 import ui from "../seating/seating.module.css";
 import styles from "./plans.module.css";
@@ -293,8 +294,21 @@ export default function PlanCanvas(props: Props) {
       })
       .map((e) => e.id);
 
+  // 휴대폰: 두 번째 손가락이 닿으면 하던 그리기·옮기기를 그만두고 두 손가락으로 화면을 민다
+  const pendingDesk = useRef<{ pointerId: number; at: Point } | null>(null);
+  function cancelDrag() {
+    pendingDesk.current = null;
+    setDrag(null);
+    setPreviews(null);
+    setDrawRect(null);
+    setDrawLine(null);
+    setMarquee(null);
+    setSnapHint(null);
+  }
+  const touchPan = useTouchPan(scrollRef, cancelDrag);
+
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
-    if (event.button !== 0) return;
+    if (touchPan.down(event) || event.button !== 0) return;
     const at = meters(event);
     const target = event.target as Element;
     const elId = target.closest<HTMLElement>("[data-el]")?.dataset.el ?? null;
@@ -306,7 +320,10 @@ export default function PlanCanvas(props: Props) {
       return;
     }
     if (tool === "desk") {
-      onPlaceDesk({ x: snapTo(at.x, snap), y: snapTo(at.y, snap) });
+      const spot = { x: snapTo(at.x, snap), y: snapTo(at.y, snap) };
+      // 터치는 뗄 때 놓는다 (두 손가락으로 밀려던 것이면 놓지 않게)
+      if (event.pointerType === "touch") pendingDesk.current = { pointerId: event.pointerId, at: spot };
+      else onPlaceDesk(spot);
       return;
     }
     ref.current!.setPointerCapture(event.pointerId);
@@ -364,6 +381,7 @@ export default function PlanCanvas(props: Props) {
   }
 
   function onPointerMove(event: PointerEvent<HTMLDivElement>) {
+    if (touchPan.move(event)) return;
     const at = meters(event);
     setCursor(at);
     onCursor(at);
@@ -432,7 +450,12 @@ export default function PlanCanvas(props: Props) {
     }
   }
 
-  function onPointerUp() {
+  function onPointerUp(event: PointerEvent<HTMLDivElement>) {
+    if (touchPan.up(event)) return;
+    if (pendingDesk.current?.pointerId === event.pointerId) {
+      onPlaceDesk(pendingDesk.current.at);
+      pendingDesk.current = null;
+    }
     if (drag?.kind === "draw") {
       if (drawLine) onDrawLine(drawLine);
       else if (drawRect) onDraw(drawRect);
@@ -505,7 +528,9 @@ export default function PlanCanvas(props: Props) {
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
+          onPointerCancel={(event) => {
+            if (!touchPan.up(event)) cancelDrag();
+          }}
           onPointerLeave={() => {
             setCursor(null);
             onCursor(null);

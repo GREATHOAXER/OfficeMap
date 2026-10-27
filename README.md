@@ -228,8 +228,8 @@ ngrok 안내 화면이 한 번 뜨는데 "Visit Site"를 누르면 됩니다. �
 (`frontend/scripts/copy-pdfjs.mjs`). 사내망에서 빌드할 때는 npm 저장소(미러)에 `pdfjs-dist`·`exceljs`도 있어야 합니다.
 
 잠긴 계정은 `python -m scripts.init_db --reset`으로 풀립니다. 저장소를 새로 받아 DB 구조나 목업이 바뀌었을 때도
-같은 명령으로 다시 만드세요 (기존 데이터는 지워집니다). 데이터를 두고 새로 생긴 스키마 파일만 넣으려면
-`python -m scripts.init_db --only 12_personnel.sql 09_retention.sql`처럼 파일을 고릅니다.
+같은 명령으로 다시 만드세요 (기존 데이터는 지워집니다). 데이터를 두고 새로 생긴 테이블·컬럼만 넣으려면
+`python -m scripts.init_db --upgrade` (무엇이 빠졌는지는 `python -m scripts.check_db`가 알려 줍니다).
 
 ## 서버에 올리기 (AWS)
 

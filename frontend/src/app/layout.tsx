@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Mono } from "next/font/google";
 import { headers } from "next/headers";
 import DevHostHint from "@/components/DevHostHint";
@@ -18,6 +18,14 @@ const mono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "오피스 안내",
   description: "층별 좌석과 동료의 재실 상태, 회의실 예약을 한 곳에서",
+};
+
+// viewportFit cover: iPhone 화면 끝(홈 막대·노치)까지 그리고, 가려지는 만큼은 env(safe-area-inset-*)로 비운다
+// (globals.css body, 아래에 붙는 시트·알림). 안 하면 아래쪽 단추가 Safari 주소창이 다시 펼쳐지는 자리에 붙는다
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {

@@ -4,7 +4,8 @@
 #   ssm         이미지를 ECR에 올리고, GitHub이 OIDC로 AWS 역할을 받아 SSM으로 서버에 명령한다 (AWS에 OIDC 공급자 필요)
 #   - 저장소 변수(Settings → Secrets and variables → Actions → Variables) DEPLOY_ENABLED=true일 때만 빌드·배포한다.
 #     꺼져 있으면 검사만 한다
-#   - 손으로 돌리기(Actions → Deploy → Run workflow): ssm이면 되돌리기(이전 커밋)·새 DB 스키마 파일 넣기도 된다
+#   - 서버는 새 버전을 띄우기 전에 DB에 새 테이블·컬럼만 넣는다 (deploy/remote-deploy.sh → init_db --upgrade)
+#   - 손으로 돌리기(Actions → Deploy → Run workflow): ssm이면 되돌리기(이전 커밋)·특정 DB 스키마 파일 다시 돌리기도 된다
 # 처음 설정하는 순서: docs/cicd.md
 name: Deploy
 
@@ -18,7 +19,7 @@ on:
         type: string
         default: ""
       schema_files:
-        description: "init_db --only로 넣을 db/schema 파일, 빈칸으로 구분 (예: 12_personnel.sql 09_retention.sql)"
+        description: "보통 비움 (새 테이블은 자동). 꼭 다시 돌릴 db/schema 파일, 빈칸으로 구분 (init_db --only)"
         type: string
         default: ""
 
@@ -131,6 +132,7 @@ jobs:
       - uses: docker/setup-qemu-action@v3
         if: (runner.arch == 'ARM64') != contains(env.PLATFORM, 'arm64')
       - uses: docker/setup-buildx-action@v3
+      # 기본 이미지(python·node)는 mirror.gcr.io(Docker Hub 미러)에서 받는다: ECR Public은 러너 IP 한도(429)에 걸린다
       - name: API 서버 이미지
         uses: docker/build-push-action@v6
         with:
@@ -139,7 +141,9 @@ jobs:
           platforms: ${{ env.PLATFORM }}
           push: true
           provenance: false # 이미지 하나만 (ECR 수명 주기 규칙이 단순해진다)
-          build-args: APP_VERSION=${{ steps.sha.outputs.sha }}
+          build-args: |
+            APP_VERSION=${{ steps.sha.outputs.sha }}
+            BASE_REGISTRY=mirror.gcr.io/library
           labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           tags: |
             ${{ steps.registry.outputs.prefix }}officemap-backend:${{ steps.sha.outputs.sha }}
@@ -153,6 +157,7 @@ jobs:
           platforms: ${{ env.PLATFORM }}
           push: true
           provenance: false
+          build-args: BASE_REGISTRY=mirror.gcr.io/library
           labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           tags: |
             ${{ steps.registry.outputs.prefix }}officemap-frontend:${{ steps.sha.outputs.sha }}

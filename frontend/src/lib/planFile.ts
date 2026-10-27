@@ -48,6 +48,13 @@ const MAX_PAGES = 60;
 const MAX_CELLS = 300; // 엑셀 시트에서 읽는 줄·칸 수
 const PDFJS = "/pdfjs";
 
+/** 다 쓴 그림판(canvas)을 바로 돌려준다. iPhone Safari는 한 화면이 쓸 수 있는 그림판 메모리 총량이 정해져 있어서
+ *  쪽 여러 장을 읽다 보면 새 그림판을 못 만든다 (getContext가 null). 크기를 0으로 줄이면 그 자리에서 풀린다 */
+export function freeCanvas(canvas: HTMLCanvasElement) {
+  canvas.width = 0;
+  canvas.height = 0;
+}
+
 function blank(w: number, h: number): HTMLCanvasElement {
   const c = document.createElement("canvas");
   c.width = Math.max(1, Math.round(w));
@@ -146,9 +153,11 @@ export function joinTexts(items: TextBox[]): TextBox[] {
 }
 
 async function openPdf(file: File, onProgress?: (done: number, total: number) => void): Promise<SourceFile> {
-  // 호환 빌드: 사내 PC의 조금 오래된 브라우저에서도 돈다 (일꾼도 같은 빌드, scripts/copy-pdfjs.mjs)
+  // 호환 빌드: 사내 PC의 조금 오래된 브라우저에서도 돈다 (일꾼도 같은 빌드, scripts/copy-pdfjs.mjs).
+  // 그래도 빠진 기능(iPhone Safari 17.3 이하 등)은 먼저 채운다. 일꾼은 같은 것을 붙인 worker.mjs로 띄운다
+  await import("./pdfjsPolyfills.js");
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  pdfjs.GlobalWorkerOptions.workerSrc = `${PDFJS}/pdf.worker.min.mjs`;
+  pdfjs.GlobalWorkerOptions.workerSrc = `${PDFJS}/worker.mjs`;
   const task = pdfjs.getDocument({
     data: new Uint8Array(await file.arrayBuffer()),
     cMapUrl: `${PDFJS}/cmaps/`,
@@ -201,13 +210,12 @@ async function openPdf(file: File, onProgress?: (done: number, total: number) =>
       vector: null,
       render: async (scale, crop = { x: 0, y: 0, w: viewport.width, h: viewport.height }) => {
         const vp = page.getViewport({ scale, offsetX: -crop.x * scale, offsetY: -crop.y * scale });
+        // 흰 바탕에 바로 그린다 (그림판을 하나만 써서 iPhone 그림판 메모리를 아낀다)
         const c = document.createElement("canvas");
         c.width = Math.max(1, Math.round(crop.w * scale));
         c.height = Math.max(1, Math.round(crop.h * scale));
-        await page.render({ canvas: c, viewport: vp }).promise;
-        const out = blank(c.width, c.height);
-        out.getContext("2d")!.drawImage(c, 0, 0);
-        return out;
+        await page.render({ canvas: c, viewport: vp, background: "#fff" }).promise;
+        return c;
       },
     });
     onProgress?.(n, total);

@@ -23,8 +23,8 @@ log = logging.getLogger(__name__)
 TICK_SECONDS = 60
 PURGE_EVERY_SECONDS = 24 * 60 * 60
 JOB_LOCK = 5152  # pg_advisory_lock 키 (5150 좌석 배치, 5151 예비)
-# 새 DB면 init_db, DB 구조(db/schema)가 바뀐 버전을 올렸으면 init_db --reset (docs/deploy-aws.md 5)
-SCHEMA_HINT = "새 DB면 scripts.init_db, DB 구조가 바뀐 버전을 올렸으면 scripts.init_db --reset"
+# 새 DB면 init_db, 테이블이 늘어난 새 버전을 올렸으면 init_db --upgrade (데이터는 그대로, app/schema.py)
+SCHEMA_HINT = "새 DB면 scripts.init_db, 새 버전을 올렸으면 빠진 것만 넣기: scripts.init_db --upgrade"
 
 
 class Jobs:

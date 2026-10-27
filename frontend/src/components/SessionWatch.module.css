@@ -2,7 +2,7 @@
 .bar {
   position: fixed;
   left: 50%;
-  bottom: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
   z-index: 70;
   transform: translateX(-50%);
   display: flex;

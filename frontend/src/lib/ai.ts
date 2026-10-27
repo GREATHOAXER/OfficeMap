@@ -52,6 +52,7 @@ const REJECTED: Record<string, string> = {
   CONVERSATION_FULL: "대화가 길어졌어요. '새 대화'로 다시 시작해 주세요.",
   CONVERSATION_NOT_FOUND: "이전 대화를 찾지 못했어요. 새 대화로 다시 물어봐 주세요.",
   BUSY: "이 대화에 아직 답하는 중이에요 (다른 탭에서 물었나요?). 잠시 뒤에 다시 물어봐 주세요.",
+  DB_OUTDATED: "서버 DB가 새 버전에 맞게 바뀌지 않았어요. 관리자에게 알려 주세요 (init_db --upgrade).",
 };
 
 export class AiRejected extends Error {

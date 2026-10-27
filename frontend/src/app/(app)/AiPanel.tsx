@@ -43,6 +43,7 @@ type Turn = {
   proposals: AiProposal[];
   working?: string | null; // 답을 만드는 중이면 지금 하는 일
   error?: string | null;
+  retry?: string | null; // 연결이 끊겨 답을 못 받았으면 다시 물을 질문 ("다시 묻기" 단추)
 };
 
 function storedConversation(): number | null {
@@ -121,6 +122,12 @@ export default function AiPanel({ onClose }: { onClose: () => void }) {
     setBusy(true);
     const controller = new AbortController();
     abortRef.current = controller;
+    // iPhone Safari는 다른 앱으로 옮기거나 화면을 끄면 몇 초 안에 연결을 끊는다: 그래서 끊겼는지 알려 주려고 본다
+    let leftPage = document.hidden;
+    const onVisibility = () => {
+      if (document.hidden) leftPage = true;
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     try {
       await askAi(
         { message: question, conversation_id: conversationId },
@@ -163,9 +170,13 @@ export default function AiPanel({ onClose }: { onClose: () => void }) {
         }
         updateLast((t) => ({ ...t, working: null, error: error.message }));
       } else {
-        updateLast((t) => ({ ...t, working: null, error: "연결이 끊겼어요. 다시 물어봐 주세요." }));
+        const why = leftPage
+          ? "다른 화면에 가 있는 사이 연결이 끊겨 답을 받지 못했어요."
+          : "연결이 끊겨 답을 받지 못했어요.";
+        updateLast((t) => ({ ...t, working: null, error: why, retry: question }));
       }
     } finally {
+      document.removeEventListener("visibilitychange", onVisibility);
       abortRef.current = null;
       setBusy(false);
       inputRef.current?.focus();
@@ -274,6 +285,19 @@ export default function AiPanel({ onClose }: { onClose: () => void }) {
                   <p className={styles.aiError} role="alert">
                     {turn.error}
                   </p>
+                )}
+                {turn.retry && i === turns.length - 1 && !busy && (
+                  <button
+                    type="button"
+                    className={styles.aiRetry}
+                    onClick={() => {
+                      // 답을 못 받은 질문과 빈 답을 지우고 같은 질문을 다시 보낸다
+                      setTurns((all) => all.slice(0, -2));
+                      void ask(turn.retry!);
+                    }}
+                  >
+                    다시 묻기
+                  </button>
                 )}
               </div>
             ),

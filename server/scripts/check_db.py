@@ -18,6 +18,7 @@ from urllib.parse import urlsplit, urlunsplit
 import psycopg
 from psycopg import sql
 
+from app import schema
 from app.config import settings
 from app.db_check import (
     CHECK_TIMEOUT,
@@ -107,8 +108,21 @@ def main() -> None:
         if tables == 0:
             print("  ! 테이블이 아직 없어요. 처음 한 번 테이블과 목업 데이터를 넣으세요:")
             print(f"    → {INIT_COMMAND}")
-        else:
-            ok(f"테이블 {tables}개")
+            print("DB 접속 정상")
+            return
+        ok(f"테이블 {tables}개")
+
+        # 6) 이 버전의 db/schema 파일이 다 들어갔나 (새 버전으로 바꾼 뒤 빠지면 그 화면만 "불러오지 못했습니다")
+        states = schema.check(conn)
+        behind = [s for s in states if s.status != "APPLIED"]
+        for state in behind:
+            what = "DB에 없음" if state.status == "MISSING" else "일부만 있음 (손으로 맞춰야 함)"
+            print(f"  ! {state.file.name}: {what} — 없는 것: {state.describe()}")
+        if any(s.status == "MISSING" for s in behind):
+            print("    → 데이터는 그대로 두고 빠진 것만 넣기:")
+            print(f"      {schema.UPGRADE_COMMAND}")
+        if not behind:
+            ok(f"DB 구조가 이 버전과 맞음 (db/schema 파일 {len(states)}개)")
     print("DB 접속 정상")
 
 

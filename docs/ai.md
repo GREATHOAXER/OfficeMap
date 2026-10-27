@@ -64,9 +64,9 @@ EC2 서버의 IAM 역할로 부르므로 비밀 키를 어디에도 저장하지
 
 ```bash
 cd ~/OfficeMap/deploy
-docker compose run --rm backend python -m scripts.init_db --only 13_ai_chat.sql   # 이 버전을 처음 올릴 때 한 번 (대화 기록 열)
-docker compose up -d                                                              # .env를 바꿨으면 다시 띄우기
-docker compose run --rm backend python -m scripts.check_ai                         # "AI 도우미 연결 정상"이 나와야 함
+docker compose run --rm backend python -m scripts.init_db --upgrade   # 대화 기록 열(13_ai_chat.sql). 자동 배포는 알아서 한다
+docker compose up -d                                                 # .env를 바꿨으면 다시 띄우기
+docker compose run --rm backend python -m scripts.check_ai            # "AI 도우미 연결 정상"이 나와야 함
 ```
 
 `check_ai`는 짧은 질문을 한 번 보내 보고, 막히면 고칠 곳(→)을 알려 줍니다:

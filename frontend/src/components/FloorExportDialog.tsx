@@ -8,6 +8,7 @@ import FloorSvg from "./FloorSvg";
 import styles from "./FloorExportDialog.module.css";
 
 const PNG_WIDTH_PX = 2400; // 내보내는 그림 폭 (A3로 뽑아도 글자가 깨지지 않을 만큼)
+const MAX_CANVAS_PX = 16_777_216; // iPhone Safari 그림판 한 장의 최대 넓이 (4096×4096). 넘으면 그림이 비어서 나온다
 
 type Props = {
   drawing: FloorDrawing;
@@ -110,7 +111,8 @@ function serialize(svg: SVGSVGElement): string {
 /** SVG → PNG. 그림 안 글꼴은 이 컴퓨터의 한글 글꼴로 그려진다 */
 async function svgToPng(svg: SVGSVGElement): Promise<Blob> {
   const box = svg.viewBox.baseVal;
-  const scale = PNG_WIDTH_PX / box.width;
+  // 세로로 아주 긴 층은 폭을 줄여 iPhone 한계 안에 들인다
+  const scale = Math.min(PNG_WIDTH_PX / box.width, Math.sqrt(MAX_CANVAS_PX / (box.width * box.height)));
   const url = URL.createObjectURL(new Blob([serialize(svg)], { type: "image/svg+xml;charset=utf-8" }));
   try {
     const img = new Image();
@@ -120,8 +122,8 @@ async function svgToPng(svg: SVGSVGElement): Promise<Blob> {
       img.src = url;
     });
     const canvas = document.createElement("canvas");
-    canvas.width = PNG_WIDTH_PX;
-    canvas.height = Math.round(box.height * scale);
+    canvas.width = Math.floor(box.width * scale);
+    canvas.height = Math.floor(box.height * scale);
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("canvas");
     ctx.fillStyle = "#ffffff";
@@ -143,7 +145,8 @@ function download(blob: Blob, name: string) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  // iPhone Safari는 "다운로드할까요?"를 먼저 묻는다: 그 사이에 주소를 지우면 받지 못하므로 넉넉히 둔다
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 /** 보이지 않는 틀에 그림만 넣고 인쇄 창을 연다 (팝업 차단에 걸리지 않게 새 창 대신) */
