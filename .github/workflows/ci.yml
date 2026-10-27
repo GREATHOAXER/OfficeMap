@@ -1,0 +1,128 @@
+# CI: PR마다 API 서버와 화면을 검사한다. 배포(deploy.yml)도 올리기 전에 이것을 먼저 돌린다.
+#   server  ruff 검사 → 빈 DB(PostgreSQL 16 + pgvector)에 스키마·목업 넣기 → API 서버를 켜고 연기 시험(scripts/smoke_test.py)
+#   web     eslint → 타입 검사 → next build
+#   docker  PR에서만: 두 도커 이미지가 빌드되는지 (올리지는 않음)
+# 설명: docs/cicd.md
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: 검사할 브랜치·태그·커밋 (비우면 부른 쪽 커밋)
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+# 같은 PR에 새로 올리면 앞의 검사는 멈춘다 (배포에서 부를 때는 멈추지 않는다)
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  server:
+    name: API 서버
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: officemap
+          POSTGRES_USER: officemap
+          POSTGRES_PASSWORD: officemap
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U officemap -d officemap"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://officemap:officemap@localhost:5432/officemap
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13" # server/Dockerfile과 같게
+          cache: pip
+          cache-dependency-path: server/requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      - name: ruff (린트)
+        run: ruff check .
+      - name: ruff (서식)
+        run: ruff format --check .
+      - name: DB에 스키마·목업 넣기
+        run: python -m scripts.init_db
+      - name: DB 점검
+        run: python -m scripts.check_db
+      - name: API 서버 켜기
+        run: |
+          nohup uvicorn app.main:app --port 8000 > "$RUNNER_TEMP/api.log" 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS http://localhost:8000/api/health && exit 0
+            sleep 1
+          done
+          echo "::error::API 서버가 30초 안에 뜨지 않았어요"
+          exit 1
+      - name: 연기 시험 (주요 API)
+        run: python -m scripts.smoke_test
+      - name: API 서버 로그
+        if: failure()
+        run: cat "$RUNNER_TEMP/api.log" || true
+
+  web:
+    name: 화면
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22 # frontend/Dockerfile과 같게
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: eslint
+        run: npm run lint
+      - name: 타입 검사
+        run: npm run typecheck
+      - name: 빌드
+        run: npm run build
+
+  docker:
+    name: 도커 이미지 빌드
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - name: API 서버 이미지
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: server/Dockerfile
+          push: false
+          cache-from: type=gha,scope=ci-backend
+          cache-to: type=gha,scope=ci-backend,mode=max
+      - name: 화면 이미지
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: false
+          cache-from: type=gha,scope=ci-frontend
+          cache-to: type=gha,scope=ci-frontend,mode=max

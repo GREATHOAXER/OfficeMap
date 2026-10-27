@@ -12,6 +12,7 @@ Vibe Coding Project @ KFTC
 | `frontend/` | 화면 — Next.js 16 |
 | `docs/design/` | 설계 문서 — [도면 편집 · 좌석 배치 편집](docs/design/floor-plan-and-seating.md) |
 | `deploy/` | 서버 배포 설정 — 도커 compose(Caddy · 화면 · API), [AWS에 올리기](docs/deploy-aws.md) |
+| `.github/workflows/` | CI(검사)·Deploy(자동 배포) — [docs/cicd.md](docs/cicd.md) |
 
 브라우저는 Next.js(3000번)에만 접속하고, Next.js가 `/api/...` 요청을 FastAPI(8000번)로 넘겨줍니다.
 
@@ -246,6 +247,9 @@ docker compose up -d
 
 - `APP_ENV=production`인 서버에서는 `init_db --reset`(모든 테이블 지우기)이 막힙니다.
 - 로컬 개발(`npm run dev`·`npm start`)은 그대로이고, 도커 빌드에서만 Next.js를 standalone(실행에 필요한 파일만)으로 빌드합니다.
+- **CI/CD (GitHub Actions)**: PR마다 검사(린트·타입·빌드·DB 스키마·API 연기 시험), main에 합치면 이미지를 ECR에 올리고 EC2에서 바꿔 띄웁니다
+  (안 뜨면 직전 버전으로). 켜는 순서: [docs/cicd.md](docs/cicd.md)
+- **HTTPS**: 도메인 연결(Route 53·가비아)과 인증서: [docs/deploy-aws.md 6](docs/deploy-aws.md#6-https-켜기-도메인-연결)
 
 ## Claude Code 클라우드 세션에서 임시 공개하기 (데모용)
 
