@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Dialog from "@/components/Dialog";
+import { PenIcon } from "@/components/icons";
 import type { Admin, OrgDepartment, OrgMember } from "@/lib/api";
 import { adminExpiredUrl } from "@/lib/loginRedirect";
 import ui from "../seating/seating.module.css";
@@ -299,7 +300,19 @@ export default function OrgView({
                 <div>
                   <p className={styles.path}>{tree.path(dept.id).slice(0, -1).join(" › ") || "최상위"}</p>
                   <h2 id="dept-title" className={styles.deptTitle}>
-                    {dept.name} <span className="mono">{dept.code}</span>
+                    {dept.name}
+                    {canEdit && dept.is_active && (
+                      <button
+                        type="button"
+                        className={styles.renameButton}
+                        aria-label={`${dept.name} 이름 바꾸기`}
+                        onClick={() => setOpen({ kind: "dept", dept, parentId: dept.parent_id })}
+                      >
+                        <PenIcon size={13} />
+                        이름 바꾸기
+                      </button>
+                    )}{" "}
+                    <span className="mono">{dept.code}</span>
                     {!dept.is_active && <span className={styles.badge}>없앤 부서</span>}
                   </h2>
                   <p className={ui.hint}>
@@ -315,7 +328,7 @@ export default function OrgView({
                       className={ui.btn}
                       onClick={() => setOpen({ kind: "dept", dept, parentId: dept.parent_id })}
                     >
-                      이름·위 부서
+                      이름·위 부서 바꾸기
                     </button>
                     <button
                       type="button"
@@ -581,13 +594,20 @@ function DeptDialog({
       const out = dept
         ? await call<{ department: OrgDepartment }>(`/api/admin/org/departments/${dept.id}`, "PUT", body)
         : await call<{ department: OrgDepartment }>("/api/admin/org/departments", "POST", body);
-      onDone(out.department, dept ? `${out.department.name}: 고쳤어요` : `${out.department.name}: 만들었어요`);
+      onDone(
+        out.department,
+        !dept
+          ? `${out.department.name}: 만들었어요`
+          : dept.name !== out.department.name
+            ? `${dept.name} → ${out.department.name}: 이름을 바꿨어요`
+            : `${out.department.name}: 고쳤어요`,
+      );
     });
   return (
     <Dialog
       open
       onClose={onClose}
-      title={dept ? `${dept.name} 고치기` : "부서 추가"}
+      title={dept ? `${dept.name} 이름·위 부서 바꾸기` : "부서 추가"}
       footer={
         <>
           <button type="button" className={ui.btn} onClick={onClose}>
