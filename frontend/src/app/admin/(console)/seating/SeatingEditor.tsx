@@ -997,7 +997,11 @@ export default function SeatingEditor({ admin, initial, notice, reviewId = null 
           {data.floor.name} 팀 구역 · 관리자
         </h2>
         {perms.mode === "FLOOR" && !readOnly && (
-          <button type="button" className={styles.linkButton} onClick={() => setZoneDialog({ mode: "create" })}>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.headBtn}`}
+            onClick={() => setZoneDialog({ mode: "create" })}
+          >
             + 팀 구역 추가
           </button>
         )}
