@@ -23,6 +23,7 @@ import styles from "./office.module.css";
 // 예약은 하지 않고 후보 카드를 보여 준다. 카드의 "예약하기"를 눌러야 예약된다.
 
 const CONVERSATION_KEY = "officemap.aiConversation"; // 이 탭에서 이어 가는 대화 (패널을 닫았다 열어도 남게)
+const NARROW = "(max-width: 720px)"; // 휴대폰: 도면 화면 대신 AI 화면만 (office.module.css .page[data-ai])
 
 const EXAMPLES = [
   "지금 7층에서 비어 있는 회의실 알려줘",
@@ -65,8 +66,8 @@ function storeConversation(id: number | null) {
 
 export default function AiPanel({ onClose }: { onClose: () => void }) {
   const router = useRouter();
-  const panelRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -99,39 +100,16 @@ export default function AiPanel({ onClose }: { onClose: () => void }) {
     };
   }, []);
 
-  // 좁은 화면(휴대폰)에서는 화면 가득 띄운다 (office.module.css .ai). iPhone은 키보드가 올라와도 화면 높이는 그대로라
-  // 보이는 영역(visualViewport)에 패널을 맞춰야 입력칸이 키보드 위에 남는다. 그동안 뒤 화면은 스크롤되지 않게 막는다
+  // 좁은 화면(휴대폰)에서는 도면 화면 대신 이 화면만 보인다 (office.module.css .page[data-ai]): 맨 위부터 보여 준다
   useEffect(() => {
-    const panel = panelRef.current;
-    const narrow = window.matchMedia("(max-width: 720px)");
-    const vv = window.visualViewport;
-    if (!panel) return;
-    function fit() {
-      if (narrow.matches && vv) {
-        panel!.style.setProperty("--vv-h", `${vv.height}px`);
-        panel!.style.setProperty("--vv-top", `${vv.offsetTop}px`);
-      } else {
-        panel!.style.removeProperty("--vv-h");
-        panel!.style.removeProperty("--vv-top");
-      }
-      document.documentElement.style.overflow = narrow.matches ? "hidden" : "";
-    }
-    fit();
-    vv?.addEventListener("resize", fit);
-    vv?.addEventListener("scroll", fit);
-    narrow.addEventListener("change", fit);
-    return () => {
-      vv?.removeEventListener("resize", fit);
-      vv?.removeEventListener("scroll", fit);
-      narrow.removeEventListener("change", fit);
-      document.documentElement.style.overflow = "";
-    };
+    if (window.matchMedia(NARROW).matches) window.scrollTo(0, 0);
   }, []);
 
-  // 새 글이 붙으면 맨 아래로
+  // 새 글이 붙으면 맨 아래로 (좁은 화면은 대화 칸이 아니라 페이지가 스크롤된다: 입력칸이 보이게)
   useEffect(() => {
     const list = listRef.current;
     if (list) list.scrollTop = list.scrollHeight;
+    if (turns.length && window.matchMedia(NARROW).matches) formRef.current?.scrollIntoView({ block: "end" });
   }, [turns]);
 
   const enabled = status?.enabled === true;
@@ -235,7 +213,6 @@ export default function AiPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <aside
-      ref={panelRef}
       id="ai-panel"
       className={styles.ai}
       aria-labelledby="ai-title"
@@ -337,6 +314,7 @@ export default function AiPanel({ onClose }: { onClose: () => void }) {
       )}
 
       <form
+        ref={formRef}
         className={styles.aiForm}
         onSubmit={(event) => {
           event.preventDefault();

@@ -665,20 +665,23 @@
 }
 
 /* 시작·종료: [날짜] [시각] 한 줄씩 */
+/* 시작·종료 한 줄: 이름 · 날짜 · 시각. 줄 배치는 안쪽 div에 둔다 (fieldset에 grid를 걸고 legend를 띄우면
+   Safari가 날짜 단추와 시각 칸을 겹쳐 그린다). legend는 화면 낭독기용, 보이는 이름은 whenLabel */
 .when {
-  display: grid;
-  grid-template-columns: 40px auto minmax(96px, 1fr);
-  align-items: center;
-  gap: 8px;
+  min-width: 0;
   margin: 0;
   padding: 0;
   border: 0;
 }
 
-.when legend {
-  float: left;
-  width: 40px;
-  padding: 0;
+.whenRow {
+  display: grid;
+  grid-template-columns: 40px auto minmax(96px, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.whenLabel {
   font-size: 12px;
   color: var(--muted);
 }

@@ -220,64 +220,74 @@ export default function ReservationForm(props: Props) {
 
           {/* 시작 일시 / 종료 일시 */}
           <fieldset className={styles.when}>
-            <legend>시작</legend>
-            <DatePicker label="시작 날짜" value={day.date} today={day.today} onChange={onDateChange} />
-            <label className={styles.timeField}>
-              <span className="visually-hidden">시작 시각</span>
-              <select
-                ref={startRef}
-                value={draft.start ?? ""}
-                disabled={!room}
-                onChange={(event) => changeStart(Number(event.target.value))}
-                required
-              >
-                <option value="" disabled>
-                  {room ? (dayClosed ? "이날은 마감" : freeStarts ? "시각" : "빈 시간 없음") : "회의실 먼저"}
-                </option>
-                {starts.map((s) => (
-                  <option key={s.value} value={s.value} disabled={!!s.note}>
-                    {minToHHMM(s.value)}
-                    {s.note ? ` (${s.note})` : ""}
+            <legend className="visually-hidden">시작</legend>
+            <div className={styles.whenRow}>
+              <span className={styles.whenLabel} aria-hidden="true">
+                시작
+              </span>
+              <DatePicker label="시작 날짜" value={day.date} today={day.today} onChange={onDateChange} />
+              <label className={styles.timeField}>
+                <span className="visually-hidden">시작 시각</span>
+                <select
+                  ref={startRef}
+                  value={draft.start ?? ""}
+                  disabled={!room}
+                  onChange={(event) => changeStart(Number(event.target.value))}
+                  required
+                >
+                  <option value="" disabled>
+                    {room ? (dayClosed ? "이날은 마감" : freeStarts ? "시각" : "빈 시간 없음") : "회의실 먼저"}
                   </option>
-                ))}
-              </select>
-            </label>
+                  {starts.map((s) => (
+                    <option key={s.value} value={s.value} disabled={!!s.note}>
+                      {minToHHMM(s.value)}
+                      {s.note ? ` (${s.note})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
           </fieldset>
           <fieldset className={styles.when}>
-            <legend>종료</legend>
-            <DatePicker
-              label="종료 날짜"
-              value={endDate}
-              today={day.today}
-              min={day.date}
-              max={addDays(day.date, maxEndDays(day))}
-              onChange={changeEndDate}
-              describedBy={`${ids}-end-note`}
-            />
-            <label className={styles.timeField}>
-              <span className="visually-hidden">종료 시각</span>
-              <select
-                value={draft.end ?? ""}
-                disabled={draft.start === null}
-                onChange={(event) => set({ end: Number(event.target.value) })}
-                required
-              >
-                <option value="" disabled>
-                  시각
-                </option>
-                {ends.map((e) => (
-                  <option key={e.value} value={e.value} disabled={!!e.note}>
-                    {minToHHMM(e.value)}
-                    {e.note ? ` (${e.note})` : ""}
+            <legend className="visually-hidden">종료</legend>
+            <div className={styles.whenRow}>
+              <span className={styles.whenLabel} aria-hidden="true">
+                종료
+              </span>
+              <DatePicker
+                label="종료 날짜"
+                value={endDate}
+                today={day.today}
+                min={day.date}
+                max={addDays(day.date, maxEndDays(day))}
+                onChange={changeEndDate}
+                describedBy={`${ids}-end-note`}
+              />
+              <label className={styles.timeField}>
+                <span className="visually-hidden">종료 시각</span>
+                <select
+                  value={draft.end ?? ""}
+                  disabled={draft.start === null}
+                  onChange={(event) => set({ end: Number(event.target.value) })}
+                  required
+                >
+                  <option value="" disabled>
+                    시각
                   </option>
-                ))}
-                {draft.end !== null && !ends.some((e) => e.value === draft.end) && (
-                  <option value={draft.end} disabled>
-                    {minToHHMM(draft.end)}
-                  </option>
-                )}
-              </select>
-            </label>
+                  {ends.map((e) => (
+                    <option key={e.value} value={e.value} disabled={!!e.note}>
+                      {minToHHMM(e.value)}
+                      {e.note ? ` (${e.note})` : ""}
+                    </option>
+                  ))}
+                  {draft.end !== null && !ends.some((e) => e.value === draft.end) && (
+                    <option value={draft.end} disabled>
+                      {minToHHMM(draft.end)}
+                    </option>
+                  )}
+                </select>
+              </label>
+            </div>
           </fieldset>
           {dayClosed && (
             <p className={styles.closedNote}>

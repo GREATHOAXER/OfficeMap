@@ -1991,19 +1991,34 @@
     position: static;
   }
 
-  /* 좁은 화면: AI 도우미는 화면 가득 띄운다 (도면 아래에 열면 단추를 눌러도 아무 일 없는 것처럼 보인다).
-     높이·위치는 키보드에 가려지지 않게 보이는 영역에 맞춘다 (AiPanel.tsx가 --vv-h, --vv-top을 넣는다) */
-  .ai {
-    position: fixed;
-    z-index: 65;
-    top: var(--vv-top, 0px);
-    left: 0;
-    right: 0;
-    height: var(--vv-h, 100dvh);
-    min-height: 0;
+  /* 좁은 화면: AI 도우미를 열면 도면 화면 대신 그 화면만 보인다 (도면 아래에 열면 단추를 눌러도 아무 일 없는 것처럼 보인다).
+     화면 위에 띄우지(fixed) 않고 보통 페이지처럼 흐르게 둔다: iPhone은 키보드가 올라오면 띄운 창 뒤로 원래 화면이 비치고
+     스크롤할 때 위아래로 튄다. 대화가 길어지면 페이지가 스크롤되고, 입력칸은 맨 아래(키보드 바로 위)에 온다 */
+  .page[data-ai] > .header,
+  .page[data-ai] .main {
+    display: none;
+  }
+
+  .page[data-ai] .body {
+    padding: 0;
+  }
+
+  .page[data-ai] .side {
+    position: static;
+    flex-basis: 100%;
+  }
+
+  .page[data-ai] .ai {
+    height: auto;
+    min-height: calc(100dvh - 53px); /* 위쪽 메뉴 막대(AppShell .mobileBar) 아래를 채운다 */
     border: 0;
     border-radius: 0;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+
+  .page[data-ai] .aiBody,
+  .page[data-ai] .aiLog {
+    flex: 1 0 auto;
+    overflow: visible;
   }
 
   .hint {

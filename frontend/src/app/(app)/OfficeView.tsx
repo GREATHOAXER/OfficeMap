@@ -240,7 +240,7 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
   }
 
   return (
-    <div className={styles.page}>
+    <div className={styles.page} data-ai={aiOpen || undefined}>
       <header className={styles.header}>
         <h1 className={styles.title}>자리·재실 현황</h1>
         <EmployeeSearch onPick={goToPerson} />
