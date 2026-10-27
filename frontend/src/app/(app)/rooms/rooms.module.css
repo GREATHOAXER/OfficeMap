@@ -34,7 +34,7 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 36px;
+  height: 40px; /* 같은 줄의 예약하기·예약 확정(40px)과 맞춘다 */
   border: 1px solid var(--ink);
   border-radius: 6px;
   background: var(--surface);
@@ -47,7 +47,7 @@
 }
 
 .iconButton {
-  width: 36px;
+  width: 40px;
 }
 
 .textButton {
@@ -195,8 +195,16 @@
   margin: 0;
 }
 
+/* 예약했다·취소했다는 안내: 화면 아래에 잠깐 띄운다 (표를 내려 보던 중에도 보이게) */
 .notice {
-  margin: 12px 24px 0;
+  position: fixed;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 60;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  margin: 0;
+  transform: translateX(-50%);
   font-size: 13px;
 }
 
@@ -209,6 +217,7 @@
   border: 1px solid var(--link);
   border-radius: 8px;
   background: var(--info-bg);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
 }
 
 /* 본문: 지금 상태 카드와 예약 현황표 (예약은 팝업에서 한다) */
@@ -274,7 +283,7 @@
 .closedNote button,
 .alternatives button,
 .skipButton {
-  height: 28px;
+  height: 32px; /* 손가락으로도 누르기 쉽게 (다른 화면의 작은 단추와 같은 높이) */
   padding: 0 10px;
   border: 1px solid var(--ink);
   border-radius: 6px;
@@ -427,6 +436,13 @@
   color: var(--muted);
 }
 
+.empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
 .pastNote,
 .empty {
   margin: 0;
@@ -529,8 +545,10 @@
   border-left-color: var(--divider);
 }
 
-.ttCell:hover:not(:disabled) {
-  background: var(--info-bg);
+@media (hover: hover) {
+  .ttCell:hover:not(:disabled) {
+    background: var(--info-bg);
+  }
 }
 
 .ttCell:focus-visible {
@@ -562,6 +580,12 @@
   cursor: col-resize;
 }
 
+@media (hover: none) and (pointer: coarse) {
+  .escHint {
+    display: none;
+  }
+}
+
 .dragStatus {
   min-height: 1.4em;
   margin: 0 0 4px;
@@ -570,7 +594,8 @@
   font-weight: 600;
 }
 
-.ttCell[data-selected] {
+.ttCell[data-selected],
+.ttCell[data-selected]:hover:not(:disabled) {
   background: #dbe4ff;
   box-shadow: inset 0 2px 0 var(--link), inset 0 -2px 0 var(--link);
 }
@@ -872,6 +897,7 @@
   background: var(--surface);
   font: inherit;
   font-size: 13px;
+  text-overflow: ellipsis; /* 좁은 휴대폰에서 예시 글이 칸 끝에서 뚝 끊기지 않게 */
 }
 
 .aiNote {
@@ -924,7 +950,8 @@
 
 .fieldRow {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* 반쪽 칸이 날짜 단추(약 190px)보다 좁아지는 휴대폰에서는 한 줄에 하나씩 */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
   gap: 8px;
 }
 
@@ -1073,13 +1100,15 @@
 }
 
 .linkButton {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--link);
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
   font: inherit;
   font-size: 12px;
-  text-decoration: underline;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -1105,6 +1134,7 @@
 }
 
 .chipRemove {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1115,6 +1145,12 @@
   background: transparent;
   color: var(--muted);
   cursor: pointer;
+}
+
+.chipRemove::before {
+  content: "";
+  position: absolute;
+  inset: -4px; /* 누르는 칸은 32px (보이는 원은 24px) */
 }
 
 .chipRemove:hover {
@@ -1300,14 +1336,16 @@
     flex-wrap: wrap;
   }
 
+  /* 휴대폰 층 단추: 옆으로 밀어야 보이면 뒤의 층이 있는지 모른다. 줄을 바꿔 다 보이게 (칸 사이 선은 그대로) */
   .seg {
-    flex-wrap: nowrap;
     max-width: 100%;
-    overflow-x: auto;
+    gap: 1px;
+    background: var(--ink);
   }
 
   .seg button {
-    flex: none;
+    flex: 1 0 auto;
+    border-right: 0;
   }
 
   .ttRoom span {

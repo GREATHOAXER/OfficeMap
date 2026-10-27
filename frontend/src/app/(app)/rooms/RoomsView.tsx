@@ -193,6 +193,9 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
       r.capacity >= minCapacity &&
       (!needVideo || r.equipment.includes("VIDEO")),
   );
+  // 표에 "지금" 선이 그려지는 때만 범례에 넣는다 (운영 시간 밖이면 선이 없다)
+  const nowOnTable =
+    day.now_min !== null && day.now_min >= day.policy.open_start && day.now_min < day.policy.open_end;
 
   /** 층을 고르면 쿠키에 남겨서, 다음에 들어와도 그 층으로 연다 */
   function chooseFloor(next: number | "all") {
@@ -485,7 +488,7 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
               <span className={styles.lgSelected} aria-hidden="true" />
               선택
             </span>
-            {day.now_min !== null && (
+            {nowOnTable && (
               <span className={styles.legend}>
                 <span className={styles.lgNow} aria-hidden="true" />
                 지금
@@ -495,7 +498,11 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
               <span className={styles.lgPast} aria-hidden="true" />
               지난 시간·운영 시간 밖
             </span>
-            <span className={styles.ttHint}>빈 칸을 누르거나 끌어서 예약 (휴대폰은 꾹 누른 채 끌기) · 예약을 누르면 자세히</span>
+            <span className={styles.ttHint}>
+              {day.past
+                ? "예약을 누르면 자세히"
+                : "빈 칸을 누르거나 끌어서 예약 (휴대폰은 꾹 누른 채 끌기) · 예약을 누르면 자세히"}
+            </span>
           </div>
           {day.past && <p className={styles.pastNote}>지난 날짜예요. 예약 현황만 볼 수 있어요.</p>}
           {day.rooms.length === 0 ? (

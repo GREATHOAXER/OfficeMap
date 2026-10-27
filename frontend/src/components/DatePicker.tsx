@@ -93,6 +93,14 @@ export default function DatePicker(props: Props) {
     if (open && view === "day") gridRef.current?.querySelector<HTMLButtonElement>(`[data-iso="${cursor}"]`)?.focus();
   }, [open, view, cursor]);
 
+  // 달·연도 보기로 바꾸면 누른 제목 단추가 사라진다: 고른 달(연도)로, 없으면 첫 칸으로 포커스를 옮긴다
+  useEffect(() => {
+    if (!open || view === "day") return;
+    const cells = gridRef.current?.querySelectorAll<HTMLButtonElement>("button");
+    if (!cells?.length) return;
+    ([...cells].find((c) => c.dataset.selected) ?? cells[0]).focus();
+  }, [open, view]);
+
   const { year, month } = partsOf(cursor);
 
   function moveMonths(n: number) {
@@ -199,7 +207,7 @@ export default function DatePicker(props: Props) {
       />
     );
     body = (
-      <div className={styles.grid3} role="group" aria-labelledby={titleId}>
+      <div ref={gridRef} className={styles.grid3} role="group" aria-labelledby={titleId}>
         {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
           <button
             key={m}
@@ -230,7 +238,7 @@ export default function DatePicker(props: Props) {
       />
     );
     body = (
-      <div className={styles.grid3} role="group" aria-labelledby={titleId}>
+      <div ref={gridRef} className={styles.grid3} role="group" aria-labelledby={titleId}>
         {Array.from({ length: YEARS_PER_PAGE }, (_, i) => start + i).map((y) => (
           <button
             key={y}
@@ -251,7 +259,15 @@ export default function DatePicker(props: Props) {
   }
 
   return (
-    <div ref={boxRef} className={`${styles.picker} ${className ?? ""}`}>
+    <div
+      ref={boxRef}
+      className={`${styles.picker} ${className ?? ""}`}
+      onBlur={(event) => {
+        // Tab으로 달력 밖으로 나가면 닫는다. 달력 안 빈 곳을 눌러 초점이 잠깐 빠질 때(relatedTarget 없음)는 그대로 둔다
+        const next = event.relatedTarget as Node | null;
+        if (open && next && !boxRef.current?.contains(next)) setOpen(false);
+      }}
+    >
       <button
         ref={buttonRef}
         type="button"

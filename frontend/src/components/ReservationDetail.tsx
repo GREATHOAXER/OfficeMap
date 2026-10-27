@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReservationDetail as Detail } from "@/lib/api";
 import { formatDuration, formatShortDay, kstDate } from "@/lib/dates";
 import { NO_STATUS_LABEL, PRESENCE_LABEL } from "@/lib/presence";
@@ -35,6 +35,12 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
   const [confirming, setConfirming] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  // "예약 취소"를 누르면 그 단추가 사라진다. 초점이 창 밖으로 떨어지지 않게 확인 질문의 "아니요"로 옮긴다
+  // (Enter를 한 번 더 눌러도 바로 취소되지 않게 지우지 않는 쪽으로)
+  const keepRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (confirming) keepRef.current?.focus();
+  }, [confirming]);
 
   useEffect(() => {
     if (reservationId === null) return;
@@ -223,7 +229,7 @@ export default function ReservationDetail({ reservationId, onClose, onCancelled,
                   {cancelling ? "취소하는 중…" : "취소하기"}
                 </button>
               )}
-              <button type="button" className={styles.secondary} onClick={() => setConfirming(false)}>
+              <button ref={keepRef} type="button" className={styles.secondary} onClick={() => setConfirming(false)}>
                 아니요
               </button>
             </div>

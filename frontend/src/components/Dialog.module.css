@@ -10,6 +10,10 @@
   font-weight: 400;
   text-align: start;
   white-space: normal;
+  /* 창 자체는 스크롤되지 않는다 (본문만). 브라우저 기본값(auto)이면 휴대폰에서 칸을 누를 때 창이 통째로 밀려
+     제목·닫기가 위로 사라진다 */
+  overflow: hidden;
+  overflow: clip;
 }
 
 /* 예약 폼: 화면이 넓을수록 넓게 (안의 폼은 폭에 따라 한 단 / 두 단) */
@@ -71,6 +75,7 @@
   /* 0이 아니라 내용 높이에서 시작해 넘치면 줄어든다(스크롤). flex: 1(기준 0%)이면 Safari는 높이를 정하지 않은 창에서
      본문을 0으로 계산해, 아이폰·맥 Safari에서 제목과 단추만 보였다 */
   flex: 1 1 auto;
+  position: relative; /* 화면 낭독기용 숨은 글자(position: absolute)가 본문 밖으로 나가 창을 늘리지 않게 */
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;

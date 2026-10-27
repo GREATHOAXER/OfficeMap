@@ -107,6 +107,12 @@ select:not([multiple]):disabled {
   }
 }
 
+/* 체크·라디오 칸은 운영체제 기본색(맥은 파랑, 윈도는 짙은 파랑, 안드로이드는 초록 등) 대신 서비스의 검정 */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--ink);
+}
+
 a {
   color: var(--link);
 }

@@ -274,9 +274,12 @@ export default function Timeline({ day, rooms, draft, onPick, onPickRange, onOpe
         <p className={styles.scrollHint}>표를 옆으로 밀면 다른 시간이 보여요 · 칸에서 방향키로도 옮길 수 있어요</p>
       )}
       <p className={styles.dragStatus} aria-live="polite">
-        {drag && dragSel
-          ? `${drag.room.name} ${minToHHMM(dragSel.start)}–${minToHHMM(dragSel.end)} · 손을 떼면 예약 (Esc: 그만두기)`
-          : ""}
+        {drag && dragSel && (
+          <>
+            {`${drag.room.name} ${minToHHMM(dragSel.start)}–${minToHHMM(dragSel.end)} · 손을 떼면 예약`}
+            <span className={styles.escHint}> (Esc: 그만두기)</span>
+          </>
+        )}
       </p>
       <div ref={scrollRef} className={styles.ttScroll}>
         <div
