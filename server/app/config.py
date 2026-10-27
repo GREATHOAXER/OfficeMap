@@ -12,5 +12,15 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     app_env: str = "development"  # 실제 데이터가 든 서버는 production: DB를 통째로 지우는 init_db --reset을 막는다
 
+    # AI 도우미 (app/assistant.py). ai_provider가 비면 꺼진다
+    #   anthropic: Anthropic API (anthropic_api_key)
+    #   bedrock:   Amazon Bedrock (서버의 IAM 역할 또는 AWS 키, aws_region)
+    ai_provider: str = ""
+    ai_model: str = ""  # 비우면 제공처별 기본 모델
+    ai_effort: str = "medium"  # low | medium | high: 높을수록 더 꼼꼼히 생각하고 느리고 비싸다
+    ai_hourly_limit: int = 60  # 한 사람이 한 시간에 보낼 수 있는 질문 수
+    anthropic_api_key: str = ""
+    aws_region: str = "ap-northeast-2"
+
 
 settings = Settings()

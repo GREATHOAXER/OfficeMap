@@ -1,6 +1,7 @@
 import type { Draft } from "./slots";
 
 // 예약을 확정하려는데 로그인이 끊겼을 때 쓰던 내용을 잠깐 맡아 둔다. 다시 로그인하고 돌아오면 폼을 그대로 채운다.
+// AI 도우미의 예약 제안을 "예약 화면에서 고치기"로 넘길 때도 쓴다.
 // 이 탭에서만(sessionStorage), 30분 안에 돌아왔을 때만 쓴다. 저장소가 막혀 있으면(사생활 보호 모드 등) 조용히 넘어간다
 
 const KEY = "officemap.roomsDraft";
@@ -12,6 +13,8 @@ export type SavedDraft = {
   draft: Draft;
   /** 고치던 예약 (새 예약이면 null)과 그 예약을 읽었을 때의 updated_at */
   edit: { id: number; title: string; updatedAt: string; series?: boolean } | null;
+  /** 폼을 채운 뒤 보여 줄 안내 (없으면 로그인이 끊겼다는 안내) */
+  notice?: string;
   savedAt: number;
 };
 

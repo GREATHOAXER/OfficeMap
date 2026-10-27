@@ -10,6 +10,7 @@ from app.jobs import jobs
 from app.realtime import hub
 from app.routers import (
     admin,
+    ai,
     auth,
     employees,
     grants,
@@ -52,6 +53,7 @@ app.include_router(moves.router)
 app.include_router(profile.router)
 app.include_router(org.router)
 app.include_router(personnel.router)
+app.include_router(ai.router)
 
 
 @app.get("/api/health")

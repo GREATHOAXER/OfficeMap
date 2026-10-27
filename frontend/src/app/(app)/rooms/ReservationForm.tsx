@@ -2,10 +2,11 @@
 
 import { type FormEvent, useId, useRef } from "react";
 import DatePicker from "@/components/DatePicker";
-import { SparkleIcon } from "@/components/icons";
+import type { AiProposal } from "@/lib/ai";
 import type { RoomsDay } from "@/lib/api";
 import { addDays, daysBetween, formatDuration, formatShortDay, minToHHMM } from "@/lib/dates";
 import { rangeText } from "@/lib/rooms";
+import AiSuggest from "./AiSuggest";
 import AttendeePicker from "./AttendeePicker";
 import {
   defaultRepeatUntil,
@@ -57,6 +58,8 @@ type Props = {
   onSkipConflicts: () => void;
   /** 다른 탭·창에서 먼저 고쳐서 저장하지 못했을 때: 최신 내용 다시 불러오기 */
   onReloadEdit: (() => void) | null;
+  /** AI 추천 후보를 골랐을 때: 폼을 그 내용으로 채운다 (날짜·사업장이 다르면 그리로 옮긴다) */
+  onAiPick: (proposal: AiProposal) => void;
 };
 
 /** 예약 폼이 다 채워졌나 (팝업 아래 "예약 확정" 버튼을 켜고 끈다) */
@@ -69,7 +72,7 @@ export const isReady = (draft: Draft) =>
  */
 export default function ReservationForm(props: Props) {
   const { formId, day, draft, onDraftChange, onDateChange, onSubmit, error, conflicts, checking } = props;
-  const { editing, editingSeries, editingId, skipDates, onSkipConflicts, onReloadEdit } = props;
+  const { editing, editingSeries, editingId, skipDates, onSkipConflicts, onReloadEdit, onAiPick } = props;
   const ids = useId();
   const roomRef = useRef<HTMLSelectElement>(null);
   const startRef = useRef<HTMLSelectElement>(null);
@@ -409,16 +412,7 @@ export default function ReservationForm(props: Props) {
         </div>
 
         <div className={styles.formCol}>
-          <section className={styles.ai} aria-labelledby={`${ids}-ai`}>
-            <div id={`${ids}-ai`} className={styles.aiHead}>
-              <SparkleIcon size={14} /> AI 추천 <span className={styles.soon}>준비 중</span>
-            </div>
-            <label className={styles.aiField}>
-              <span className="visually-hidden">AI에게 회의 조건 말하기</span>
-              <input placeholder="예: 김민준·이서연이랑 오늘 1시간 회의" disabled />
-            </label>
-            <p className={styles.aiNote}>참석자 일정과 빈 회의실을 보고 시간을 골라 주는 기능을 만들고 있어요.</p>
-          </section>
+          <AiSuggest day={day} onPick={onAiPick} />
 
           <div className={styles.field}>
             <span>

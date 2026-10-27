@@ -121,6 +121,29 @@
   font-size: 18px;
 }
 
+/* 부서 이름 옆 "이름 바꾸기" (이름·위 부서 바꾸기와 같은 창) */
+.renameButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  margin: 0 6px 0 8px;
+  padding: 0 8px;
+  vertical-align: 3px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.renameButton:hover,
+.renameButton:focus-visible {
+  border-color: var(--ink);
+}
+
 .deptTitle :global(.mono) {
   font-size: 12px;
   font-weight: 400;

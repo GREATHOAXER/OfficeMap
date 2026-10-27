@@ -151,6 +151,8 @@ DB 접속 점검: officemap@officemap-db.abcdefghijkl.ap-northeast-2.rds.amazona
 
 ## 5. 새 버전 올리기
 
+GitHub Actions 자동 배포를 켰다면 main에 합치기만 하면 됩니다: [docs/cicd.md](cicd.md). 손으로 올릴 때는:
+
 ```bash
 cd ~/OfficeMap && git pull && cd deploy && docker compose up -d --build
 ```
@@ -162,25 +164,78 @@ DB 구조(`db/schema`)가 바뀐 버전이면 둘 중 하나:
   ```bash
   docker compose run --rm backend python -m scripts.init_db --only 12_personnel.sql 09_retention.sql
   ```
+  AI 도우미가 들어간 버전은 `13_ai_chat.sql` (켜는 법: [docs/ai.md](ai.md)).
   이미 있는 테이블을 다시 만들려 하면 아무것도 바꾸지 않고 멈춥니다.
 - 목업을 처음부터 다시 (시험 서버만, 데이터가 지워짐): `docker compose run --rm backend python -m scripts.init_db --reset`
 
 기존 테이블의 열이 바뀐 버전은 `--only`로 넣을 수 없어서, 실제 데이터가 들어가기 전에 마이그레이션(바뀐 부분만 적용) 도구를
 들여옵니다(아래 8).
 
-## 6. HTTPS 켜기 (도메인이 생기면)
+## 6. HTTPS 켜기 (도메인 연결)
 
-1. 도메인의 DNS에 A 레코드 추가: 예 `officemap.example.com` → `<서버 IP>`
-2. EC2 보안 그룹에 **HTTP(80)·HTTPS(443) 소스 0.0.0.0/0** — 인증서 발급처(Let's Encrypt)가 인터넷에서 확인하러 들어옵니다.
-3. `deploy/.env`:
-   ```
-   SITE_ADDRESS=officemap.example.com
-   COOKIE_SECURE=true
-   ```
-4. `docker compose up -d` → Caddy가 인증서를 받아 HTTPS로 열고, HTTP는 HTTPS로 넘깁니다.
+앞단 Caddy가 Let's Encrypt 인증서를 저절로 받고(무료), 만료 전에 저절로 갱신합니다. 할 일은 **도메인이 서버 IP를 가리키게 하기**,
+**80·443 열기**, **`.env`에 도메인 적기** 세 가지입니다. 아래는 가비아에서 산 도메인을 Route 53으로 관리하는 경우입니다
+(예: 도메인 `example.com`, 접속 주소 `officemap.example.com`. 도메인 자체 `example.com`으로 써도 됩니다).
 
-인터넷 전체에 열지 않고 사내에서만 쓰게 하려면 이 방법 대신 로드밸런서(ALB) + AWS 인증서(ACM) + 사내망 접속(VPN 등)으로
-갑니다. 실제 운영 전에 정보보호팀과 정할 부분입니다.
+**6-1. 네임서버 확인** — Route 53 → 호스팅 영역 → 도메인 → `NS` 레코드의 값 4개(`ns-123.awsdns-45.com.` 같은 것)가
+가비아 → My가비아 → 도메인 관리 → 네임서버 설정에 **4개 모두, 그대로** 들어가 있어야 합니다. Mac 터미널에서:
+
+```bash
+dig +short NS example.com     # awsdns가 들어간 이름 4개가 나오면 됨 (가비아 것이 나오면 아직 반영 전: 보통 1시간, 길면 하루)
+```
+
+네임서버를 Route 53으로 넘긴 뒤에는 **가비아의 DNS 레코드 설정은 쓰이지 않습니다.** 레코드는 모두 Route 53에서 만듭니다.
+호스팅 영역을 지웠다 다시 만들면 NS 값이 바뀌니 가비아에도 다시 넣어야 합니다.
+
+**6-2. A 레코드** — Route 53 → 호스팅 영역 → 도메인 → **레코드 생성**:
+
+| 항목 | 값 |
+|---|---|
+| 레코드 이름 | `officemap` (도메인 자체로 쓰려면 비움) |
+| 레코드 유형 | A |
+| 값 | 서버의 **탄력적 IP** (`<서버 IP>`) |
+| TTL | 300 |
+| 라우팅 정책 | 단순 라우팅 |
+
+```bash
+dig +short A officemap.example.com   # <서버 IP>가 나오면 됨 (몇 분)
+```
+
+**6-3. 보안 그룹** — EC2 → 보안 그룹 → `officemap-app-sg` → 인바운드 규칙 편집 → 규칙 추가:
+**HTTP(80) 소스 0.0.0.0/0**, **HTTPS(443) 소스 0.0.0.0/0**. 인증서 발급처가 인터넷에서 80으로 들어와 도메인 주인인지 확인하고,
+갱신(약 60일마다) 때도 다시 들어옵니다. SSH(22)는 계속 "내 IP"만 둡니다.
+
+**6-4. `.env`와 다시 띄우기** — 서버에서:
+
+```bash
+cd ~/OfficeMap/deploy
+nano .env
+#   SITE_ADDRESS=officemap.example.com        (여러 개면 쉼표: SITE_ADDRESS=example.com, www.example.com)
+#   COOKIE_SECURE=true
+docker compose up -d
+docker compose logs -f caddy   # "certificate obtained successfully"가 나오면 Ctrl+C
+```
+
+브라우저에서 `https://officemap.example.com`. `http://`로 들어와도 HTTPS로 넘어갑니다. 이제 `http://<서버 IP>`로는 열리지 않습니다
+(Caddy는 적어 둔 도메인으로 온 접속만 받습니다). 자동 배포를 쓰면 GitHub 변수 `APP_URL`에 `https://officemap.example.com`
+([docs/cicd.md](cicd.md#3-github-설정)).
+
+**안 될 때**
+
+| 증상 | 확인 |
+|---|---|
+| `dig`에 아무것도 안 나옴 / caddy 로그 `NXDOMAIN` | 6-1 네임서버가 아직 반영 전이거나 가비아에 넣은 값이 Route 53 호스팅 영역의 NS와 다름. 6-2 레코드 이름 오타 |
+| caddy 로그 `Timeout during connect (likely firewall problem)` · `connection refused` | 6-3 보안 그룹에 80·443이 0.0.0.0/0으로 열렸는지 |
+| caddy 로그 `rateLimited` · `too many` | 실패를 여러 번 반복해 발급처가 잠시 막음. 원인을 고친 뒤 한 시간쯤 기다리면 Caddy가 저절로 다시 시도합니다 |
+| 브라우저 "안전하지 않음" 경고 | IP나 `.env`에 없는 이름으로 접속함. 인증서 발급 전이면 위 로그부터 |
+| 로그인해도 로그인 화면으로 돌아옴 | HTTPS인데 `COOKIE_SECURE=false`이거나, HTTP인데 `true` |
+
+인증서는 `caddy-data` 볼륨에 있습니다. `docker compose down -v`는 이 볼륨까지 지워 인증서를 새로 받게 되니 쓰지 마세요
+(그냥 `down`은 괜찮습니다).
+
+**인터넷 전체에 열지 않으려면**: 위 방법은 로그인 화면이 인터넷에 열립니다(목업 데이터 시험 서버는 괜찮음). 실제 데이터를 넣을 때는
+① Caddy가 80을 열지 않고 Route 53에 확인용 레코드를 써서 인증서를 받게(DNS 인증) 바꾸고 보안 그룹을 사내 IP로 좁히거나,
+② 로드밸런서(ALB) + AWS 인증서(ACM) + 사내망 접속(VPN 등)으로 갑니다. 정보보호팀과 정할 부분입니다.
 
 ## 7. 관리
 
@@ -199,7 +254,7 @@ DB 구조(`db/schema`)가 바뀐 버전이면 둘 중 하나:
 2. **`APP_ENV=production`**: `.env`에서 바꾸면 `init_db --reset`이 막힙니다.
 3. **앱 전용 DB 계정**: 마스터 계정 대신 읽기·쓰기만 되는 계정으로 접속합니다.
 4. **접속 범위**: 사내망에서만 열기(ALB + VPN 등), 정보보호팀 검토.
-5. **이미지 빌드를 서버 밖으로**: GitHub Actions에서 빌드해 ECR(이미지 저장소)에 올리고, 서버는 받기만 합니다.
+5. **이미지 빌드를 서버 밖으로**: GitHub Actions에서 빌드해 ECR(이미지 저장소)에 올리고, 서버는 받기만 합니다 → [docs/cicd.md](cicd.md)
 
 ## 내 PC에서 같은 구성으로 먼저 시험하기 (선택)
 

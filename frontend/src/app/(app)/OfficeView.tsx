@@ -250,12 +250,11 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
           className={styles.aiButton}
           aria-expanded={aiOpen}
           aria-controls="ai-panel"
-          aria-label="AI 도우미 (준비 중)"
+          aria-label="AI 도우미"
           onClick={() => setAiOpen(!aiOpen)}
         >
           <SparkleIcon size={18} />
           <span className={styles.aiButtonText}>AI 도우미</span>
-          <span className={styles.aiSoon}>준비 중</span>
         </button>
         <MyStatus info={{ ...myPresence, presence: mine }} />
       </header>
