@@ -23,7 +23,6 @@ import styles from "./office.module.css";
 // 예약은 하지 않고 후보 카드를 보여 준다. 카드의 "예약하기"를 눌러야 예약된다.
 
 const CONVERSATION_KEY = "officemap.aiConversation"; // 이 탭에서 이어 가는 대화 (패널을 닫았다 열어도 남게)
-const NARROW = "(max-width: 720px)"; // 휴대폰: 도면 화면 대신 AI 화면만 (office.module.css .page[data-ai])
 
 const EXAMPLES = [
   "지금 7층에서 비어 있는 회의실 알려줘",
@@ -64,10 +63,11 @@ function storeConversation(id: number | null) {
   }
 }
 
-export default function AiPanel({ onClose }: { onClose: () => void }) {
+/** asPage: 패널이 도면 아래로 내려가는 좁은 화면이라 도면 화면 대신 이 화면만 보일 때 (페이지째 스크롤) */
+export default function AiPanel({ onClose, asPage = false }: { onClose: () => void; asPage?: boolean }) {
   const router = useRouter();
   const closeRef = useRef<HTMLButtonElement>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -100,17 +100,17 @@ export default function AiPanel({ onClose }: { onClose: () => void }) {
     };
   }, []);
 
-  // 좁은 화면(휴대폰)에서는 도면 화면 대신 이 화면만 보인다 (office.module.css .page[data-ai]): 맨 위부터 보여 준다
+  // 좁은 화면에서는 도면 화면 대신 이 화면만 보인다 (office.module.css .page[data-ai][data-stacked]): 맨 위부터 보여 준다
   useEffect(() => {
-    if (window.matchMedia(NARROW).matches) window.scrollTo(0, 0);
-  }, []);
+    if (asPage) window.scrollTo(0, 0);
+  }, [asPage]);
 
-  // 새 글이 붙으면 맨 아래로 (좁은 화면은 대화 칸이 아니라 페이지가 스크롤된다: 입력칸이 보이게)
+  // 새 글이 붙으면 맨 아래로 (좁은 화면은 대화 칸이 아니라 페이지가 스크롤된다: 입력칸과 그 아래 안내까지 보이게)
   useEffect(() => {
     const list = listRef.current;
     if (list) list.scrollTop = list.scrollHeight;
-    if (turns.length && window.matchMedia(NARROW).matches) formRef.current?.scrollIntoView({ block: "end" });
-  }, [turns]);
+    if (turns.length && asPage) panelRef.current?.scrollIntoView({ block: "end" });
+  }, [turns, asPage]);
 
   const enabled = status?.enabled === true;
 
@@ -213,6 +213,7 @@ export default function AiPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <aside
+      ref={panelRef}
       id="ai-panel"
       className={styles.ai}
       aria-labelledby="ai-title"
@@ -314,7 +315,6 @@ export default function AiPanel({ onClose }: { onClose: () => void }) {
       )}
 
       <form
-        ref={formRef}
         className={styles.aiForm}
         onSubmit={(event) => {
           event.preventDefault();

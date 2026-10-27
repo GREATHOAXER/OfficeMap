@@ -242,7 +242,8 @@ export default function AppShell(props: Props) {
         <UserCard account={account} />
       </nav>
       <div className={styles.backdrop} aria-hidden="true" onClick={closeDrawer} />
-      <div className={styles.content}>
+      {/* 서랍이 열려 있으면 뒤 화면은 Tab·화면 낭독기가 지나가지 않게 */}
+      <div className={styles.content} inert={drawerOpen}>
         {/* 휴대폰: 왼쪽 메뉴 대신 위쪽 막대 (햄버거로 메뉴 서랍 열기) */}
         <div className={styles.mobileBar}>
           <button

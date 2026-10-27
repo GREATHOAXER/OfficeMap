@@ -17,6 +17,10 @@ import SeatPanel, { NoSeatCard } from "./SeatPanel";
 import { useFloorUpdates } from "./useFloorUpdates";
 import styles from "./office.module.css";
 
+// 도면(.main)과 오른쪽 패널(.side)의 최소 폭 (office.module.css flex-basis와 같게)
+const MAIN_MIN_PX = 560;
+const SIDE_MIN_PX = 280;
+
 type Props = {
   floors: FloorSummary[];
   myFloorId: number | null;
@@ -115,6 +119,23 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
     return !!main && !!side && side.offsetTop > main.offsetTop + 8;
   }, []);
 
+  // 본문 폭이 도면(560px)과 패널(280px)을 나란히 둘 만큼 안 되면 패널이 도면 아래로 내려간다 (휴대폰·태블릿 세로).
+  // 그때 AI 도우미를 열면 도면 화면 대신 AI 화면만 보인다 (office.module.css .page[data-ai][data-stacked]).
+  // 폭으로 정한다: AI 화면에서는 도면이 숨어 있어 패널 자리로는 알 수 없다
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [stacked, setStacked] = useState(false);
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (!body) return;
+    const observer = new ResizeObserver(() => {
+      const cs = getComputedStyle(body);
+      const inner = body.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      setStacked(inner < MAIN_MIN_PX + SIDE_MIN_PX + parseFloat(cs.columnGap || "0"));
+    });
+    observer.observe(body);
+    return () => observer.disconnect();
+  }, []);
+
   const selectSeat = useCallback(
     (seatId: number | null) => {
       if (seatId !== null) setNoSeatHit(null);
@@ -208,9 +229,12 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
   function goToPerson(hit: EmployeeHit) {
     setAiState(false);
     if (!hit.seat) {
-      // 도면에 보여 줄 곳이 없으니 오른쪽 패널에 연락처를 보여 준다
+      // 도면에 보여 줄 곳이 없으니 오른쪽 패널에 연락처를 보여 준다 (패널이 도면 아래면 거기로 내려 보여 준다)
       selectSeat(null);
       setNoSeatHit(hit);
+      requestAnimationFrame(() => {
+        if (sideIsBelow()) sideRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+      });
       return;
     }
     setNoSeatHit(null);
@@ -240,7 +264,7 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
   }
 
   return (
-    <div className={styles.page} data-ai={aiOpen || undefined}>
+    <div className={styles.page} data-ai={aiOpen || undefined} data-stacked={stacked || undefined}>
       <header className={styles.header}>
         <h1 className={styles.title}>자리·재실 현황</h1>
         <EmployeeSearch onPick={goToPerson} />
@@ -275,7 +299,7 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
         </p>
       )}
 
-      <div className={styles.body}>
+      <div ref={bodyRef} className={styles.body}>
         <main ref={mainRef} className={styles.main}>
           <div className={styles.floorsWrap} data-more-left={floorsMore.left} data-more-right={floorsMore.right}>
             {/* 마우스용 넘기기 단추. 키보드는 층 링크를 차례로 지나가면 저절로 보이게 밀린다 */}
@@ -354,7 +378,7 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
                 );
               })}
             </div>
-            {hasSeats && (
+            {map.plan && (
               <div role="group" aria-label="도면 크기" className={styles.zoom}>
                 <button
                   type="button"
@@ -433,7 +457,11 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
           <div id="floor-legend" tabIndex={-1} className={styles.legend}>
             {hasSeats && (
               <fieldset className={styles.filter}>
-                <legend>표시</legend>
+                {/* 보이는 이름은 span: Safari는 legend를 옆에 띄우지 않고 한 줄을 따로 차지한다 */}
+                <legend className="visually-hidden">표시</legend>
+                <span className={styles.filterLabel} aria-hidden="true">
+                  표시
+                </span>
                 {STATUS_FILTERS.map((status) => (
                   <label key={status}>
                     <input type="checkbox" checked={visible.has(status)} onChange={() => toggleStatus(status)} />
@@ -482,7 +510,7 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
 
         <div ref={sideRef} className={styles.side}>
           {aiOpen ? (
-            <AiPanel onClose={() => setAiOpen(false)} />
+            <AiPanel onClose={() => setAiOpen(false)} asPage={stacked} />
           ) : noSeatHit && !selectedSeat ? (
             <NoSeatCard hit={noSeatHit} onClose={() => setNoSeatHit(null)} />
           ) : (
