@@ -189,7 +189,9 @@ export default function PresenceView({ myEmpNo, info, team, upcoming, today }: P
                     ) : (
                       <span className="mk" data-status={status} aria-hidden="true" />
                     )}
-                    {status === "NONE" ? NO_STATUS_LABEL : PRESENCE_LABEL[status]}
+                    <span className={styles.countLabel}>
+                      {status === "NONE" ? NO_STATUS_LABEL : PRESENCE_LABEL[status]}
+                    </span>
                     <strong className="mono">{count}</strong>
                   </button>
                 ))}

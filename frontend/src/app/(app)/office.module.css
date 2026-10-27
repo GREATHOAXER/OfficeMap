@@ -2,8 +2,17 @@
 
 .page {
   min-height: 100vh;
+  min-height: calc(100dvh - env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
+}
+
+/* 휴대폰: 위쪽 메뉴 막대(AppShell .mobileBar, 52px) 아래만 채운다. 100vh로 두면 내용이 짧아도 막대만큼 늘 스크롤되고,
+   AI 화면에서는 입력칸을 누를 때마다 화면이 그만큼 오르내렸다. 아래 홈 막대 자리는 body가 이미 비워 둔다(globals.css) */
+@media (max-width: 720px) {
+  .page {
+    min-height: calc(100dvh - 52px - env(safe-area-inset-bottom));
+  }
 }
 
 .header {
@@ -523,12 +532,14 @@
 
 /* 본문: 도면(main)과 오른쪽 패널(side). 폭이 모자라면 패널이 아래로 내려간다 */
 .body {
+  /* 여백을 변수로도 둔다: AI 화면(여백 0)에서도 OfficeView가 평소 여백으로 도면·패널이 나란히 들어가는지 잰다 */
+  --body-pad: 16px;
   flex: 1;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 16px;
-  padding: 16px;
+  padding: var(--body-pad);
 }
 
 .main {
@@ -2062,7 +2073,7 @@
   }
 
   .body {
-    padding: 12px;
+    --body-pad: 12px;
   }
 
   .side {
@@ -2096,9 +2107,16 @@
 
 .page[data-ai][data-stacked] .ai {
   height: auto;
-  min-height: calc(100dvh - 53px); /* 휴대폰 위쪽 메뉴 막대(AppShell .mobileBar) 아래를 채운다 */
+  min-height: calc(100dvh - env(safe-area-inset-bottom)); /* 태블릿(왼쪽 메뉴, 위쪽 막대 없음): 화면 끝까지 (홈 막대 자리는 body가 비운다) */
   border: 0;
   border-radius: 0;
+}
+
+/* 휴대폰: 위쪽 메뉴 막대(AppShell .mobileBar, 720px 이하) 아래를 채운다 */
+@media (max-width: 720px) {
+  .page[data-ai][data-stacked] .ai {
+    min-height: calc(100dvh - 52px - env(safe-area-inset-bottom));
+  }
 }
 
 .page[data-ai][data-stacked] .aiBody,

@@ -121,7 +121,9 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
 
   // 본문 폭이 도면(560px)과 패널(280px)을 나란히 둘 만큼 안 되면 패널이 도면 아래로 내려간다 (휴대폰·태블릿 세로).
   // 그때 AI 도우미를 열면 도면 화면 대신 AI 화면만 보인다 (office.module.css .page[data-ai][data-stacked]).
-  // 폭으로 정한다: AI 화면에서는 도면이 숨어 있어 패널 자리로는 알 수 없다
+  // 폭으로 정한다: AI 화면에서는 도면이 숨어 있어 패널 자리로는 알 수 없다.
+  // 여백은 지금 값이 아니라 평소 값(--body-pad)으로 뺀다. AI 화면은 여백이 0이라 지금 값으로 재면 넓어진 것으로 보여
+  // 도면 화면으로 돌아가고, 그러면 다시 좁아져 AI 화면이 되는 것을 되풀이했다 (아이패드 가로에서 AI가 도면 아래로 밀림)
   const bodyRef = useRef<HTMLDivElement>(null);
   const [stacked, setStacked] = useState(false);
   useEffect(() => {
@@ -129,7 +131,7 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
     if (!body) return;
     const observer = new ResizeObserver(() => {
       const cs = getComputedStyle(body);
-      const inner = body.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      const inner = body.clientWidth - 2 * (parseFloat(cs.getPropertyValue("--body-pad")) || 0);
       setStacked(inner < MAIN_MIN_PX + SIDE_MIN_PX + parseFloat(cs.columnGap || "0"));
     });
     observer.observe(body);
