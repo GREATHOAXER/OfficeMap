@@ -10,7 +10,8 @@ import ReservationDetail from "@/components/ReservationDetail";
 import type { ReservationDetail as Detail, RoomDay, RoomsDay } from "@/lib/api";
 import { addDays, daysBetween, formatShortDay, kstDate, minToHHMM } from "@/lib/dates";
 import { sessionEndUrl } from "@/lib/loginRedirect";
-import { hhmm } from "@/lib/rooms";
+import type { AiProposal } from "@/lib/ai";
+import { hhmm, reservationErrorText } from "@/lib/rooms";
 import { ROOMS_FLOOR_COOKIE } from "@/lib/roomsFloor";
 import { useNow } from "@/lib/useNow";
 import { saveDraft, takeDraft } from "./draftStore";
@@ -19,6 +20,7 @@ import {
   type Attendee,
   defaultRange,
   type Draft,
+  draftFromProposal,
   EMPTY_DRAFT,
   headcount,
   liveDay,
@@ -105,7 +107,7 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
       }
       setDraft(saved.draft);
       setFormOpen(true);
-      setNotice("로그인이 끊겨 저장하지 못한 예약을 다시 채웠어요. 확인하고 다시 확정하세요.");
+      setNotice(saved.notice ?? "로그인이 끊겨 저장하지 못한 예약을 다시 채웠어요. 확인하고 다시 확정하세요.");
       if (saved.date !== fetchedDay.date || saved.siteId !== fetchedDay.site.id) {
         const edit = saved.edit ? `&edit=${saved.edit.id}` : "";
         router.replace(`/rooms?date=${saved.date}&site=${saved.siteId}${edit}`, { scroll: false });
@@ -220,6 +222,17 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
     setFormOpen(true);
   }
 
+  /** AI 추천 후보로 폼을 채운다. 다른 날·사업장이면 그 현황표로 옮긴다 (쓰던 반복·알림 설정은 그대로) */
+  function applyProposal(p: AiProposal) {
+    setDraft((d) => draftFromProposal(p, d));
+    setError(null);
+    setSkipDates(null);
+    setCapacityOk(false);
+    if (p.date !== day.date || p.room.site.id !== day.site.id) {
+      router.push(`/rooms?date=${p.date}&site=${p.room.site.id}`, { scroll: false });
+    }
+  }
+
   /** 새로 쓰기: 제목·참석자는 비우고, 방금 고른 회의실·시간은 남긴다. 고치던 중이면 그만둔다 */
   function startOver() {
     setDraft((d) =>
@@ -320,7 +333,7 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
       }
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        setError(errorText(data?.detail));
+        setError(reservationErrorText(data?.detail));
         setStaleEdit(data?.detail?.code === "CHANGED_ELSEWHERE");
         // 반복 예약 중 몇 날만 겹치면 그날만 빼고 예약할 수 있게 한다
         const dates: string[] = data?.detail?.dates ?? [];
@@ -554,6 +567,7 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
           skipDates={skipDates}
           onSkipConflicts={() => void submit(true)}
           onReloadEdit={staleEdit ? () => void reloadEdit() : null}
+          onAiPick={applyProposal}
         />
       </Dialog>
 
@@ -607,45 +621,6 @@ function draftOf(detail: Detail): Draft {
           }) as unknown as Attendee,
       ),
   };
-}
-
-type ErrorDetail = { code?: string; dates?: string[]; max?: number; max_days?: number } | undefined;
-
-const maxText = (minutes: number) => (minutes >= 1440 ? `${Math.floor(minutes / 1440)}일` : `${minutes / 60}시간`);
-
-function errorText(detail: ErrorDetail): string {
-  switch (detail?.code) {
-    case "CHANGED_ELSEWHERE":
-      return "다른 탭이나 창에서 이 예약을 먼저 고쳤어요. 덮어쓰지 않으려고 저장하지 않았어요. 최신 내용을 불러와 다시 고쳐 주세요.";
-    case "NOT_EDITABLE":
-      return "이 예약은 이미 끝났거나 취소돼서 고칠 수 없어요.";
-    case "TIME_TAKEN":
-      return detail.dates?.length
-        ? `그 시간에 이미 예약이 있어요: ${detail.dates.map(formatShortDay).join(", ")}`
-        : "방금 다른 사람이 먼저 예약했어요. 현황표를 다시 확인하세요.";
-    case "TOO_LONG":
-      return `한 번에 최대 ${maxText(detail.max ?? 10080)}까지 예약할 수 있어요.`;
-    case "INVALID_TIME":
-      return "예약할 수 없는 시간이에요. 시작·끝 시각은 운영 시간 안에서 30분 단위로, 끝은 시작보다 뒤로 골라 주세요.";
-    case "REPEAT_SINGLE_DAY":
-      return "여러 날에 걸친 예약은 반복할 수 없어요.";
-    case "IN_PAST":
-      return "지난 시간은 예약할 수 없어요.";
-    case "TITLE_REQUIRED":
-      return "회의 제목을 적어 주세요.";
-    case "INVALID_REPEAT":
-      return "반복 종료일을 확인하세요. 평일 반복은 기간 안에 평일이 있어야 해요.";
-    case "REPEAT_TOO_LONG":
-      return `반복 예약은 ${detail.max_days ?? 92}일 안에서만 할 수 있어요.`;
-    case "UNKNOWN_ATTENDEE":
-      return "참석자 중 퇴사·휴직한 사람이 있어요. 다시 골라 주세요.";
-    case "NO_ATTENDEES":
-      return "참석자가 없어요. 나도 들어가지 않으면 회의에 들어갈 사람을 넣으세요.";
-    case "ROOM_NOT_FOUND":
-      return "지금은 쓸 수 없는 회의실이에요.";
-    default:
-      return "예약하지 못했어요. 잠시 후 다시 시도하세요.";
-  }
 }
 
 /** 오늘을 볼 때만: 지금 각 회의실이 비었는지. 운영 시간 밖이면 카드 대신 한 줄로 */

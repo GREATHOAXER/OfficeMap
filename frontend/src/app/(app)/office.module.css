@@ -1551,11 +1551,12 @@
   color: var(--ink);
 }
 
-/* AI 도우미 패널 (틀만) */
+/* AI 도우미 패널 (AiPanel.tsx). 화면 높이 안에 들어가고, 대화가 길어지면 대화 부분만 밀린다 */
 .ai {
   display: flex;
   flex-direction: column;
   min-height: 480px;
+  height: min(720px, calc(100dvh - 120px));
   background: var(--surface);
   border: 1.5px solid var(--link);
   border-radius: 10px;
@@ -1575,15 +1576,39 @@
   font-size: 15px;
 }
 
+.aiHead > div {
+  min-width: 0;
+}
+
 .aiHead p {
   margin: 0;
   font-size: 11px;
   color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .aiIcon {
   display: flex;
   color: var(--link);
+}
+
+.aiNew {
+  margin-left: auto;
+  flex: none;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.aiNew + .aiClose {
+  margin-left: 0;
 }
 
 .aiClose {
@@ -1684,6 +1709,181 @@
   background: var(--border);
 }
 
+.aiStop {
+  flex: none;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* 보기 질문: 누르면 바로 묻는다 */
+.aiEmpty ul.aiExamples {
+  padding: 0;
+  list-style: none;
+  gap: 6px;
+}
+
+.aiExamples button {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.aiExamples button:hover {
+  border-color: var(--link);
+  color: var(--link);
+}
+
+/* 대화 */
+.aiLog {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+}
+
+.aiQuestion {
+  align-self: flex-end;
+  max-width: 85%;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 12px 12px 2px 12px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.aiAnswer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 100%;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.aiAnswer > p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.aiWorking {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.aiAnswer > .aiError,
+.aiProposal .aiError {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  font-size: 12.5px;
+}
+
+/* 예약 후보 카드 */
+.aiProposal {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--link);
+  border-radius: 8px;
+  background: #f5f7ff;
+  font-size: 12.5px;
+}
+
+.aiProposal[data-done] {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.aiProposal strong {
+  font-size: 13.5px;
+}
+
+.aiProposal strong span {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.aiProposalPeople {
+  color: var(--muted);
+}
+
+.aiWarnings {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  color: var(--danger-text);
+}
+
+.aiProposalActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.aiBook,
+.aiEdit {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.aiBook {
+  border: 0;
+  background: var(--link);
+  color: #fff;
+  font-weight: 600;
+}
+
+.aiBook:disabled {
+  background: var(--border);
+}
+
+.aiEdit {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.aiBooked {
+  margin: 6px 0 0;
+  font-weight: 600;
+}
+
+.aiBooked a {
+  margin-left: 4px;
+  color: var(--link);
+}
+
+.aiPrivacy {
+  margin: -6px 14px 10px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
 /* 오류 */
 .errorBox {
   margin: 24px;
@@ -1771,6 +1971,10 @@
 
   .side {
     position: static;
+  }
+
+  .ai {
+    height: min(640px, calc(100dvh - 160px));
   }
 
   .hint {

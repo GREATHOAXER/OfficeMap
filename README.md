@@ -250,6 +250,7 @@ docker compose up -d
 - **CI/CD (GitHub Actions)**: PR마다 검사(린트·타입·빌드·DB 스키마·API 연기 시험), main에 합치면 이미지를 ECR에 올리고 EC2에서 바꿔 띄웁니다
   (안 뜨면 직전 버전으로). 켜는 순서: [docs/cicd.md](docs/cicd.md)
 - **HTTPS**: 도메인 연결(Route 53·가비아)과 인증서: [docs/deploy-aws.md 6](docs/deploy-aws.md#6-https-켜기-도메인-연결)
+- **AI 도우미**: Anthropic API 또는 Amazon Bedrock으로 켜기, 비용·기록: [docs/ai.md](docs/ai.md)
 
 ## Claude Code 클라우드 세션에서 임시 공개하기 (데모용)
 

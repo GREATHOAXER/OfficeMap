@@ -115,6 +115,11 @@ def main() -> None:
         preview,
     )
 
+    # AI 도우미: 켰는지만 본다 (CI에는 모델 설정이 없어 꺼져 있고, 꺼져 있으면 질문은 503)
+    ai = expect(user, "AI 도우미 상태", "GET", "/api/ai/status")
+    if ai and not ai.get("enabled"):
+        expect(user, "AI 꺼져 있으면 질문 막힘", "POST", "/api/ai/chat", {"message": "안녕"}, status=503)
+
     print(f"\n{'모두 통과' if not failures else f'실패 {len(failures)}건'}")
     sys.exit(1 if failures else 0)
 

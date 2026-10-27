@@ -1,3 +1,4 @@
+import type { AiProposal } from "@/lib/ai";
 import type { EmployeeHit, RoomDay, RoomsDay } from "@/lib/api";
 import { addDays, daysBetween, weekdayOf } from "@/lib/dates";
 import { seoulNow } from "@/lib/rooms";
@@ -188,4 +189,18 @@ export function suggestRooms(day: RoomsDay, d: Draft, people: number): RoomDay[]
 export function withoutBooking(day: RoomsDay, id: number | null): RoomsDay {
   if (id === null) return day;
   return { ...day, rooms: day.rooms.map((r) => ({ ...r, bookings: r.bookings.filter((b) => b.id !== id) })) };
+}
+
+/** AI 도우미가 고른 예약 후보 → 예약 폼 내용. base의 반복·알림 설정은 그대로 두고, 제목은 비어 있을 때만 채운다 */
+export function draftFromProposal(p: AiProposal, base: Draft = EMPTY_DRAFT): Draft {
+  const picked = new Set(base.attendees.map((a) => a.emp_no));
+  return {
+    ...base,
+    roomId: p.room.id,
+    start: p.start_min,
+    endDays: 0,
+    end: p.end_min,
+    title: base.title.trim() ? base.title : p.title,
+    attendees: [...base.attendees, ...p.attendees.filter((a) => !a.is_me && !picked.has(a.emp_no))],
+  };
 }

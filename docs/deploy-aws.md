@@ -164,6 +164,7 @@ DB 구조(`db/schema`)가 바뀐 버전이면 둘 중 하나:
   ```bash
   docker compose run --rm backend python -m scripts.init_db --only 12_personnel.sql 09_retention.sql
   ```
+  AI 도우미가 들어간 버전은 `13_ai_chat.sql` (켜는 법: [docs/ai.md](ai.md)).
   이미 있는 테이블을 다시 만들려 하면 아무것도 바꾸지 않고 멈춥니다.
 - 목업을 처음부터 다시 (시험 서버만, 데이터가 지워짐): `docker compose run --rm backend python -m scripts.init_db --reset`
 

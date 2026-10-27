@@ -56,6 +56,13 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       APP_ENV: ${APP_ENV:-staging}
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      # AI 도우미 (docs/ai.md). AI_PROVIDER가 비면 꺼진다
+      AI_PROVIDER: ${AI_PROVIDER:-}
+      AI_MODEL: ${AI_MODEL:-}
+      AI_EFFORT: ${AI_EFFORT:-medium}
+      AI_HOURLY_LIMIT: ${AI_HOURLY_LIMIT:-60}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AWS_REGION: ${AWS_REGION:-ap-northeast-2}
     healthcheck: # DB까지 닿아야 정상 (/api/health)
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
       interval: 15s
