@@ -38,6 +38,8 @@ git clone --depth 1 https://github.com/GREATHOAXER/OfficeMap.git && cd OfficeMap
 bash deploy/aws/setup-cicd.sh
 ```
 
+스크립트는 **CloudShell을 연 리전**에서 돕니다 (콘솔 오른쪽 위 리전). 서버가 서울이면 리전을 서울로 바꾼 뒤 CloudShell을 열거나, `AWS_REGION=ap-northeast-2 bash deploy/aws/setup-cicd.sh`로 돌립니다. 그 리전에 서버가 없으면 어느 리전에 있는지 알려 주고 아무것도 만들지 않고 멈춥니다.
+
 [`deploy/aws/setup-cicd.sh`](../deploy/aws/setup-cicd.sh)가 만드는 것 (여러 번 돌려도 됩니다):
 
 | 무엇 | 이름 | 하는 일 |

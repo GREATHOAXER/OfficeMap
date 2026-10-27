@@ -10,6 +10,7 @@
 # 할 수 있는 것: AWS 리소스 보기(ViewOnlyAccess: 설정만, 데이터는 못 읽음), 이 서버 한 대에만 명령 보내기(SSM),
 # ECR 이미지·이 프로젝트 IAM 역할 보기, 비용 보기, Bedrock Claude 호출(AI 도우미 시험). 정책: claude-operator-policy.json
 # 할 수 없는 것: 리소스 만들기·바꾸기·지우기(보안 그룹, RDS, IAM 등), DB·S3 데이터 읽기, 다른 서버에 명령.
+# 리전은 CloudShell을 연 리전 (서버가 없으면 어느 리전에 있는지 알려 준다). 바꾸려면 AWS_REGION=ap-northeast-2 를 앞에
 # 서버 이름 태그가 officemap-app이 아니면: INSTANCE_ID=i-0123... bash deploy/aws/setup-claude-access.sh
 set -euo pipefail
 
@@ -41,14 +42,11 @@ if [[ -n "$MODE" && "$MODE" != "--new-key" ]]; then
   exit 1
 fi
 
+# shellcheck source=find-instance.sh
+source ./find-instance.sh
+
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
-INSTANCE_ID="${INSTANCE_ID:-$(aws ec2 describe-instances \
-  --filters Name=tag:Name,Values=officemap-app Name=instance-state-name,Values=pending,running,stopped \
-  --query 'Reservations[0].Instances[0].InstanceId' --output text)}"
-[[ "$INSTANCE_ID" =~ ^i-[0-9a-f]+$ ]] || {
-  echo "✘ $AWS_REGION에서 이름이 officemap-app인 EC2를 찾지 못했어요. INSTANCE_ID=i-... 를 앞에 붙여 다시 돌리세요"
-  exit 1
-}
+find_instance "$@"
 echo "계정 $ACCOUNT_ID · 리전 $AWS_REGION · 서버 $INSTANCE_ID"
 
 echo "1) 사용자 $USER_NAME"

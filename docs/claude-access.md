@@ -26,6 +26,7 @@ bash deploy/aws/setup-claude-access.sh
 ```
 
 끝에 나오는 네 줄(`OFFICEMAP_...`)을 환경 변수에 넣습니다. 비밀 키는 그때 한 번만 보입니다.
+CloudShell을 연 리전에서 서버를 찾습니다. 서버가 다른 리전에 있으면 그 리전으로 다시 돌리라고 알려 줍니다 (예: `AWS_REGION=ap-northeast-2 bash deploy/aws/setup-claude-access.sh`).
 
 | 할 수 있음 | 할 수 없음 |
 |---|---|

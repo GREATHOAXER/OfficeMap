@@ -9,21 +9,20 @@
 # EC2용 역할(officemap-ec2: SSM으로 명령 받기 + ECR에서 이미지 받기)과 인스턴스 연결.
 # 끝에 GitHub 변수와 서버 .env에 넣을 값을 찍는다. 설명: docs/cicd.md
 #
-# 인스턴스는 이름 태그 officemap-app으로 찾는다. 다르면: INSTANCE_ID=i-0123... bash deploy/aws/setup-cicd.sh
+# 인스턴스는 이름 태그 officemap-app으로 찾는다 (지금 리전에 없으면 어느 리전에 있는지 알려 준다).
+# 리전은 CloudShell을 연 리전. 바꾸려면: AWS_REGION=ap-northeast-2 bash deploy/aws/setup-cicd.sh
+# 이름 태그가 다르면: INSTANCE_ID=i-0123... bash deploy/aws/setup-cicd.sh
 set -euo pipefail
 
 export AWS_REGION="${AWS_REGION:-ap-northeast-2}"
 export AWS_PAGER=""
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
+# shellcheck source=find-instance.sh
+source ./find-instance.sh
+
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
-INSTANCE_ID="${INSTANCE_ID:-$(aws ec2 describe-instances \
-  --filters Name=tag:Name,Values=officemap-app Name=instance-state-name,Values=pending,running,stopped \
-  --query 'Reservations[0].Instances[0].InstanceId' --output text)}"
-[[ "$INSTANCE_ID" =~ ^i-[0-9a-f]+$ ]] || {
-  echo "✘ $AWS_REGION에서 이름이 officemap-app인 EC2를 찾지 못했어요. INSTANCE_ID=i-... 를 앞에 붙여 다시 돌리세요"
-  exit 1
-}
+find_instance "$@"
 echo "계정 $ACCOUNT_ID · 리전 $AWS_REGION · 인스턴스 $INSTANCE_ID"
 
 echo "1) ECR 저장소"
