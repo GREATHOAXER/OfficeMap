@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     admin_session_max_hours: int = 8
     cookie_secure: bool = False
     app_env: str = "development"  # 실제 데이터가 든 서버는 production: DB를 통째로 지우는 init_db --reset을 막는다
+    app_version: str = "dev"  # 배포 이미지에 굳힌 커밋 SHA (server/Dockerfile). /api/health가 알려 준다
 
     # AI 도우미 (app/assistant.py). ai_provider가 비면 꺼진다
     #   anthropic: Anthropic API (anthropic_api_key)

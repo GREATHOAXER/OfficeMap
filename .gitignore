@@ -6,6 +6,8 @@ server/.env
 
 # 서버 배포 설정 (DB 비밀번호)
 deploy/.env
+# 서버 배포 타이머가 남기는 실패한 커밋 (deploy/pull-deploy.sh)
+deploy/.deploy-failed
 
 # OS
 .DS_Store

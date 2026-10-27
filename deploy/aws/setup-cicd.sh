@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# GitHub Actions 자동 배포(.github/workflows/deploy.yml)에 필요한 AWS 쪽을 한 번에 만든다. 여러 번 돌려도 된다.
+# 자동 배포의 ssm 방식(.github/workflows/deploy.yml, DEPLOY_MODE=ssm)에 필요한 AWS 쪽을 한 번에 만든다. 여러 번 돌려도 된다.
+# 기본(pull) 방식은 AWS 쪽에 만들 것이 없다 (docs/cicd.md).
 # AWS 콘솔 위쪽의 CloudShell(>_ 아이콘, 리전 서울)에서:
 #
 #   git clone --depth 1 https://github.com/GREATHOAXER/OfficeMap.git && cd OfficeMap
@@ -41,8 +42,16 @@ OIDC_ARN="arn:aws:iam::$ACCOUNT_ID:oidc-provider/token.actions.githubusercontent
 if aws iam get-open-id-connect-provider --open-id-connect-provider-arn "$OIDC_ARN" > /dev/null 2>&1; then
   echo "   있음"
 else
-  aws iam create-open-id-connect-provider --url https://token.actions.githubusercontent.com \
-    --client-id-list sts.amazonaws.com > /dev/null
+  if ! out="$(aws iam create-open-id-connect-provider --url https://token.actions.githubusercontent.com \
+    --client-id-list sts.amazonaws.com 2>&1 > /dev/null)"; then
+    echo "$out"
+    if grep -q "service control policy" <<< "$out"; then
+      echo "✘ 회사 AWS 조직 정책(SCP)이 GitHub OIDC 공급자 만들기를 막고 있어요. 이 계정에서는 ssm 방식을 쓸 수 없어요."
+      echo "  → AWS 권한이 필요 없는 pull 방식으로 배포하세요 (docs/cicd.md). 위 1)에서 만든 ECR 저장소는 쓰지 않아요"
+      echo "  → ssm 방식이 꼭 필요하면 클라우드 담당자에게 허용을 요청하세요 (docs/cicd.md 'ssm 방식')"
+    fi
+    exit 1
+  fi
   echo "   만듦"
 fi
 

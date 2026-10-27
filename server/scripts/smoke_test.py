@@ -65,7 +65,7 @@ def main() -> None:
 
     anon = Client(base)
     health = expect(anon, "상태 확인", "GET", "/api/health")
-    check("상태 확인 내용", health == {"status": "ok"}, health)
+    check("상태 확인 내용", bool(health) and health.get("status") == "ok", health)
     expect(anon, "로그인 전 막힘", "GET", "/api/auth/me", status=401)
     expect(anon, "로그인 화면 안내", "GET", "/api/auth/login-info")
 

@@ -18,6 +18,10 @@ Claude Code 클라우드 세션이 GitHub·Claude API·AWS를 직접 다루게 �
 
 ## AWS: `claude-officemap` 사용자
 
+회사 AWS 조직(Organizations)에 속한 계정이면 조직 정책(SCP)이 IAM 사용자·액세스 키 만들기를 막거나, 외부 도구에 키를 주는 것이 사내
+규정에 어긋날 수 있습니다. 먼저 클라우드 담당자에게 확인하세요. 자동 배포를 pull 방식([docs/cicd.md](cicd.md))으로 쓰면 이 사용자 없이도
+Claude가 GitHub Actions의 "서버 반영 확인"으로 배포 결과를 볼 수 있습니다.
+
 CloudShell(콘솔 위쪽 `>_`, 리전 서울)에서:
 
 ```bash
