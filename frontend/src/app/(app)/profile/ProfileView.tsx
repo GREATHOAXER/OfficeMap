@@ -27,7 +27,8 @@ const same = (a: Form, b: Form) =>
   a.duties.trim() === b.duties.trim() &&
   a.skills.join("\u0000") === b.skills.join("\u0000");
 
-/** 고른 사진을 가운데 정사각형으로 잘라 줄인다 (JPEG). 휴대폰 사진의 방향(EXIF)은 브라우저가 맞춰 준다 */
+/** 고른 사진을 정사각형으로 잘라 줄인다 (JPEG). 휴대폰 사진의 방향(EXIF)은 브라우저가 맞춰 준다.
+ *  가로로 긴 사진은 가운데, 세로로 긴 사진은 얼굴이 있기 쉬운 위쪽(위에서 1/4 지점부터)을 쓴다 */
 async function squarePhoto(file: File): Promise<Blob> {
   const bitmap = await createImageBitmap(file);
   const side = Math.min(bitmap.width, bitmap.height);
@@ -38,7 +39,9 @@ async function squarePhoto(file: File): Promise<Blob> {
   if (!ctx) throw new Error("canvas");
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, PHOTO_PX, PHOTO_PX);
-  ctx.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, PHOTO_PX, PHOTO_PX);
+  const sx = (bitmap.width - side) / 2;
+  const sy = (bitmap.height - side) / 4;
+  ctx.drawImage(bitmap, sx, sy, side, side, 0, 0, PHOTO_PX, PHOTO_PX);
   bitmap.close();
   return new Promise((resolve, reject) =>
     canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("jpeg"))), "image/jpeg", 0.88),
@@ -53,6 +56,8 @@ export default function ProfileView({ initial }: { initial: MyProfile }) {
   const [busy, setBusy] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; tone?: "error" } | null>(null);
+  // 사진 쪽 안내는 사진 칸 바로 아래에 (아래쪽 저장 줄에 띄우면 휴대폰에서는 화면 밖이라 아무 일 없는 것처럼 보인다)
+  const [photoMessage, setPhotoMessage] = useState<{ text: string; tone?: "error" } | null>(null);
   // 고른 사진은 바로 올리지 않고 미리 보여 준 뒤 "이 사진으로 바꾸기"를 누르면 올린다
   const [pendingPhoto, setPendingPhoto] = useState<{ blob: Blob; url: string } | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
@@ -172,14 +177,14 @@ export default function ProfileView({ initial }: { initial: MyProfile }) {
     if (!file) return;
     if (fileRef.current) fileRef.current.value = "";
     if (!file.type.startsWith("image/") || file.size > MAX_FILE_MB * 1024 * 1024) {
-      setMessage({ text: `${MAX_FILE_MB}MB 이하의 사진 파일(JPG·PNG 등)을 골라 주세요`, tone: "error" });
+      setPhotoMessage({ text: `${MAX_FILE_MB}MB 이하의 사진 파일(JPG·PNG 등)을 골라 주세요`, tone: "error" });
       return;
     }
-    setMessage(null);
+    setPhotoMessage(null);
     setConfirmRemove(false);
     const blob = await squarePhoto(file).catch(() => null);
     if (!blob) {
-      setMessage({ text: "이 사진은 읽지 못했어요. JPG나 PNG로 다시 골라 주세요", tone: "error" });
+      setPhotoMessage({ text: "이 사진은 읽지 못했어요. JPG나 PNG로 다시 골라 주세요", tone: "error" });
       return;
     }
     setPendingPhoto({ blob, url: URL.createObjectURL(blob) });
@@ -189,7 +194,7 @@ export default function ProfileView({ initial }: { initial: MyProfile }) {
   async function uploadPhoto() {
     if (!pendingPhoto) return;
     setPhotoBusy(true);
-    setMessage(null);
+    setPhotoMessage(null);
     try {
       const res = await fetch("/api/profile/photo", {
         method: "PUT",
@@ -198,16 +203,16 @@ export default function ProfileView({ initial }: { initial: MyProfile }) {
       });
       if (res.status === 401) return expired();
       if (!res.ok) {
-        setMessage({ text: "사진을 올리지 못했어요. 다른 사진으로 해 보세요", tone: "error" });
+        setPhotoMessage({ text: "사진을 올리지 못했어요. 다른 사진으로 해 보세요", tone: "error" });
         return;
       }
       const { photo } = (await res.json()) as { photo: string };
       setSaved((p) => ({ ...p, photo }));
       setPendingPhoto(null);
-      setMessage({ text: "사진을 바꿨어요" });
+      setPhotoMessage({ text: "사진을 바꿨어요" });
       router.refresh();
     } catch {
-      setMessage({ text: "네트워크 오류로 사진을 올리지 못했어요", tone: "error" });
+      setPhotoMessage({ text: "네트워크 오류로 사진을 올리지 못했어요", tone: "error" });
     } finally {
       setPhotoBusy(false);
     }
@@ -216,16 +221,16 @@ export default function ProfileView({ initial }: { initial: MyProfile }) {
   async function removePhoto() {
     setConfirmRemove(false);
     setPhotoBusy(true);
-    setMessage(null);
+    setPhotoMessage(null);
     const res = await fetch("/api/profile/photo", { method: "DELETE" }).catch(() => null);
     setPhotoBusy(false);
     if (res?.status === 401) return expired();
     if (!res?.ok) {
-      setMessage({ text: "사진을 지우지 못했어요", tone: "error" });
+      setPhotoMessage({ text: "사진을 지우지 못했어요", tone: "error" });
       return;
     }
     setSaved((p) => ({ ...p, photo: null }));
-    setMessage({ text: "사진을 지웠어요" });
+    setPhotoMessage({ text: "사진을 지웠어요" });
     router.refresh();
   }
 
@@ -266,7 +271,7 @@ export default function ProfileView({ initial }: { initial: MyProfile }) {
                     </button>
                     <button
                       type="button"
-                      className={styles.linkButton}
+                      className={styles.btn}
                       disabled={photoBusy}
                       onClick={() => setPendingPhoto(null)}
                     >
@@ -289,35 +294,46 @@ export default function ProfileView({ initial }: { initial: MyProfile }) {
                     </label>
                     {saved.photo &&
                       (confirmRemove ? (
-                        <span className={styles.confirmRow} role="group" aria-label="사진 지우기 확인">
-                          사진을 지울까요?
-                          <button
-                            type="button"
-                            className={styles.linkButton}
-                            data-tone="danger"
-                            disabled={photoBusy}
-                            onClick={() => void removePhoto()}
-                          >
-                            지우기
-                          </button>
-                          <button type="button" className={styles.linkButton} onClick={() => setConfirmRemove(false)}>
-                            취소
-                          </button>
-                        </span>
+                        <div className={styles.confirmRow} role="group" aria-label="사진 지우기 확인">
+                          <span>사진을 지울까요?</span>
+                          <span className={styles.confirmButtons}>
+                            <button
+                              type="button"
+                              className={styles.btn}
+                              data-tone="danger"
+                              disabled={photoBusy}
+                              onClick={() => void removePhoto()}
+                            >
+                              지우기
+                            </button>
+                            <button type="button" className={styles.btn} onClick={() => setConfirmRemove(false)}>
+                              취소
+                            </button>
+                          </span>
+                        </div>
                       ) : (
                         <button
                           type="button"
-                          className={styles.linkButton}
+                          className={styles.btn}
                           disabled={photoBusy}
                           onClick={() => setConfirmRemove(true)}
                         >
                           사진 지우기
                         </button>
                       ))}
-                    <p className={styles.hint}>가운데를 정사각형으로 잘라 올려요. 얼굴이 가운데 오는 사진이 좋아요.</p>
+                    <p className={styles.hint}>정사각형으로 잘라 올려요. 얼굴이 가운데나 위쪽에 오는 사진이 좋아요.</p>
                   </div>
                 )}
               </div>
+              {photoMessage && (
+                <p
+                  className={styles.message}
+                  role={photoMessage.tone === "error" ? "alert" : "status"}
+                  data-tone={photoMessage.tone}
+                >
+                  {photoMessage.text}
+                </p>
+              )}
             </section>
 
             <section className={styles.card} aria-labelledby="form-title">
@@ -375,7 +391,7 @@ export default function ProfileView({ initial }: { initial: MyProfile }) {
                   <input
                     value={skill}
                     maxLength={MAX_SKILL_LEN * 3}
-                    disabled={form.skills.length >= MAX_SKILLS}
+                    disabled={form.skills.length >= MAX_SKILLS && !skill}
                     placeholder={form.skills.length ? "" : "예: 법인카드, 세금계산서"}
                     aria-label="키워드 넣기"
                     onChange={(e) => setSkill(e.target.value)}

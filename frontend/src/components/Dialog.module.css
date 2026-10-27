@@ -43,8 +43,10 @@
 }
 
 .head h2 {
+  min-width: 0; /* 띄어쓰기 없는 긴 제목도 줄을 바꿔 닫기 단추를 밀어내지 않게 */
   margin: 0;
   font-size: 17px;
+  overflow-wrap: anywhere;
 }
 
 .close {

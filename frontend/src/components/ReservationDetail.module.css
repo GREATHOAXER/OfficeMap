@@ -90,7 +90,7 @@
 .team ul {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 4px 12px;
+  gap: 4px 24px; /* 왼쪽 칸의 상태와 오른쪽 칸의 이름이 붙어 보이지 않게 */
   margin: 0;
   padding: 0;
   list-style: none;
@@ -161,16 +161,39 @@
   white-space: nowrap;
 }
 
-.spacer {
-  flex: 1;
-}
-
-.confirm {
+/* 아래 단추 줄: 왼쪽 묶음(다른 화면으로) · 오른쪽 묶음(수정·취소). 묶음 안의 단추는 늘 한 줄 */
+.footer {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.group {
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
+}
+
+.end {
+  margin-left: auto;
+}
+
+/* 취소 확인: 질문은 한 줄 전체, 단추는 그 아래 오른쪽에 한 줄 */
+.confirm {
+  display: flex;
+  flex-basis: 100%;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
   font-size: 13px;
+}
+
+.confirm p {
+  margin: 0;
+  align-self: stretch;
 }
 
 .secondary,

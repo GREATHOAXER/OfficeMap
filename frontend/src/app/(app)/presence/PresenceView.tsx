@@ -205,7 +205,7 @@ export default function PresenceView({ myEmpNo, info, team, upcoming, today }: P
                         <strong>{m.name}</strong> {m.rank}
                         {m.is_me && <span className={styles.me}>나</span>}
                       </span>
-                      <span className={styles.muted}>
+                      <span className={styles.muted} title={presenceMessage(m.presence) || undefined}>
                         {m.presence ? PRESENCE_LABEL[m.presence.status] : NO_STATUS_LABEL}
                         {presenceMessage(m.presence) && ` · ${presenceMessage(m.presence)}`}
                       </span>

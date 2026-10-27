@@ -149,7 +149,11 @@ export default function PresenceForm({ info, heading, headingId, onSaved }: Prop
       </label>
 
       <fieldset className={styles.durations}>
-        <legend>자동 해제</legend>
+        {/* 보이는 이름은 span: Safari는 fieldset의 legend 아래에 빈 줄을 더 그린다 */}
+        <legend className="visually-hidden">자동 해제</legend>
+        <span className={styles.durationsLabel} aria-hidden="true">
+          자동 해제
+        </span>
         <div>
           {durations.map((option) => (
             <label key={option.value}>

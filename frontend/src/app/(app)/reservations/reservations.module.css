@@ -51,8 +51,16 @@
   text-decoration: none;
 }
 
+/* 취소했다는 안내: 화면 아래에 잠깐 띄운다 (목록을 내려 보던 중에도 보이게) */
 .notice {
-  margin: 12px 24px 0;
+  position: fixed;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 60;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  margin: 0;
+  transform: translateX(-50%);
   font-size: 13px;
 }
 
@@ -65,6 +73,7 @@
   border: 1px solid var(--link);
   border-radius: 8px;
   background: var(--info-bg);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
 }
 
 .main {
@@ -115,6 +124,11 @@
   border: 1px solid var(--ink);
   border-radius: 6px;
   overflow: hidden;
+}
+
+/* 테두리 밖 초점 표시는 .seg가 잘라서 안쪽에 그린다 */
+.seg button:focus-visible {
+  outline-offset: -3px;
 }
 
 .seg button {
@@ -220,8 +234,10 @@
   cursor: pointer;
 }
 
-.item:hover {
-  border-color: var(--ink);
+@media (hover: hover) {
+  .item:hover {
+    border-color: var(--ink);
+  }
 }
 
 .item:focus-visible {
@@ -304,12 +320,10 @@
   color: var(--danger);
 }
 
+/* 좁으면 줄을 바꿔 끝까지 보인다 (끝에 "예약만"·"취소했어요" 같은 중요한 말이 온다) */
 .meta {
-  overflow: hidden;
   font-size: 12px;
   color: var(--muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .more {

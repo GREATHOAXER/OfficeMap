@@ -397,8 +397,8 @@
   color: var(--ink);
 }
 
-.durations legend {
-  padding: 0;
+.durationsLabel {
+  display: block;
   margin-bottom: 6px;
   font-size: 13px;
   color: var(--muted);
@@ -456,13 +456,13 @@
 }
 
 .statusClear {
-  min-height: 40px;
-  padding: 0 4px;
-  border: 0;
-  background: none;
-  color: var(--link);
-  font-size: 13px;
-  text-decoration: underline;
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
   cursor: pointer;
 }
 

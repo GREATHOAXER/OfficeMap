@@ -185,7 +185,7 @@ export default function ReservationsView({ upcoming: fetchedUpcoming, past, toda
                           {r.floor} {r.room} · {r.attendees}명 참석
                           {!r.is_organizer && ` · 예약 ${r.organizer_department} ${r.organizer}`}
                           {r.is_organizer && !r.attending && " · 나는 예약만 (회의에는 안 들어감)"}
-                          {r.status === "CANCELLED" && r.cancelled_at && " · 예약한 사람이 취소했어요"}
+                          {r.status === "CANCELLED" && r.cancelled_at && (r.is_organizer ? " · 취소했어요" : " · 예약한 사람이 취소했어요")}
                         </span>
                       </span>
                       <span className={styles.more} aria-hidden="true">
