@@ -1,8 +1,10 @@
-# CD: main에 합쳐지면 검사(ci.yml) → 이미지 빌드해 ECR에 올리기 → EC2 서버에서 새 이미지로 바꿔 띄우기
-#   - AWS 접속은 키 없이 OIDC(GitHub이 주는 임시 토큰으로 IAM 역할 받기). 서버 명령은 SSH 대신 SSM(포트를 열지 않음)
+# CD: main에 합쳐지면 검사(ci.yml) → arm64 이미지 빌드 → 서버가 새 버전으로 바꿔 띄운다. 방식은 저장소 변수 DEPLOY_MODE:
+#   pull (기본) 이미지를 GitHub 컨테이너 저장소(ghcr.io)에 올린다. 서버의 배포 타이머(deploy/pull-deploy.sh)가 2분마다 보고
+#               가져가 띄운다. GitHub이 AWS에 들어가지 않아 AWS 권한·키가 필요 없다 (회사 조직 정책으로 OIDC를 못 쓸 때)
+#   ssm         이미지를 ECR에 올리고, GitHub이 OIDC로 AWS 역할을 받아 SSM으로 서버에 명령한다 (AWS에 OIDC 공급자 필요)
 #   - 저장소 변수(Settings → Secrets and variables → Actions → Variables) DEPLOY_ENABLED=true일 때만 빌드·배포한다.
 #     꺼져 있으면 검사만 한다
-#   - 손으로 돌리기(Actions → Deploy → Run workflow): 되돌리기(이전 커밋), 새 DB 스키마 파일 넣기
+#   - 손으로 돌리기(Actions → Deploy → Run workflow): ssm이면 되돌리기(이전 커밋)·새 DB 스키마 파일 넣기도 된다
 # 처음 설정하는 순서: docs/cicd.md
 name: Deploy
 
@@ -44,7 +46,7 @@ jobs:
       - run: echo "::notice::검사만 했어요. 자동 배포를 켜려면 저장소 변수 DEPLOY_ENABLED=true (docs/cicd.md)"
 
   build:
-    name: 이미지 빌드 → ECR
+    name: 이미지 빌드
     needs: ci
     if: vars.DEPLOY_ENABLED == 'true'
     # 서버(EC2 t4g)가 arm64라 arm 러너에서 그대로 빌드한다. 서버가 x86이면 변수 IMAGE_PLATFORM=linux/amd64.
@@ -53,23 +55,79 @@ jobs:
     timeout-minutes: 40
     permissions:
       contents: read
-      id-token: write # OIDC
+      packages: write # ghcr.io에 올리기 (pull)
+      id-token: write # AWS OIDC (ssm)
     env:
       PLATFORM: ${{ vars.IMAGE_PLATFORM || 'linux/arm64' }}
+      MODE: ${{ vars.DEPLOY_MODE || 'pull' }}
     outputs:
       sha: ${{ steps.sha.outputs.sha }}
     steps:
+      # 빌드하기 전에 배포에 쓰는 저장소 변수가 다 있는지 본다 (빠졌으면 어디에 넣을지 알려 주고 멈춘다)
+      - name: 배포 설정 확인
+        env:
+          AWS_REGION_VALUE: ${{ vars.AWS_REGION }}
+          AWS_ROLE_ARN_VALUE: ${{ vars.AWS_ROLE_ARN }}
+          EC2_INSTANCE_ID_VALUE: ${{ vars.EC2_INSTANCE_ID }}
+          # 같은 이름을 Secrets 탭에 넣었는지 (값은 보지 않는다)
+          IN_SECRETS: >-
+            ${{ (secrets.AWS_REGION != '' || secrets.AWS_ROLE_ARN != '' || secrets.EC2_INSTANCE_ID != '') && 'yes' || '' }}
+        run: |
+          case "$MODE" in
+            pull) echo "배포 방식 pull: 이미지를 ghcr.io에 올리면 서버의 배포 타이머가 가져가요"; exit 0 ;;
+            ssm) ;;
+            *) echo "::error title=배포 설정::DEPLOY_MODE는 pull(기본) 또는 ssm이에요: '$MODE'"; exit 1 ;;
+          esac
+          problems=()
+          [[ -n "$AWS_REGION_VALUE" ]] || problems+=("AWS_REGION이 없어요 (예: ap-northeast-2)")
+          [[ -n "$AWS_ROLE_ARN_VALUE" ]] || problems+=("AWS_ROLE_ARN이 없어요 (예: arn:aws:iam::123456789012:role/officemap-github-deploy)")
+          [[ -n "$EC2_INSTANCE_ID_VALUE" ]] || problems+=("EC2_INSTANCE_ID가 없어요 (예: i-0123456789abcdef0)")
+          if [[ -n "$AWS_REGION_VALUE" && ! "$AWS_REGION_VALUE" =~ ^[a-z]{2}(-[a-z]+)+-[0-9]$ ]]; then
+            problems+=("AWS_REGION 모양이 이상해요: '$AWS_REGION_VALUE' (예: ap-northeast-2, 앞뒤 빈칸·따옴표 없이)")
+          fi
+          if [[ -n "$AWS_ROLE_ARN_VALUE" && ! "$AWS_ROLE_ARN_VALUE" =~ ^arn:aws:iam::[0-9]{12}:role/.+$ ]]; then
+            problems+=("AWS_ROLE_ARN 모양이 이상해요 (arn:aws:iam::<계정ID 12자리>:role/<역할 이름>, 앞뒤 빈칸·따옴표 없이)")
+          fi
+          if [[ -n "$EC2_INSTANCE_ID_VALUE" && ! "$EC2_INSTANCE_ID_VALUE" =~ ^i-[0-9a-f]+$ ]]; then
+            problems+=("EC2_INSTANCE_ID 모양이 이상해요: '$EC2_INSTANCE_ID_VALUE' (i-로 시작)")
+          fi
+          if (( ${#problems[@]} )); then
+            for p in "${problems[@]}"; do echo "::error title=배포 설정::$p"; done
+            echo "::error title=넣는 곳::Settings → Secrets and variables → Actions → Variables 탭 → Repository variables (docs/cicd.md 3)"
+            [[ -z "$IN_SECRETS" ]] ||
+              echo "::error title=Secrets 탭에 있음::같은 이름이 Secrets 탭에 있어요. 이 값들은 비밀이 아니라서 Variables 탭에 넣어야 읽혀요"
+            echo "::notice::Environments → production 안에 넣은 변수는 이 단계에서 보이지 않아요. 저장소 변수(Repository variables)로 넣으세요"
+            echo "::notice::AWS에 GitHub OIDC를 만들 수 없으면 DEPLOY_MODE를 지우고(pull) docs/cicd.md의 pull 방식으로 하세요"
+            exit 1
+          fi
+          echo "배포 설정 확인: $AWS_REGION_VALUE · ${AWS_ROLE_ARN_VALUE##*/} · $EC2_INSTANCE_ID_VALUE"
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref || github.sha }}
       - id: sha
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: aws-actions/configure-aws-credentials@v5
+        if: env.MODE == 'ssm'
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
       - id: ecr
+        if: env.MODE == 'ssm'
         uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/login-action@v3
+        if: env.MODE == 'pull'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # 이미지 주소 앞부분: ECR 주소/ 또는 ghcr.io/<저장소 주인, 소문자>/ (서버 deploy/.env의 IMAGE_PREFIX와 같아야 한다)
+      - id: registry
+        env:
+          ECR: ${{ steps.ecr.outputs.registry }}
+        run: |
+          if [[ "$MODE" == ssm ]]; then prefix="$ECR/"; else prefix="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/"; fi
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+          echo "이미지: ${prefix}officemap-backend, ${prefix}officemap-frontend"
       - uses: docker/setup-qemu-action@v3
         if: (runner.arch == 'ARM64') != contains(env.PLATFORM, 'arm64')
       - uses: docker/setup-buildx-action@v3
@@ -81,9 +139,11 @@ jobs:
           platforms: ${{ env.PLATFORM }}
           push: true
           provenance: false # 이미지 하나만 (ECR 수명 주기 규칙이 단순해진다)
+          build-args: APP_VERSION=${{ steps.sha.outputs.sha }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           tags: |
-            ${{ steps.ecr.outputs.registry }}/officemap-backend:${{ steps.sha.outputs.sha }}
-            ${{ steps.ecr.outputs.registry }}/officemap-backend:latest
+            ${{ steps.registry.outputs.prefix }}officemap-backend:${{ steps.sha.outputs.sha }}
+            ${{ steps.registry.outputs.prefix }}officemap-backend:latest
           cache-from: type=gha,scope=backend
           cache-to: type=gha,scope=backend,mode=max
       - name: 화면 이미지
@@ -93,15 +153,46 @@ jobs:
           platforms: ${{ env.PLATFORM }}
           push: true
           provenance: false
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           tags: |
-            ${{ steps.ecr.outputs.registry }}/officemap-frontend:${{ steps.sha.outputs.sha }}
-            ${{ steps.ecr.outputs.registry }}/officemap-frontend:latest
+            ${{ steps.registry.outputs.prefix }}officemap-frontend:${{ steps.sha.outputs.sha }}
+            ${{ steps.registry.outputs.prefix }}officemap-frontend:latest
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,scope=frontend,mode=max
+      - name: 다음 단계 (pull)
+        if: env.MODE == 'pull'
+        run: echo "::notice::이미지를 올렸어요. 서버의 배포 타이머가 2분 안에 가져가 띄워요 (서버에서 journalctl -u officemap-deploy -e)"
 
+  # pull: 서버가 가져가 띄웠는지 /api/health의 version으로 확인한다 (APP_URL이 GitHub에서 닿을 때만)
+  rollout:
+    name: 서버 반영 확인
+    needs: build
+    if: vars.DEPLOY_MODE != 'ssm' && vars.APP_URL != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: 새 버전이 뜰 때까지 기다리기 (최대 20분)
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+          SHA: ${{ needs.build.outputs.sha }}
+        run: |
+          version=""
+          for _ in $(seq 1 120); do
+            version=$(curl -fsS --max-time 10 "${APP_URL%/}/api/health" | jq -r '.version // empty' 2>/dev/null || true)
+            if [[ "$version" == "$SHA" ]]; then
+              echo "서버가 새 버전(${SHA:0:7})으로 바뀌었어요"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error title=서버 반영::20분 안에 새 버전으로 바뀌지 않았어요 (지금: ${version:-응답 없음}). 서버에서 journalctl -u officemap-deploy -e 를 보세요"
+          exit 1
+
+  # ssm: GitHub이 서버에 명령해 바꿔 띄운다
   deploy:
     name: 서버에 올리기
     needs: build
+    if: vars.DEPLOY_MODE == 'ssm'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     # 저장소 Settings → Environments → production에서 승인자·브랜치(main)를 걸 수 있다

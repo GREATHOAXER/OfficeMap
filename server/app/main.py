@@ -58,6 +58,7 @@ app.include_router(ai.router)
 
 @app.get("/api/health")
 def health() -> dict[str, str]:
+    """DB까지 닿으면 ok. version: 지금 떠 있는 커밋 (배포가 새 버전으로 바뀌었는지 확인할 때)"""
     with pool.connection() as conn:
         conn.execute("SELECT 1")
-    return {"status": "ok"}
+    return {"status": "ok", "version": settings.app_version}
