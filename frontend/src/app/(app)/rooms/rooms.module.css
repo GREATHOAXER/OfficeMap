@@ -545,6 +545,13 @@
   cursor: not-allowed;
 }
 
+/* 휴대폰에서 칸을 꾹 눌러 끌 때 Safari의 길게 누르기 메뉴·돋보기가 뜨지 않게 */
+.ttCell {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 /* 끌어서 고르는 동안: 글자 선택·포인터 모양 */
 .tt[data-dragging] {
   user-select: none;

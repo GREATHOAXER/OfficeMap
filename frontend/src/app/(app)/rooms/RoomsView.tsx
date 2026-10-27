@@ -495,7 +495,7 @@ export default function RoomsView({ day: fetchedDay, initialFloor, editId }: Pro
               <span className={styles.lgPast} aria-hidden="true" />
               지난 시간·운영 시간 밖
             </span>
-            <span className={styles.ttHint}>빈 칸을 누르거나 끌어서 예약 · 예약을 누르면 자세히</span>
+            <span className={styles.ttHint}>빈 칸을 누르거나 끌어서 예약 (휴대폰은 꾹 누른 채 끌기) · 예약을 누르면 자세히</span>
           </div>
           {day.past && <p className={styles.pastNote}>지난 날짜예요. 예약 현황만 볼 수 있어요.</p>}
           {day.rooms.length === 0 ? (

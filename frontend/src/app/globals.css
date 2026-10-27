@@ -54,6 +54,12 @@ body {
   padding: 0;
 }
 
+html {
+  /* iPhone을 가로로 돌려도 Safari가 글자를 제멋대로 키우지 않게 */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   font-family: var(--font-body);
   color: var(--ink);
@@ -69,6 +75,17 @@ select,
 textarea {
   font: inherit;
   color: inherit;
+}
+
+/* iPhone Safari는 글자가 16px보다 작은 입력칸을 누르면 화면을 확대하고, 다 쓴 뒤에도 그대로 둔다.
+   그러면 화면 오른쪽이 잘려 보이고, 도면 위에서는 두 손가락이 도면 배율을 바꿔 되돌리기도 어렵다.
+   손가락으로 쓰는 기기에서만 입력칸 글자를 16px 이상으로 (화면마다 작게 정한 크기보다 앞서야 해서 !important) */
+@media (hover: none) and (pointer: coarse) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]),
+  select,
+  textarea {
+    font-size: max(16px, 1em) !important;
+  }
 }
 
 a {

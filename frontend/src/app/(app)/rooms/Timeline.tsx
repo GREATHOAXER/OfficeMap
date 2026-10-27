@@ -13,7 +13,7 @@ type Props = {
   rooms: RoomDay[]; // 필터를 거친 회의실
   draft: Draft;
   onPick: (room: RoomDay, start: number) => void;
-  /** 빈 칸을 끌어서 고른 시간 (마우스) */
+  /** 빈 칸을 끌어서 고른 시간 (마우스, 터치는 꾹 누른 채 끌기) */
   onPickRange: (room: RoomDay, start: number, end: number) => void;
   onOpenBooking: (reservationId: number) => void;
 };
@@ -22,9 +22,12 @@ type Props = {
 type NavCell = { el: HTMLElement; r: number; c: number; span: number };
 
 const EDGE_PX = 48; // 끄는 동안 손이 표의 왼쪽·오른쪽 끝에서 이만큼 안에 들어오면 표를 그쪽으로 민다
+const HOLD_MS = 400; // 터치: 빈 칸을 이만큼 누르고 있으면 끌어서 고르기 시작 (그 전에 밀면 표가 옆으로 넘어간다)
+const HOLD_SLOP_PX = 10; // 누르고 있는 동안 이만큼 넘게 움직이면 표를 미는 것으로 본다
 
 /**
- * 예약 현황표. 회의실마다 한 줄, 칸 하나 = 30분. 빈 칸을 누르면 그 시간부터 1시간, 마우스로 끌면 끈 만큼 고른다.
+ * 예약 현황표. 회의실마다 한 줄, 칸 하나 = 30분. 빈 칸을 누르면 그 시간부터 1시간, 마우스로 끌면 끈 만큼 고른다
+ * (휴대폰은 손가락으로 밀면 표가 옆으로 넘어가야 해서, 칸을 꾹 누른 채 끌어야 고른다).
  * 예약은 칸 여러 개를 이어 붙인 블록 하나로 그리고, 누르면 자세한 내용을 띄운다
  * (내가 예약했거나 참석하는 회의는 검정. 글자로 "내 예약"과 "참석"을 구별한다).
  * 키보드: 표 전체가 Tab 한 번이고, 안에서는 방향키·Home·End로 옮긴다 (칸 수백 개를 Tab으로 지나가지 않게)
@@ -39,34 +42,40 @@ export default function Timeline({ day, rooms, draft, onPick, onPickRange, onOpe
   const gridRef = useRef<HTMLDivElement>(null);
   const [overflowing, setOverflowing] = useState(false);
   const [activeKey, setActiveKey] = useState<string | null>(null);
-  // 마우스로 끌어서 시간 고르기: 누른 칸(from)부터 지금 포인터가 있는 칸(to)까지, 같은 회의실 줄 안에서만
+  // 끌어서 시간 고르기: 누른 칸(from)부터 지금 손이 있는 칸(to)까지, 같은 회의실 줄 안에서만
   const [drag, setDrag] = useState<{ room: RoomDay; from: number; to: number } | null>(null);
   const dragRef = useRef(drag);
   const roomsRef = useRef(rooms);
   const suppressClick = useRef(false);
   const dragSel = drag ? dragRange(day, drag.room, drag.from, drag.to) : null;
 
+  // 손을 떼면(표 밖에서 떼도) 고른 시간으로 예약 팝업을 연다. 한 칸에서 누르고 떼기만 했으면 그 칸부터 1시간
+  function finishDrag() {
+    const d = dragRef.current;
+    dragRef.current = null; // 마우스 pointerup과 터치 touchend가 같이 와도 한 번만 연다
+    setDrag(null);
+    if (!d) return;
+    suppressClick.current = true; // 뒤따르는 click으로 한 번 더 열리지 않게
+    setTimeout(() => (suppressClick.current = false), 0);
+    if (d.to === d.from) onPick(d.room, d.from);
+    else {
+      const r = dragRange(day, d.room, d.from, d.to);
+      onPickRange(d.room, r.start, r.end);
+    }
+  }
+  const finishRef = useRef(finishDrag);
+
   useEffect(() => {
     dragRef.current = drag;
     roomsRef.current = rooms;
+    finishRef.current = finishDrag;
   });
 
-  // 손을 떼면(표 밖에서 떼도) 고른 시간으로 예약 팝업을 연다. 한 칸에서 누르고 떼기만 했으면 그 칸부터 1시간. Esc는 그만두기
+  // Esc는 그만두기
   const dragging = drag !== null;
   useEffect(() => {
     if (!dragging) return;
-    function finish() {
-      const d = dragRef.current;
-      setDrag(null);
-      if (!d) return;
-      suppressClick.current = true; // 뒤따르는 click으로 한 번 더 열리지 않게
-      setTimeout(() => (suppressClick.current = false), 0);
-      if (d.to === d.from) onPick(d.room, d.from);
-      else {
-        const r = dragRange(day, d.room, d.from, d.to);
-        onPickRange(d.room, r.start, r.end);
-      }
-    }
+    const finish = () => finishRef.current();
     function onKey(event: globalThis.KeyboardEvent) {
       if (event.key === "Escape") setDrag(null);
     }
@@ -76,7 +85,70 @@ export default function Timeline({ day, rooms, draft, onPick, onPickRange, onOpe
       window.removeEventListener("pointerup", finish);
       window.removeEventListener("keydown", onKey);
     };
-  }, [dragging, day, onPick, onPickRange]);
+  }, [dragging]);
+
+  // 터치로 끌어서 고르기: 빈 칸을 꾹(0.4초) 누르고 있으면 시작하고, 그때부터는 손가락이 표를 밀지 않고 시간을 늘린다.
+  // 터치는 누른 칸에 붙어 있어서(다른 칸에 pointerenter가 오지 않음) 손가락 밑의 칸을 직접 찾는다
+  useEffect(() => {
+    const grid = gridRef.current;
+    const scroller = scrollRef.current;
+    if (!grid || !scroller) return;
+    let hold: ReturnType<typeof setTimeout> | undefined;
+    let pressed: { x: number; y: number } | null = null;
+    function cancelHold() {
+      clearTimeout(hold);
+      pressed = null;
+    }
+    function onTouchStart(event: TouchEvent) {
+      cancelHold();
+      const cell = (event.target as Element).closest<HTMLElement>(`.${styles.ttCell}[data-nav]`);
+      const room = cell && roomsRef.current[Number(cell.dataset.r)];
+      if (event.touches.length !== 1 || !cell || !room) return;
+      const start = open + (Number(cell.dataset.c) - 2) * slot;
+      pressed = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+      hold = setTimeout(() => {
+        pressed = null;
+        setDrag({ room, from: start, to: start });
+      }, HOLD_MS);
+    }
+    function onTouchMove(event: TouchEvent) {
+      const t = event.touches[0];
+      if (!t) return;
+      if (pressed && Math.hypot(t.clientX - pressed.x, t.clientY - pressed.y) > HOLD_SLOP_PX) cancelHold();
+      const d = dragRef.current;
+      if (!d) return;
+      if (event.cancelable) event.preventDefault(); // 끄는 동안은 표·화면이 밀리지 않게
+      const target = document.elementFromPoint(t.clientX, t.clientY);
+      const cell = target instanceof Element ? target.closest<HTMLElement>(`.${styles.ttCell}`) : null;
+      if (cell && Number(cell.dataset.r) === roomsRef.current.findIndex((x) => x.id === d.room.id)) {
+        const s = open + (Number(cell.dataset.c) - 2) * slot;
+        if (s !== d.to) setDrag({ ...d, to: s });
+      }
+    }
+    function onTouchEnd(event: TouchEvent) {
+      cancelHold();
+      if (!dragRef.current) return;
+      if (event.cancelable) event.preventDefault(); // 손을 뗀 칸에 click이 한 번 더 가지 않게
+      finishRef.current();
+    }
+    function onTouchCancel() {
+      cancelHold();
+      setDrag(null);
+    }
+    grid.addEventListener("touchstart", onTouchStart, { passive: true });
+    grid.addEventListener("touchmove", onTouchMove, { passive: false });
+    grid.addEventListener("touchend", onTouchEnd);
+    grid.addEventListener("touchcancel", onTouchCancel);
+    scroller.addEventListener("scroll", cancelHold, { passive: true }); // 누르는 사이 표가 밀리기 시작했으면 고르지 않는다
+    return () => {
+      cancelHold();
+      grid.removeEventListener("touchstart", onTouchStart);
+      grid.removeEventListener("touchmove", onTouchMove);
+      grid.removeEventListener("touchend", onTouchEnd);
+      grid.removeEventListener("touchcancel", onTouchCancel);
+      scroller.removeEventListener("scroll", cancelHold);
+    };
+  }, [open, slot]);
 
   // 끄는 동안 손이 표의 왼쪽·오른쪽 끝에 가면 표를 그쪽으로 밀어서, 지금 보이는 시간 밖까지 끌 수 있게 한다.
   // 표가 손 밑에서 움직이면 칸의 pointerenter가 오지 않으므로, 민 다음 손 위치의 칸을 직접 찾아 끈 범위를 늘린다
@@ -84,8 +156,8 @@ export default function Timeline({ day, rooms, draft, onPick, onPickRange, onOpe
     if (!dragging) return;
     let pointerX = -1;
     let frame = 0;
-    function track(event: PointerEvent) {
-      pointerX = event.clientX;
+    function track(event: PointerEvent | TouchEvent) {
+      pointerX = "touches" in event ? (event.touches[0]?.clientX ?? pointerX) : event.clientX;
     }
     function tick() {
       const el = scrollRef.current;
@@ -116,9 +188,11 @@ export default function Timeline({ day, rooms, draft, onPick, onPickRange, onOpe
       frame = requestAnimationFrame(tick);
     }
     window.addEventListener("pointermove", track);
+    window.addEventListener("touchmove", track, { passive: true });
     frame = requestAnimationFrame(tick);
     return () => {
       window.removeEventListener("pointermove", track);
+      window.removeEventListener("touchmove", track);
       cancelAnimationFrame(frame);
     };
   }, [dragging, open, slot]);
@@ -275,7 +349,7 @@ export default function Timeline({ day, rooms, draft, onPick, onPickRange, onOpe
                     aria-selected={selected}
                     aria-label={`${room.name} ${minToHHMM(s)}–${minToHHMM(s + slot)} ${past ? "지난 시간" : "비어 있음"}`}
                     onPointerDown={(event) => {
-                      // 마우스만 끌어서 고른다 (터치는 손가락으로 밀면 표가 옆으로 넘어가야 한다)
+                      // 마우스는 누르자마자 끌기. 터치는 꾹 누른 뒤에 (위의 touchstart: 손가락으로 밀면 표가 옆으로 넘어가야 한다)
                       if (event.pointerType === "touch" || event.button !== 0 || past) return;
                       event.preventDefault();
                       setDrag({ room, from: s, to: s });
