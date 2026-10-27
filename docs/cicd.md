@@ -84,7 +84,7 @@ AWS 변수(`AWS_REGION` 등)는 필요 없습니다. `DEPLOY_MODE`를 넣었다�
 | 할 일 | 방법 |
 |---|---|
 | 새 버전 올리기 | PR → CI 통과 → main에 합치기. 몇 분 뒤 서버가 바뀝니다 |
-| DB 스키마가 바뀐 버전 | 서버 로그에 "주의: 지난 배포 뒤로 DB 스키마 파일이 바뀌었어요"가 남습니다. 새 테이블·함수 파일이면 서버에서 `cd ~/OfficeMap/deploy && docker compose run --rm backend python -m scripts.init_db --only <파일>` ([deploy-aws.md 5](deploy-aws.md#5-새-버전-올리기)) |
+| DB 스키마가 바뀐 버전 | 할 일 없음. 띄우기 전에 `init_db --upgrade`가 새 테이블·컬럼·함수만 넣습니다 (데이터는 그대로). 배포 로그에 "주의:"가 남으면 자동으로 넣지 못한 것이라 손으로 맞춥니다 ([deploy-aws.md 5](deploy-aws.md#5-새-버전-올리기)) |
 | 되돌리기 | 문제 커밋을 되돌리는 커밋을 main에 합칩니다 (GitHub PR 화면의 **Revert** 버튼). 급하면 서버에서 `sudo systemctl stop officemap-deploy.timer` → `bash deploy/remote-deploy.sh <이전 SHA>` (그 이미지가 ghcr.io에 있어야 함), 고친 버전이 main에 들어가면 `sudo systemctl start officemap-deploy.timer` |
 | 배포 로그 | `journalctl -u officemap-deploy -e` (타이머 상태: `systemctl list-timers officemap-deploy.timer`) |
 | 자동 배포 잠깐 끄기 | 서버에서 `sudo systemctl stop officemap-deploy.timer` (다시 `start`), 또는 변수 `DEPLOY_ENABLED=false`(빌드도 안 함) |
@@ -178,7 +178,7 @@ AWS 콘솔 → **Systems Manager → Fleet Manager**에 `officemap-app`이 "온�
 | 할 일 | 방법 |
 |---|---|
 | 새 버전 올리기 | PR → CI 통과 → main에 합치기. 끝 |
-| DB 스키마가 바뀐 버전 | 배포 요약에 "지난 배포 뒤로 DB 스키마 파일이 바뀌었어요"가 뜹니다. 새 테이블·함수 파일이면 **Actions → Deploy → Run workflow**의 `schema_files`에 파일 이름을 빈칸으로 구분해 넣고 다시 돌립니다 (예: `12_personnel.sql 09_retention.sql`, `init_db --only`와 같음). 기존 테이블의 열이 바뀐 파일은 이 방법으로 넣을 수 없습니다 ([deploy-aws.md 5](deploy-aws.md#5-새-버전-올리기)) |
+| DB 스키마가 바뀐 버전 | 할 일 없음. 띄우기 전에 `init_db --upgrade`가 새 테이블·컬럼·함수만 넣습니다 (데이터는 그대로). 배포 요약에 "주의:"가 뜨면 자동으로 넣지 못한 것이라 손으로 맞춥니다. 특정 파일을 꼭 다시 돌려야 하면 **Run workflow**의 `schema_files`에 넣습니다 (`init_db --only`와 같음) ([deploy-aws.md 5](deploy-aws.md#5-새-버전-올리기)) |
 | 되돌리기 | **Run workflow**의 `ref`에 이전 커밋 SHA (GitHub의 Commits 목록에서 복사) |
 | 서버에서 손으로 같은 일 | `cd ~/OfficeMap && git fetch && git checkout -B main <SHA> && bash deploy/remote-deploy.sh <SHA>` (그 커밋 이미지가 ECR에 있어야 함) |
 | 자동 배포 잠깐 끄기 | 변수 `DEPLOY_ENABLED`를 `false`로 |

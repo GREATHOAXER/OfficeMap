@@ -4,7 +4,8 @@
 #   ssm         이미지를 ECR에 올리고, GitHub이 OIDC로 AWS 역할을 받아 SSM으로 서버에 명령한다 (AWS에 OIDC 공급자 필요)
 #   - 저장소 변수(Settings → Secrets and variables → Actions → Variables) DEPLOY_ENABLED=true일 때만 빌드·배포한다.
 #     꺼져 있으면 검사만 한다
-#   - 손으로 돌리기(Actions → Deploy → Run workflow): ssm이면 되돌리기(이전 커밋)·새 DB 스키마 파일 넣기도 된다
+#   - 서버는 새 버전을 띄우기 전에 DB에 새 테이블·컬럼만 넣는다 (deploy/remote-deploy.sh → init_db --upgrade)
+#   - 손으로 돌리기(Actions → Deploy → Run workflow): ssm이면 되돌리기(이전 커밋)·특정 DB 스키마 파일 다시 돌리기도 된다
 # 처음 설정하는 순서: docs/cicd.md
 name: Deploy
 
@@ -18,7 +19,7 @@ on:
         type: string
         default: ""
       schema_files:
-        description: "init_db --only로 넣을 db/schema 파일, 빈칸으로 구분 (예: 12_personnel.sql 09_retention.sql)"
+        description: "보통 비움 (새 테이블은 자동). 꼭 다시 돌릴 db/schema 파일, 빈칸으로 구분 (init_db --only)"
         type: string
         default: ""
 

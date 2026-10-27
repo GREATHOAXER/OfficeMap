@@ -1,6 +1,6 @@
 -- 13_ai_chat.sql
 -- AI 도우미 대화 (server/app/assistant.py). 08_ai.sql의 대화 기록 테이블에 모델과 주고받은 원문을 더한다.
--- 이미 돌고 있는 서버에는: python -m scripts.init_db --only 13_ai_chat.sql
+-- 이미 돌고 있는 서버에는: python -m scripts.init_db --upgrade (자동 배포는 알아서 한다)
 
 -- 대화를 이어 갈 때 모델에 그대로 다시 보내야 하는 원문 (생각·도구 호출 블록 포함). content는 사람이 읽는 글만
 ALTER TABLE ai_messages ADD COLUMN IF NOT EXISTS blocks jsonb;

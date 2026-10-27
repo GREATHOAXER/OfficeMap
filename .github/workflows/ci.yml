@@ -73,6 +73,21 @@ jobs:
           exit 1
       - name: 연기 시험 (주요 API)
         run: python -m scripts.smoke_test
+      - name: 새 버전 DB 맞추기 (init_db --upgrade)
+        run: |
+          python -m scripts.init_db --upgrade | tee "$RUNNER_TEMP/upgrade.txt"
+          grep -q "넣을 파일이 없어요" "$RUNNER_TEMP/upgrade.txt" || { echo "::error::방금 만든 DB인데 --upgrade가 무언가 넣으려 해요"; exit 1; }
+          # 옛 버전 DB 흉내: 인사이동 테이블(12)과 AI 대화 열(13)을 지운 뒤 다시 맞춘다
+          python -c "
+          import psycopg
+          from app.config import settings
+          with psycopg.connect(settings.database_url) as conn:
+              conn.execute('DROP TABLE personnel_move_items, personnel_moves')
+              conn.execute('ALTER TABLE ai_messages DROP COLUMN blocks')
+          "
+          python -m scripts.init_db --upgrade
+          python -m scripts.check_db | tee "$RUNNER_TEMP/check.txt"
+          grep -q "DB 구조가 이 버전과 맞음" "$RUNNER_TEMP/check.txt" || { echo "::error::--upgrade 뒤에도 빠진 것이 있어요"; exit 1; }
       - name: API 서버 로그
         if: failure()
         run: cat "$RUNNER_TEMP/api.log" || true

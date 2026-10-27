@@ -11,6 +11,8 @@ from urllib.parse import unquote, urlsplit
 
 import psycopg
 
+from app import schema
+
 log = logging.getLogger(__name__)
 
 CHECK_COMMAND = "docker compose run --rm backend python -m scripts.check_db"
@@ -142,11 +144,13 @@ def explain(error: BaseException, url: str) -> str:
 
 
 def log_problems(url: str) -> None:
-    """서버를 켤 때 한 번 접속해 보고, 안 되면 이유를, 테이블이 없으면 init_db 안내를 로그에 남긴다.
+    """서버를 켤 때 한 번 접속해 보고, 안 되면 이유를, 테이블이 없으면 init_db 안내를,
+    이 버전의 db/schema 파일이 빠졌으면 init_db --upgrade 안내를 로그에 남긴다.
     서버는 그대로 켠다 (DB가 나중에 살아나면 접속 풀이 다시 붙는다)."""
     try:
         with psycopg.connect(url, connect_timeout=CHECK_TIMEOUT) as conn:
             empty = conn.execute("SELECT to_regclass('public.employees') IS NULL").fetchone()[0]
+            behind = [] if empty else [s for s in schema.check(conn) if s.status != "APPLIED"]
     except Exception as error:  # noqa: BLE001 - 주소 형식 오류 등 무엇이든 로그로 알려 준다
         log.error(
             "DB에 접속하지 못했어요 (%s): %s\n  → %s\n  단계별 점검: %s",
@@ -158,6 +162,13 @@ def log_problems(url: str) -> None:
         return
     if empty:
         log.warning("DB에 테이블이 아직 없어요. 처음 한 번: %s", INIT_COMMAND)
+    elif behind:
+        log.warning(
+            'DB가 이 버전보다 오래됐어요. 이것을 쓰는 화면은 "불러오지 못했습니다"로 나와요:\n  %s\n'
+            "  → 데이터는 그대로 두고 빠진 것만 넣기: %s",
+            "\n  ".join(f"{s.file.name}: {s.describe()}" for s in behind),
+            schema.UPGRADE_COMMAND,
+        )
 
 
 def hints(error: BaseException, url: str) -> list[str]:

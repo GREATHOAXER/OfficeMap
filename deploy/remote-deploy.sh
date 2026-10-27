@@ -3,10 +3,11 @@
 # GitHub Actions의 Deploy(.github/workflows/deploy.yml)가 SSM으로 저장소를 그 커밋에 맞춘 뒤 부른다. 손으로도 된다:
 #
 #   bash deploy/remote-deploy.sh <커밋 SHA>
-#   bash deploy/remote-deploy.sh <커밋 SHA> 12_personnel.sql 09_retention.sql   # 새 DB 스키마 파일도 넣기 (init_db --only)
+#   bash deploy/remote-deploy.sh <커밋 SHA> 12_personnel.sql   # 이 db/schema 파일을 먼저 넣기 (init_db --only, 보통은 필요 없음)
 #
-# deploy/.env의 IMAGE_PREFIX(ECR 주소)가 있어야 한다. 새 버전이 정상(healthy)으로 뜨지 않으면 직전 버전으로 되돌리고
-# 실패로 끝난다. 성공하면 IMAGE_TAG를 .env에 남겨서, 나중에 손으로 docker compose up을 해도 같은 버전이 뜬다.
+# deploy/.env의 IMAGE_PREFIX(이미지 저장소 주소)가 있어야 한다. 띄우기 전에 새 버전에서 늘어난 DB 테이블·컬럼·함수를 넣는다
+# (init_db --upgrade: 데이터는 그대로, 넣을 것이 없으면 아무것도 안 함). 새 버전이 정상(healthy)으로 뜨지 않으면 직전 버전으로
+# 되돌리고 실패로 끝난다. 성공하면 IMAGE_TAG를 .env에 남겨서, 나중에 손으로 docker compose up을 해도 같은 버전이 뜬다.
 # 처음 설정하는 순서: docs/cicd.md
 set -euo pipefail
 
@@ -46,14 +47,6 @@ main() {
   [[ "$prefix" == */ ]] ||
     fail "deploy/.env에 IMAGE_PREFIX를 넣으세요 (끝에 /). 예: IMAGE_PREFIX=123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/ (docs/cicd.md)"
 
-  # 지난 배포 뒤로 DB 구조 파일이 바뀌었는데 넣을 파일을 안 줬으면 알린다 (넣을지는 사람이 정한다: 기존 테이블이 바뀐 파일은 --only로 못 넣음)
-  if [[ $# -eq 0 && -n "$prev" && "$prev" != "$tag" ]]; then
-    local changed
-    changed="$(git diff --name-only "$prev" "$tag" -- ../db/schema 2>/dev/null | xargs -r -n 1 basename | xargs)" || true
-    [[ -z "$changed" ]] ||
-      echo "주의: 지난 배포 뒤로 DB 스키마 파일이 바뀌었어요: $changed — 새 테이블·함수가 있으면 Deploy를 schema_files에 넣어 다시 돌리세요 (docs/cicd.md)"
-  fi
-
   # 이번에 쓸 이미지 태그. 셸 환경변수가 .env보다 앞선다 (성공한 뒤에야 .env에 적는다)
   export IMAGE_TAG="$tag"
   echo "이미지 받기: ${prefix}officemap-backend:$tag, officemap-frontend:$tag"
@@ -69,6 +62,10 @@ main() {
     docker compose run --rm --no-deps backend python -m scripts.init_db --only "$@" ||
       fail "DB 스키마 파일을 넣지 못해서 멈췄어요 (지금 떠 있는 버전은 그대로). 위 오류를 보세요"
   fi
+  # 새 버전의 이미지로: 새 db/schema 파일 중 DB에 없는 것만 넣는다. 늘어나기만 해서 지금 떠 있는 옛 버전도 그대로 돈다
+  echo "DB를 새 버전에 맞추기"
+  docker compose run --rm --no-deps backend python -m scripts.init_db --upgrade ||
+    fail "DB를 새 버전에 맞추지 못해서 멈췄어요 (DB와 지금 떠 있는 버전은 그대로). 위 오류를 보세요"
 
   echo "새 버전 띄우기"
   if ! docker compose up -d --no-build --wait --wait-timeout 300; then

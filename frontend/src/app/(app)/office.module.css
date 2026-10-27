@@ -1902,6 +1902,11 @@
   margin: 0;
 }
 
+.errorDigest {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
 .errorBox button {
   height: 36px;
   padding: 0 12px;
