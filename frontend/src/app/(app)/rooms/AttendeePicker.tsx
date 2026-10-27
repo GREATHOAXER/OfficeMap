@@ -345,6 +345,16 @@ export default function AttendeePicker(props: Props) {
           </div>
         );
       })}
+      {/* 휴대폰: 칩의 "!" 이유는 마우스를 올려야 보여서(title) 글로 적어 둔다 */}
+      {((meAttends && myConflict) || people.some((p) => conflictOf(p))) && (
+        <ul className={styles.conflictNotes}>
+          {meAttends && myConflict && <li>나 · {myConflict}</li>}
+          {people.flatMap((p) => {
+            const why = conflictOf(p);
+            return why ? [<li key={p.emp_no}>{`${p.name} · ${why}`}</li>] : [];
+          })}
+        </ul>
+      )}
       {note && (
         <p className={styles.attendeeNote} role="status">
           {note}

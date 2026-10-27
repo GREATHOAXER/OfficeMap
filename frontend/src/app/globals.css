@@ -67,6 +67,8 @@ body {
   -webkit-font-smoothing: antialiased;
   word-break: keep-all; /* 한글을 단어 중간에서 끊지 않는다 */
   overflow-wrap: break-word;
+  /* iPhone 가로 화면의 노치 쪽, 아래 홈 막대만큼 비운다 (app/layout.tsx viewportFit cover). 다른 기기는 0 */
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 button,

@@ -8,6 +8,7 @@ import { shortDate } from "@/lib/dates";
 import { seatRatio } from "@/lib/planGeometry";
 import type { Layout, Person } from "@/lib/seating";
 import { baseSeatFont, compactAt, isVertical, minPlanWidth, seatBox, seatFont } from "@/lib/seatLabel";
+import { useTouchPan } from "@/lib/useTouchPan";
 import { zonePieces } from "@/lib/zoneShape";
 import styles from "./seating.module.css";
 
@@ -70,6 +71,13 @@ export default function SeatingCanvas(props: Props) {
   const boxStart = useRef<{ x: number; y: number; px: number; py: number; id: number } | null>(null);
   const suppressClick = useRef(false);
   const [box, setBox] = useState<Rect | null>(null);
+  // 휴대폰: 구역 지정 중에는 한 손가락이 네모 그리기라, 두 손가락으로 화면을 민다 (그리던 네모는 그만둔다)
+  function cancelBox() {
+    boxStart.current = null;
+    setBox(null);
+  }
+  const touchPan = useTouchPan(scrollRef, cancelBox);
+
   const plan = data.plan;
   // 좌석 이름 글자 크기와 도면 최소 폭은 직원 화면과 같은 규칙 (lib/seatLabel.ts)
   const aspect = plan ? plan.height_m / plan.width_m : 0.6;
@@ -116,11 +124,12 @@ export default function SeatingCanvas(props: Props) {
     return { x: (event.clientX - r.left) / r.width, y: (event.clientY - r.top) / r.height };
   };
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
-    if (!boxSelect || event.button !== 0) return;
+    if (!boxSelect || touchPan.down(event) || event.button !== 0) return;
     const at = ratio(event);
     boxStart.current = { ...at, px: event.clientX, py: event.clientY, id: event.pointerId };
   }
   function onPointerMove(event: PointerEvent<HTMLDivElement>) {
+    if (touchPan.move(event)) return;
     const start = boxStart.current;
     if (!start || event.pointerId !== start.id) return;
     if (!box && Math.hypot(event.clientX - start.px, event.clientY - start.py) < BOX_THRESHOLD_PX) return;
@@ -134,6 +143,7 @@ export default function SeatingCanvas(props: Props) {
     });
   }
   function onPointerUp(event: PointerEvent<HTMLDivElement>) {
+    if (touchPan.up(event)) return;
     const start = boxStart.current;
     boxStart.current = null;
     if (!start || event.pointerId !== start.id || !box) return;
@@ -163,9 +173,8 @@ export default function SeatingCanvas(props: Props) {
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onPointerCancel={() => {
-          boxStart.current = null;
-          setBox(null);
+        onPointerCancel={(event) => {
+          if (!touchPan.up(event)) cancelBox();
         }}
         onClickCapture={(event) => {
           if (!suppressClick.current) return;

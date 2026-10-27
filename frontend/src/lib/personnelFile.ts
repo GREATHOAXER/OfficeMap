@@ -259,5 +259,6 @@ export async function downloadTemplate(): Promise<void> {
   document.body.appendChild(a); // 문서에 붙여야 파일 이름(download)이 지켜진다
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  // iPhone Safari는 "다운로드할까요?"를 먼저 묻는다: 그 사이에 주소를 지우면 받지 못하므로 넉넉히 둔다
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }

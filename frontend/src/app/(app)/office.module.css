@@ -208,8 +208,8 @@
 /* 자리 배치가 바뀌었다는 안내 (화면 아래, 잠깐 보였다 사라짐) */
 .liveNotices {
   position: fixed;
-  right: 16px;
-  bottom: 16px;
+  right: calc(16px + env(safe-area-inset-right));
+  bottom: calc(16px + env(safe-area-inset-bottom));
   z-index: 40;
   display: flex;
   flex-direction: column;
@@ -1306,9 +1306,9 @@
 /* 휴대폰에서 눌러 고정한 자리 정보: 화면 아래에서 올라오는 시트 */
 .sheet {
   position: fixed;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
+  left: calc(12px + env(safe-area-inset-left));
+  right: calc(12px + env(safe-area-inset-right));
+  bottom: calc(12px + env(safe-area-inset-bottom)); /* iPhone 홈 막대 위로 */
   z-index: 40;
   display: flex;
   flex-direction: column;
@@ -1798,6 +1798,18 @@
   font-size: 12.5px;
 }
 
+.aiRetry {
+  align-self: flex-start;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  cursor: pointer;
+}
+
 /* 예약 후보 카드 */
 .aiProposal {
   display: flex;
@@ -1961,12 +1973,13 @@
   .statusPanel {
     position: fixed;
     top: auto;
-    left: 12px;
-    right: 12px;
-    bottom: 12px;
+    left: calc(12px + env(safe-area-inset-left));
+    right: calc(12px + env(safe-area-inset-right));
+    bottom: calc(12px + env(safe-area-inset-bottom)); /* iPhone 홈 막대 위로 */
     width: auto;
     max-width: none;
-    max-height: calc(100dvh - 24px); /* iPhone Safari의 100vh는 주소창 아래까지라 시트 위쪽이 잘린다 */
+    /* iPhone Safari의 100vh는 주소창 아래까지라 시트 위쪽이 잘린다 */
+    max-height: calc(100dvh - 24px - env(safe-area-inset-bottom));
     overflow-y: auto;
   }
 

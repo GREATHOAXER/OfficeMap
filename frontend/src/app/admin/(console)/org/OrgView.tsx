@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import CopyButton from "@/components/CopyButton";
 import Dialog from "@/components/Dialog";
 import { PenIcon } from "@/components/icons";
 import type { Admin, OrgDepartment, OrgMember } from "@/lib/api";
@@ -497,13 +498,7 @@ export default function OrgView({
             </p>
             <p className={styles.password}>
               <span className="mono">{open.password}</span>
-              <button
-                type="button"
-                className={ui.btn}
-                onClick={() => void navigator.clipboard?.writeText(open.password)}
-              >
-                복사
-              </button>
+              <CopyButton text={open.password} className={ui.btn} />
             </p>
             <p className={ui.hint}>첫 로그인 때 새 비밀번호를 정하게 돼요. 메신저·메일로 본인에게만 전해 주세요.</p>
             {passwordKey > 0 && (

@@ -18,6 +18,7 @@ import {
   contentBox,
   cropGray,
   fitScale,
+  freeCanvas,
   grayOf,
   MAX_RENDER_SIDE,
   openPlanFile,
@@ -132,7 +133,9 @@ function canvasPreview(canvas: HTMLCanvasElement, side: number) {
   c.width = Math.max(1, Math.round(canvas.width * k));
   c.height = Math.max(1, Math.round(canvas.height * k));
   c.getContext("2d")!.drawImage(canvas, 0, 0, c.width, c.height);
-  return c.toDataURL("image/jpeg", 0.85);
+  const url = c.toDataURL("image/jpeg", 0.85);
+  freeCanvas(c);
+  return url;
 }
 
 export default function ImportWizard({ mode, data, onClose, onExpired, onCreated, onApply }: Props) {
@@ -174,6 +177,7 @@ export default function ImportWizard({ mode, data, onClose, onExpired, onCreated
     const scale = fitScale(p, WORK_SIDE);
     const canvas = await p.render(scale);
     const w: Work = { index: p.index, scale, gray: grayOf(canvas), preview: canvasPreview(canvas, PREVIEW_SIDE) };
+    freeCanvas(canvas); // 밝기 배열·미리보기만 들고 있는다
     cache.current.set(p.index, w);
     if (cache.current.size > 3) cache.current.delete(cache.current.keys().next().value!);
     return w;
@@ -204,11 +208,16 @@ export default function ImportWizard({ mode, data, onClose, onExpired, onCreated
   useEffect(() => {
     if (!page) return;
     let gone = false;
-    void ensureWork(page).then((w) => {
-      if (gone) return;
-      setWork(w);
-      setSets((s) => (s[page.index] ? s : { ...s, [page.index]: defaultSet(page, w) }));
-    });
+    ensureWork(page).then(
+      (w) => {
+        if (gone) return;
+        setWork(w);
+        setSets((s) => (s[page.index] ? s : { ...s, [page.index]: defaultSet(page, w) }));
+      },
+      () => {
+        if (!gone) setError(`${page.label}을 그리지 못했어요. 쪽이 많으면 나눠서 올려 보세요`);
+      },
+    );
     return () => {
       gone = true;
     };
@@ -233,7 +242,9 @@ export default function ImportWizard({ mode, data, onClose, onExpired, onCreated
         if (gone) return;
         try {
           const c = await p.render(fitScale(p, THUMB_SIDE));
-          if (!gone) setThumbs((t) => ({ ...t, [p.index]: c.toDataURL("image/jpeg", 0.8) }));
+          const url = c.toDataURL("image/jpeg", 0.8);
+          freeCanvas(c);
+          if (!gone) setThumbs((t) => ({ ...t, [p.index]: url }));
         } catch {
           // 작은 그림이 없어도 고를 수 있다
         }
@@ -364,7 +375,8 @@ export default function ImportWizard({ mode, data, onClose, onExpired, onCreated
     let scale = MAX_RENDER_SIDE / Math.max(s.crop.w, s.crop.h);
     if (file?.kind === "image") scale = Math.min(1, scale);
     if (file?.kind === "excel") scale = Math.min(3, scale);
-    const blob = await canvasFile(await p.render(scale, s.crop));
+    const canvas = await p.render(scale, s.crop);
+    const blob = await canvasFile(canvas).finally(() => freeCanvas(canvas));
     // 이 쪽에서 정한 책상 크기를 초안의 "새 책상 기본 크기"로도 쓴다 (나중에 놓는 책상도 같은 크기)
     const desk = { w: Number(s.desk.w) || 1.6, h: Number(s.desk.h) || 0.8 };
     return { size, found, blob, desk };

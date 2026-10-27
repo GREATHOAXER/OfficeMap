@@ -1028,6 +1028,24 @@
   font-weight: 600;
 }
 
+/* 다른 일정이 있는 참석자와 이유: 마우스가 없는 기기에서만 (마우스면 칩에 올려서 본다) */
+.conflictNotes {
+  display: none;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+@media (hover: none) {
+  .conflictNotes {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+}
+
 /* 팀으로 한꺼번에 넣은 사람: 팀별로 모아 보여 준다 (한 명씩 뺄 수도, 모두 뺄 수도) */
 .chipGroup {
   display: flex;
