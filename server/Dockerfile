@@ -1,8 +1,10 @@
 # OfficeMap API 서버 (FastAPI) 이미지
 # 저장소 루트에서 빌드한다 (DB 초기화 스크립트가 db/schema·db/seed를 읽는다):
 #   docker build -f server/Dockerfile -t officemap-backend .
-# 기본 이미지는 Docker Hub 대신 AWS ECR Public 미러에서 받는다 (EC2에서 Docker Hub 받기 횟수 제한에 걸리지 않게)
-FROM public.ecr.aws/docker/library/python:3.13-slim
+# 기본 이미지는 Docker Hub 대신 AWS ECR Public 미러에서 받는다 (EC2에서 Docker Hub 받기 횟수 제한에 걸리지 않게).
+# GitHub Actions는 러너끼리 IP를 나눠 써서 ECR Public 한도(429)에 걸리므로 BASE_REGISTRY=mirror.gcr.io/library 로 바꿔 빌드한다
+ARG BASE_REGISTRY=public.ecr.aws/docker/library
+FROM ${BASE_REGISTRY}/python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

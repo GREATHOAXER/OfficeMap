@@ -1,12 +1,14 @@
 # OfficeMap 화면 (Next.js) 이미지
 #   docker build -t officemap-frontend frontend
 # 실행에 필요한 파일만 모은 standalone 빌드라 node_modules 전체를 싣지 않는다
-FROM public.ecr.aws/docker/library/node:22-alpine AS deps
+# 기본 이미지 저장소: server/Dockerfile과 같다 (GitHub Actions에서는 BASE_REGISTRY=mirror.gcr.io/library)
+ARG BASE_REGISTRY=public.ecr.aws/docker/library
+FROM ${BASE_REGISTRY}/node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
-FROM public.ecr.aws/docker/library/node:22-alpine AS build
+FROM ${BASE_REGISTRY}/node:22-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -17,7 +19,7 @@ ENV API_URL=$API_URL \
     NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-FROM public.ecr.aws/docker/library/node:22-alpine
+FROM ${BASE_REGISTRY}/node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \

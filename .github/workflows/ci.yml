@@ -117,6 +117,7 @@ jobs:
           context: .
           file: server/Dockerfile
           push: false
+          build-args: BASE_REGISTRY=mirror.gcr.io/library # ECR Public은 러너 IP 한도(429)에 걸린다
           cache-from: type=gha,scope=ci-backend
           cache-to: type=gha,scope=ci-backend,mode=max
       - name: 화면 이미지
@@ -124,5 +125,6 @@ jobs:
         with:
           context: frontend
           push: false
+          build-args: BASE_REGISTRY=mirror.gcr.io/library
           cache-from: type=gha,scope=ci-frontend
           cache-to: type=gha,scope=ci-frontend,mode=max
