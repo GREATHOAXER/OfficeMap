@@ -269,7 +269,9 @@ def error_response(status: int, code: str, **extra: Any) -> JSONResponse:
     return JSONResponse(status_code=status, content={"code": code, **extra})
 
 
-def client_info(request: Request) -> tuple[str | None, str | None]:
+def client_info(request: Request | None) -> tuple[str | None, str | None]:
+    if request is None:  # 서버 작업(예약한 인사이동 등)이 한 일: 접속한 사람이 없다
+        return None, None
     ip = request.client.host if request.client else None
     # 같은 PC의 Next.js 서버를 거쳐 오면 브라우저 주소는 X-Forwarded-For에 들어 있다
     forwarded = request.headers.get("x-forwarded-for")

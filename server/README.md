@@ -22,10 +22,11 @@ app/
   routers/seating.py   좌석 배치 편집·팀 구역 API
   routers/plans.py     도면 편집 API (초안·자동 저장·편집 잠금·게시 점검·게시·게시 예약)
   routers/moves.py     팀 이사 도우미 API
+  routers/personnel.py 인사이동 API (발령 엑셀 줄 확인·자리 미리 보기, 반영·예약·취소, 예약 반영 서버 작업)
   realtime.py      재실 상태 변경을 DB에서 받아(LISTEN) 열린 화면마다 나눠 주기
   db_check.py      DB 접속 오류를 고칠 곳으로 바꾸기 (서버를 켤 때 로그, scripts/check_db.py)
 scripts/
-  init_db.py       db/schema + db/seed 실행
+  init_db.py       db/schema + db/seed 실행 (--reset 모두 다시, --only 파일… 데이터는 두고 고른 스키마 파일만)
   check_db.py      DB 접속 단계별 점검 (주소 → 포트 → 로그인 → 확장 기능 → 테이블), --create-db
   purge_history.py 보관 기간(5년)이 지난 이력 지우기 (--dry-run, --years)
   gen_dense_floor.py 목업 8F(사람이 많은 층, 68석) 도면·좌석 SQL 만들기 → db/seed/03_dense_floor.sql
@@ -334,11 +335,34 @@ scripts/
 - 날짜를 정했으면 배치 화면 요청 목록에 예정으로 뜨고(`team_move: true`), 어느 층에서 "예정 취소"를 하든 함께 취소됩니다.
 - 감사 기록 `TEAM_MOVE`.
 
+## 인사이동 API (`/api/admin/personnel`, 최종·전사 관리자)
+
+| 요청 | 하는 일 |
+|---|---|
+| `POST /api/admin/personnel/preview` | `{rows: [{line, emp_no, name?, from_department?, to_department?, rank?, position?}], seat_mode: AUTO\|UNASSIGN}` → 줄마다 `status`(OK·WARN·SAME·ERROR)·`messages`·`result`(새 자리·미배치 이유), `departments`(부서별 들어옴·나감·새 자리·미배치), `summary` |
+| `POST /api/admin/personnel` | 위 + `{title, effective_date?}` → 201 `{move, rows, departments}`. 날짜가 없으면 바로 반영, 있으면 그날 0시(서울)로 예약. 반영할 줄이 없으면 422 `NOTHING_TO_APPLY`, 날짜가 오늘 이전·1년 뒤면 422 `BAD_DATE` |
+| `GET /api/admin/personnel` | 기록 50건 (예약 먼저): 상태·자리 방식·반영 시각·사람 수·결과 요약·만든 사람 |
+| `GET /api/admin/personnel/{ID}` | 사람마다 부서(만들 때 → 새)·직급·직책·결과(새 자리 `seat`, 미배치·건너뛴 이유 `note`) |
+| `POST /api/admin/personnel/{ID}/cancel` | 예약 취소 (반영·취소된 것은 409 `NOT_SCHEDULED`) |
+
+- 확인: 사번으로 사람을 찾고(시스템 계정 제외), 이름을 적었으면 빈칸·대소문자 없이 견줍니다. 부서는 살아 있는 부서의 이름이나
+  부서코드. 직급·직책은 지금과 다를 때만 바꿉니다. 빠지는 줄(ERROR): 사번 없음·같은 사번 두 줄·없는 사번·퇴사·이름 다름·
+  없는 부서·없어진 부서·새 부서가 빔(직급·직책도 없음). 알림(WARN): 지금 부서가 엑셀과 다름(그래도 옮김), 휴직 중(소속만),
+  구역 관리자 권한이 있음.
+- 반영(한 트랜잭션): 소속·직급·직책을 바꾸면 트리거(`release_seat_on_org_change`)가 원래 고정석을 비우고, 자동 배치면 새 부서
+  구역(살아 있는 구역·층·사업장)의 빈 고정석(사용 중·고정석·지금과 앞으로의 배정이 없음)에 엑셀 순서대로 앉힙니다. 원래 자리가
+  이미 새 부서 구역이면 그 자리 그대로. 층마다 반영된 좌석 배치 묶음(`note` "인사이동: 제목", 같은 `move_group`)을 만들어
+  `_apply`로 반영해서 배치 화면 요청 목록과 자리 알림(`SEAT_CHANGED`)이 그대로 쓰입니다. 미리 보기는 같은 반영을
+  세이브포인트 안에서 해 보고 되돌립니다.
+- 예약은 `personnel_moves`·`personnel_move_items`(`db/schema/12_personnel.sql`)에 남기고, 1분마다 `app/jobs.py`가
+  날짜가 된 것을 반영합니다(그때 다시 확인하고 그때의 빈 자리로 정함). 실패하면 `FAILED`와 이유(`summary.error`), 아무것도 바뀌지 않음.
+- 감사 기록 `PERSONNEL_MOVE`·`PERSONNEL_MOVE_SCHEDULE`·`PERSONNEL_MOVE_CANCEL`.
+
 ## 정기 작업과 이력 정리
 
-- 서버가 켜져 있는 동안 `app/jobs.py`가 1분마다 게시 예약을 게시하고, 켜질 때와 그 뒤 하루마다 `purge_history()`
+- 서버가 켜져 있는 동안 `app/jobs.py`가 1분마다 게시 예약을 게시하고 인사이동 예약을 반영하며, 켜질 때와 그 뒤 하루마다 `purge_history()`
   (`db/schema/09_retention.sql`)로 5년이 지난 이력을 지웁니다: 끝난 배정, 끝난 작업 묶음(남은 배정이 가리키지 않는 것),
-  지난 예약, 감사 기록, 알림, 로그인 기록, 오래전에 빠진 좌석. 도면 보관본은 모두 남습니다. 지운 개수는 `audit_logs`에
+  지난 예약, 감사 기록, 알림, 로그인 기록, 반영·취소한 인사이동 기록, 오래전에 빠진 좌석. 도면 보관본은 모두 남습니다. 지운 개수는 `audit_logs`에
   `HISTORY_PURGE`로 남습니다.
 - 서버를 여러 개 띄워도 DB 잠금(`pg_try_advisory_lock`)으로 한 곳에서만 돕니다.
 - 손으로: `python -m scripts.purge_history --dry-run`(개수만 보고 되돌리기), `--years 7`(보관 기간 바꾸기).

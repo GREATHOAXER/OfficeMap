@@ -156,9 +156,17 @@ cd ~/OfficeMap && git pull && cd deploy && docker compose up -d --build
 ```
 
 바뀐 이미지만 다시 빌드하고, 바뀐 컨테이너만 다시 띄웁니다(몇십 초 끊김).
-DB 구조(`db/schema`)가 바뀐 버전이면 지금은 시험 서버라 목업을 다시 넣습니다:
-`docker compose run --rm backend python -m scripts.init_db --reset`. 실제 데이터가 들어간 뒤에는 이렇게 할 수 없으므로
-그 전에 마이그레이션(바뀐 부분만 적용) 도구를 들여옵니다(아래 8).
+DB 구조(`db/schema`)가 바뀐 버전이면 둘 중 하나:
+
+- 새 스키마 파일만 넣기 (데이터는 그대로): 새로 생긴 파일과 바뀐 함수 파일을 고릅니다. 예) 인사이동이 들어간 버전:
+  ```bash
+  docker compose run --rm backend python -m scripts.init_db --only 12_personnel.sql 09_retention.sql
+  ```
+  이미 있는 테이블을 다시 만들려 하면 아무것도 바꾸지 않고 멈춥니다.
+- 목업을 처음부터 다시 (시험 서버만, 데이터가 지워짐): `docker compose run --rm backend python -m scripts.init_db --reset`
+
+기존 테이블의 열이 바뀐 버전은 `--only`로 넣을 수 없어서, 실제 데이터가 들어가기 전에 마이그레이션(바뀐 부분만 적용) 도구를
+들여옵니다(아래 8).
 
 ## 6. HTTPS 켜기 (도메인이 생기면)
 

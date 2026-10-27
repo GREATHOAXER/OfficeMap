@@ -332,3 +332,14 @@ export function BuildingIcon(props: IconProps) {
     </Svg>
   );
 }
+
+/** 인사이동 (두 사람이 자리를 바꿈) */
+export function TransferIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="7" cy="7" r="3" />
+      <circle cx="17" cy="17" r="3" />
+      <path d="M14 5h5v5M19 5l-5 5M10 19H5v-5M5 19l5-5" />
+    </Svg>
+  );
+}

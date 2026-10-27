@@ -4,6 +4,8 @@ server 디렉토리에서 실행:
     python -m scripts.init_db            # 빈 DB에 db/schema + db/seed 실행
     python -m scripts.init_db --reset    # 기존 테이블을 모두 지우고 다시 (개발용)
     python -m scripts.init_db --no-seed  # 테이블만
+    python -m scripts.init_db --only 12_personnel.sql 09_retention.sql
+        # 데이터는 그대로 두고 db/schema의 이 파일만 실행 (새 버전에서 테이블·함수가 늘었을 때)
 """
 
 import argparse
@@ -20,13 +22,27 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--reset", action="store_true", help="public 스키마의 테이블을 모두 지우고 다시 만든다")
     parser.add_argument("--no-seed", action="store_true", help="목업 데이터는 넣지 않는다")
+    parser.add_argument(
+        "--only",
+        nargs="+",
+        metavar="파일",
+        help="데이터는 그대로 두고 db/schema의 이 파일만 실행한다 (예: 12_personnel.sql)",
+    )
     args = parser.parse_args()
     if args.reset and settings.app_env == "production":
         raise SystemExit("APP_ENV=production인 서버에서는 --reset(모든 테이블 지우기)을 쓸 수 없습니다.")
+    if args.only and args.reset:
+        raise SystemExit("--only와 --reset은 같이 쓸 수 없습니다.")
 
-    files = sorted((DB_DIR / "schema").glob("*.sql"))
-    if not args.no_seed:
-        files += sorted((DB_DIR / "seed").glob("*.sql"))
+    if args.only:
+        files = [DB_DIR / "schema" / name for name in args.only]
+        missing = [f.name for f in files if not f.is_file()]
+        if missing:
+            raise SystemExit(f"db/schema에 없는 파일입니다: {', '.join(missing)}")
+    else:
+        files = sorted((DB_DIR / "schema").glob("*.sql"))
+        if not args.no_seed:
+            files += sorted((DB_DIR / "seed").glob("*.sql"))
 
     try:
         conn = psycopg.connect(settings.database_url)
@@ -40,7 +56,7 @@ def main() -> None:
     # 파일 하나라도 실패하면 전부 되돌린다 (with 블록을 예외로 빠져나가면 롤백)
     with conn:
         tables = [t for (t,) in conn.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")]
-        if tables and not args.reset:
+        if tables and not args.reset and not args.only:
             raise SystemExit(
                 f"이미 테이블이 {len(tables)}개 있어서 아무것도 바꾸지 않고 멈췄습니다.\n"
                 "목업 데이터를 처음 상태로 다시 넣으려면 기존 데이터를 지우는 --reset을 붙이세요:\n"

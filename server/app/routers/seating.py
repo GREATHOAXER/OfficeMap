@@ -1104,7 +1104,7 @@ def _load(conn: Connection, request_id: int, *, lock: bool = False) -> dict[str,
 
 
 def _audit(
-    conn: Connection, actor_id: int, action: str, request_id: int, data: dict[str, Any], request: Request
+    conn: Connection, actor_id: int, action: str, request_id: int, data: dict[str, Any], request: Request | None
 ) -> None:
     conn.execute(
         """
@@ -1121,9 +1121,10 @@ def _json(data: dict[str, Any]) -> Jsonb:
 
 
 def _apply(
-    conn: Connection, cr: dict[str, Any], access: dict[str, Any], actor_id: int, request: Request
+    conn: Connection, cr: dict[str, Any], access: dict[str, Any], actor_id: int, request: Request | None
 ) -> dict[str, Any]:
-    """묶음을 반영한다 (호출한 쪽의 트랜잭션 안에서). 충돌이 하나라도 있으면 아무것도 바꾸지 않고 409"""
+    """묶음을 반영한다 (호출한 쪽의 트랜잭션 안에서). 충돌이 하나라도 있으면 아무것도 바꾸지 않고 409.
+    request는 감사 기록의 접속 주소용 (서버 작업이 반영하면 None)"""
     floor_id = cr["floor_id"]
     conn.execute("SELECT pg_advisory_xact_lock(%s, %s)", (LOCK_SEATING, floor_id))
     # 날짜가 지났으면(승인이 늦었으면) 지금 반영한다

@@ -871,6 +871,74 @@ export function fetchPlanEditor(cookieHeader: string | null, floorId: number) {
   return apiGet<PlanEditorData>(`/api/admin/floors/${floorId}/plan`, cookieHeader);
 }
 
+// 인사이동 ------------------------------------------------------------------------
+
+/** 발령 엑셀 한 줄의 확인 결과 (server/app/routers/personnel.py _check) + 반영(미리 보기) 결과 */
+export type PersonnelRow = {
+  line: number;
+  emp_no: string;
+  excel_name: string | null;
+  name: string | null; // 조직도의 이름 (없는 사번이면 null)
+  from_department: string | null; // 지금 부서
+  to_department: string | null; // 새 부서 (null: 부서는 그대로)
+  rank: { from: string | null; to: string } | null; // 바뀌는 직급
+  position: { from: string | null; to: string } | null; // 바뀌는 직책
+  // OK: 옮김 · WARN: 알릴 것이 있지만 옮김 · SAME: 바뀌는 것 없음 · ERROR: 빼고 반영
+  status: "OK" | "WARN" | "SAME" | "ERROR";
+  messages: string[];
+  result: { status: "APPLIED" | "SKIPPED"; seat: string | null; note: string | null } | null;
+};
+
+export type PersonnelDepartment = {
+  name: string;
+  has_zone: boolean;
+  incoming: number;
+  outgoing: number;
+  seated: number;
+  unseated: number;
+};
+
+export type PersonnelSummary = { changed: number; moved: number; seated: number; unseated: number; skipped: number };
+
+export type PersonnelPreview = {
+  rows: PersonnelRow[];
+  departments: PersonnelDepartment[];
+  summary: PersonnelSummary;
+};
+
+export type PersonnelMove = {
+  id: number;
+  title: string;
+  status: "SCHEDULED" | "APPLIED" | "CANCELLED" | "FAILED";
+  seat_mode: "AUTO" | "UNASSIGN";
+  effective_at: string;
+  created_at: string;
+  applied_at: string | null;
+  cancelled_at: string | null;
+  summary: (PersonnelSummary & { error?: unknown }) | null;
+  move_group: number | null;
+  created_by: string;
+  cancelled_by: string | null;
+  people: number;
+};
+
+export type PersonnelMoveItem = {
+  line: number;
+  emp_no: string;
+  name: string;
+  from_department: string | null;
+  to_department: string | null;
+  rank: string | null;
+  position: string | null;
+  status: "PENDING" | "APPLIED" | "SKIPPED";
+  seat: string | null;
+  note: string | null;
+};
+
+export function fetchPersonnelMoves(cookieHeader: string | null) {
+  return apiGet<{ moves: PersonnelMove[] }>("/api/admin/personnel", cookieHeader);
+}
+
 // 팀 이사 도우미 -------------------------------------------------------------------
 
 export type MoveOptions = {

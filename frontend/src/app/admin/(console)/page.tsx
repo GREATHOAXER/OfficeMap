@@ -96,6 +96,9 @@ export default async function AdminHomePage() {
             <Link href="/admin/org" className={styles.btn}>
               조직도 관리
             </Link>
+            <Link href="/admin/personnel" className={styles.btn}>
+              인사이동
+            </Link>
             <SiteButton />
           </div>
         )}
