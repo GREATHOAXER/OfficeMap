@@ -3,7 +3,7 @@
  * 좁은 화면(720px 이하): 메뉴는 숨어 있고 위쪽 막대의 햄버거로 여는 서랍 (data-drawer="open")
  */
 .shell {
-  --sidebar-expanded: 224px;
+  --sidebar-expanded: 234px;
   --sidebar-collapsed: 68px;
   --sidebar-width: var(--sidebar-expanded);
   display: flex;
