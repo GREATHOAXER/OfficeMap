@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link, { useLinkStatus } from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -43,6 +42,7 @@ import Avatar from "./Avatar";
 import LogoutButton from "./LogoutButton";
 import SessionWatch from "./SessionWatch";
 import styles from "./AppShell.module.css";
+import Logo, { LogoSymbol } from "./Logo";
 
 type MenuItem = { label: string; icon: ReactNode; href?: string; badge?: string };
 type MenuGroup = { title?: string; items: MenuItem[] };
@@ -215,8 +215,10 @@ export default function AppShell(props: Props) {
           >
             {narrow ? <CloseIcon /> : <MenuIcon />}
           </button>
-          <Image src="/kftc-logo.jpg" alt="금융결제원" width={101} height={32} className={styles.logo} priority />
-          <Image src="/kftc-symbol.png" alt="금융결제원" width={32} height={32} className={styles.symbol} />
+          <Logo size={24} className={styles.logo} />
+          <span className={styles.symbol} role="img" aria-label="Office Map">
+            <LogoSymbol size={28} />
+          </span>
         </div>
 
         {props.variant === "admin" ? (
@@ -257,7 +259,7 @@ export default function AppShell(props: Props) {
           >
             <MenuIcon />
           </button>
-          <Image src="/kftc-logo.jpg" alt="금융결제원" width={101} height={32} className={styles.logo} />
+          <Logo size={22} className={styles.logo} />
           {props.variant === "admin" && (
             <span className={styles.mobileMode}>
               <ShieldIcon size={14} />

@@ -74,10 +74,7 @@
 }
 
 .logo {
-  height: 48px;
-  width: auto;
   align-self: flex-start;
-  mix-blend-mode: multiply; /* 로고 이미지의 흰 배경을 화면 배경에 녹인다 */
 }
 
 .title {

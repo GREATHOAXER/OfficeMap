@@ -1,0 +1,23 @@
+/* Office Map 로고 (Logo.tsx). 글자 크기·간격은 심볼 높이(--logo-h)에 맞춘다 */
+.logo {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: calc(var(--logo-h) * 0.3);
+  height: var(--logo-h);
+  color: #1b2441;
+  white-space: nowrap;
+}
+
+.logo svg {
+  flex: none;
+}
+
+.word {
+  font-size: calc(var(--logo-h) * 0.98);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  /* 기기 글꼴 중 라틴 굵은 글꼴 (맥 SF, 윈도 Segoe UI, 안드로이드 Roboto) */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}

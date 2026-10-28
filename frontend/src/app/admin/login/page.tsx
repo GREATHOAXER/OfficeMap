@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import styles from "@/app/login/login.module.css";
@@ -8,6 +7,7 @@ import { fetchAdmin, fetchLoginInfo, fetchMe } from "@/lib/api";
 import { safeNext } from "@/lib/loginRedirect";
 import AdminLoginForm from "./AdminLoginForm";
 import own from "./adminLogin.module.css";
+import Logo from "@/components/Logo";
 
 export const metadata: Metadata = { title: "관리자 로그인 · 오피스 안내" };
 
@@ -63,7 +63,7 @@ export default async function AdminLoginPage({ searchParams }: PageProps<"/admin
 
       <main className={styles.formSide}>
         <div className={styles.formBox}>
-          <Image src="/kftc-logo.jpg" alt="금융결제원" width={152} height={48} priority className={styles.logo} />
+          <Logo size={36} className={styles.logo} />
           <div>
             <h2 className={`${styles.title} ${own.title}`}>
               관리자 로그인 <span className={own.badge}>관리자</span>

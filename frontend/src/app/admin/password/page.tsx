@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -9,6 +8,7 @@ import own from "@/app/password/password.module.css";
 import LogoutButton from "@/components/LogoutButton";
 import { fetchAdmin } from "@/lib/api";
 import { safeNext } from "@/lib/loginRedirect";
+import Logo from "@/components/Logo";
 
 export const metadata: Metadata = {
   title: "관리자 비밀번호 변경 · 오피스 안내",
@@ -27,7 +27,7 @@ export default async function AdminPasswordPage({ searchParams }: PageProps<"/ad
   return (
     <main className={own.page}>
       <div className={`${styles.formBox} ${own.box}`}>
-        <Image src="/kftc-logo.jpg" alt="금융결제원" width={152} height={48} priority className={styles.logo} />
+        <Logo size={36} className={styles.logo} />
         <div>
           <h1 className={styles.title}>{forced ? "관리자 비밀번호 정하기" : "관리자 비밀번호 변경"}</h1>
           <p className={styles.subtitle}>
