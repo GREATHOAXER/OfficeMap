@@ -590,6 +590,29 @@
   top: 16px;
 }
 
+/* 넓은 화면에서 AI 도우미를 연 채 자리를 고르면 사람 카드가 AI 아래에 붙는다 (OfficeView data-ai-card).
+   AI가 줄어들어 둘 다 한 화면에 들어오고, 카드가 길면 카드 안에서 스크롤한다 */
+.side[data-ai-card] {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: calc(100dvh - 120px); /* AI만 열었을 때(.ai)와 같은 높이 안에서 둘을 나눈다 (머리글 아래 화면 끝까지) */
+  min-height: 560px;
+}
+
+.side[data-ai-card] .ai {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 260px;
+}
+
+.aiCard {
+  flex: none;
+  max-height: 55%;
+  overflow: auto;
+  border-radius: 10px;
+}
+
 /* 층 버튼: 넘치면 옆으로 민다. 넘친 쪽 끝에 ‹ › 단추를 띄워 아직 안 보이는 층이 있다는 걸 알린다 */
 .floorsWrap {
   position: relative;
