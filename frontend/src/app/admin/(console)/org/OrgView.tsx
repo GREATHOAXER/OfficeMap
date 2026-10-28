@@ -9,6 +9,7 @@ import type { Admin, OrgDepartment, OrgMember } from "@/lib/api";
 import { adminExpiredUrl } from "@/lib/loginRedirect";
 import ui from "../seating/seating.module.css";
 import { validationText } from "../validation";
+import DeptCascade from "./DeptCascade";
 import styles from "./org.module.css";
 
 const json = { "content-type": "application/json" };
@@ -112,6 +113,8 @@ export default function OrgView({
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   // 검색에서 고른 사람: 그 부서의 팀원 표에서 그 줄을 표시하고 보여 준다
   const [found, setFound] = useState<string | null>(null);
+  // 팀원 표 정렬: 기본은 서버 순서(직급 순 → 입사연도 → 입사일), 칸 제목을 누르면 그 칸으로 (한 번 더 누르면 반대로)
+  const [sort, setSort] = useState<MemberSort | null>(null);
   const dept = selected !== null ? (tree.byId.get(selected) ?? null) : null;
   const canEdit = org.can_edit;
 
@@ -205,20 +208,10 @@ export default function OrgView({
   }
 
   const options = tree.order.filter((o) => o.dept.is_active);
+  // 부서 고르기: 본부 → 부서 → 팀 계단식 (DeptCascade). 어느 단계든 고를 수 있다
+  const deptNodes = options.map((o) => o.dept);
   const deptSelect = (value: number | null, onChange: (id: number) => void, label: string, exclude?: Set<number>) => (
-    <label className={ui.field}>
-      <span>{label}</span>
-      <select className={ui.select} value={value ?? ""} onChange={(e) => onChange(Number(e.target.value))}>
-        {options
-          .filter((o) => !exclude?.has(o.dept.id))
-          .map((o) => (
-            <option key={o.dept.id} value={o.dept.id}>
-              {"　".repeat(o.depth)}
-              {o.dept.name}
-            </option>
-          ))}
-      </select>
-    </label>
+    <DeptCascade nodes={deptNodes} value={value} onChange={onChange} label={label} exclude={exclude} />
   );
 
   const visible = (id: number | null): boolean => {
@@ -338,7 +331,7 @@ export default function OrgView({
             <p className={ui.hint}>왼쪽에서 부서를 고르세요.</p>
           ) : (
             <>
-              <div className={ui.cardHead}>
+              <div className={`${ui.cardHead} ${styles.detailHead}`}>
                 <div>
                   <p className={styles.path}>{tree.path(dept.id).slice(0, -1).join(" › ") || "최상위"}</p>
                   <h2 id="dept-title" className={styles.deptTitle}>
@@ -391,7 +384,16 @@ export default function OrgView({
               </div>
 
               <div className={styles.membersHead}>
-                <h3>팀원</h3>
+                <div className={styles.membersTitle}>
+                  <h3>팀원</h3>
+                  {sort ? (
+                    <button type="button" className={ui.linkButton} onClick={() => setSort(null)}>
+                      기본 순서(직급순)로
+                    </button>
+                  ) : (
+                    <span className={ui.muted}>직급순 · 칸 제목을 누르면 정렬</span>
+                  )}
+                </div>
                 {canEdit && dept.is_active && (
                   <div className={ui.rowButtons}>
                     <button type="button" className={ui.btn} onClick={() => setOpen({ kind: "bring" })}>
@@ -416,17 +418,38 @@ export default function OrgView({
                     <caption className="visually-hidden">{dept.name} 팀원</caption>
                     <thead>
                       <tr>
-                        <th scope="col">이름</th>
-                        <th scope="col">사번</th>
-                        <th scope="col">자리</th>
-                        <th scope="col">내선</th>
+                        {MEMBER_COLUMNS.map(([key, label]) => (
+                          <th
+                            key={key}
+                            scope="col"
+                            aria-sort={
+                              sort?.key === key ? (sort.dir === "asc" ? "ascending" : "descending") : undefined
+                            }
+                          >
+                            <button
+                              type="button"
+                              className={styles.sortButton}
+                              data-active={sort?.key === key || undefined}
+                              onClick={() =>
+                                setSort((cur) =>
+                                  cur?.key === key && cur.dir === "asc" ? { key, dir: "desc" } : { key, dir: "asc" },
+                                )
+                              }
+                            >
+                              {label}
+                              <span className={styles.sortMark} aria-hidden="true">
+                                {sort?.key === key ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}
+                              </span>
+                            </button>
+                          </th>
+                        ))}
                         <th scope="col">
                           <span className="visually-hidden">고치기</span>
                         </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {members.map((m) => (
+                      {sortMembers(members, sort).map((m) => (
                         <tr
                           key={m.emp_no}
                           data-emp={m.emp_no}
@@ -443,15 +466,19 @@ export default function OrgView({
                             )}
                             {m.temporary_password && <span className={styles.badge}>임시 비밀번호</span>}
                           </td>
-                          <td className="mono">{m.emp_no}</td>
-                          <td>
+                          <td className="mono" data-label="사번">
+                            {m.emp_no}
+                          </td>
+                          <td data-label="자리">
                             {m.seat_code ? (
                               `${m.site_name ?? ""} ${m.floor_name} ${m.seat_code}`.trim()
                             ) : (
                               <span className={ui.muted}>없음</span>
                             )}
                           </td>
-                          <td className="mono">{m.extension ?? "—"}</td>
+                          <td className="mono" data-label="내선">
+                            {m.extension ?? "—"}
+                          </td>
                           <td className={styles.rowActions}>
                             {canEdit && (
                               <button
@@ -459,7 +486,7 @@ export default function OrgView({
                                 className={ui.btn}
                                 onClick={() => setOpen({ kind: "person", member: m })}
                               >
-                                고치기·옮기기
+                                수정하기
                               </button>
                             )}
                           </td>
@@ -571,6 +598,37 @@ type DeptSelect = (
   label: string,
   exclude?: Set<number>,
 ) => React.ReactNode;
+
+type MemberSort = { key: "name" | "emp_no" | "seat" | "extension"; dir: "asc" | "desc" };
+const MEMBER_COLUMNS: [MemberSort["key"], string][] = [
+  ["name", "이름"],
+  ["emp_no", "사번"],
+  ["seat", "자리"],
+  ["extension", "내선"],
+];
+const collator = new Intl.Collator("ko", { numeric: true });
+
+/** 팀원 표 정렬. sort가 없으면 서버 순서(직급 순 → 입사연도 → 입사일). 빈 칸(자리 없음·내선 없음)은 늘 뒤로 */
+function sortMembers(members: OrgMember[], sort: MemberSort | null): OrgMember[] {
+  if (!sort) return members;
+  const value = (m: OrgMember) =>
+    sort.key === "name"
+      ? m.name
+      : sort.key === "emp_no"
+        ? m.emp_no
+        : sort.key === "seat"
+          ? m.seat_code
+            ? `${m.site_name ?? ""} ${m.floor_name} ${m.seat_code}`
+            : ""
+          : (m.extension ?? "");
+  const sign = sort.dir === "asc" ? 1 : -1;
+  return [...members].sort((a, b) => {
+    const x = value(a);
+    const y = value(b);
+    if (!x || !y) return x === y ? 0 : x ? -1 : 1;
+    return sign * collator.compare(x, y);
+  });
+}
 
 /**
  * 이름·사번으로 사람 찾기 (부서 나무 위). 치는 대로 찾고, 고르면 그 사람의 부서를 연다(onPick).
@@ -1068,7 +1126,15 @@ function NewEmployeeDialog({
           </label>
           <label className={ui.field}>
             <span>입사일 (선택)</span>
-            <input className={ui.textInput} type="date" value={form.hired_on} onChange={set("hired_on")} />
+            {/* 최대값을 정해 두어야 연도 칸이 4자리에서 멈추고 월로 넘어간다 (없으면 Chrome은 연도를 6자리까지 받는다) */}
+            <input
+              className={ui.textInput}
+              type="date"
+              min="1950-01-01"
+              max="2099-12-31"
+              value={form.hired_on}
+              onChange={set("hired_on")}
+            />
           </label>
         </div>
         {deptSelect(dept, setDept, "부서")}
@@ -1152,7 +1218,7 @@ function PersonDialog({
     <Dialog
       open
       onClose={onClose}
-      title={`${member.name} 고치기·옮기기`}
+      title={`${member.name} 수정하기`}
       footer={
         <>
           {member.emp_no !== myEmpNo && (
