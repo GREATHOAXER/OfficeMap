@@ -818,6 +818,9 @@
   overscroll-behavior-x: contain;
   /* 휴대폰에서 두 손가락은 브라우저 화면 확대 대신 도면 배율을 바꾼다 (FloorPlan.tsx). 한 손가락 스크롤은 그대로 */
   touch-action: pan-x pan-y;
+  /* 세로 스크롤바 자리를 늘 비워 둔다. 윈도처럼 스크롤바가 폭을 차지하면, 배율을 바꿀 때 스크롤바가 생겼다 사라지며
+     보이는 폭이 바뀌고 → 100% 도면 폭을 다시 재고 → 다시 스크롤바가 바뀌는 것을 되풀이해 화면이 흔들렸다 */
+  scrollbar-gutter: stable;
 }
 
 .noPlan {
@@ -1614,6 +1617,10 @@
 }
 
 /* AI 도우미 패널 (AiPanel.tsx). 화면 높이 안에 들어가고, 대화가 길어지면 대화 부분만 밀린다 */
+.ai[hidden] {
+  display: none;
+}
+
 .ai {
   display: flex;
   flex-direction: column;

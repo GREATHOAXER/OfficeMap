@@ -167,12 +167,17 @@ export default function PlanCanvas(props: Props) {
     bar.style.marginLeft = `${shift}px`;
   });
   const [availPx, setAvailPx] = useState(900);
+  // 스크롤바 두께 (윈도 등은 15~17px, 맥·휴대폰처럼 내용 위에 겹쳐 뜨면 0). 세로 자리는 늘 비워 둔다(scrollbar-gutter)
+  const [scrollbarPx, setScrollbarPx] = useState(0);
 
   // 배율 100% = 보이는 폭에 도면 폭을 맞춘다
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const observer = new ResizeObserver(() => setAvailPx(el.clientWidth - RULER_PX));
+    const observer = new ResizeObserver(() => {
+      setAvailPx(el.clientWidth - RULER_PX);
+      setScrollbarPx(Math.max(0, el.offsetWidth - el.clientWidth));
+    });
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
@@ -187,15 +192,18 @@ export default function PlanCanvas(props: Props) {
     geometry.elements.flatMap((el) => (el.type === "desk_group" ? el.cells.map(() => deskBox(el)) : [])),
     2.35,
   );
-  const minW = minPlanWidth(deskFont, DESK_READABLE_PX);
-  const canvasW = Math.round(Math.max(availPx, MIN_CANVAS_PX, minW) * zoom);
+  // 100%일 때 도면 폭 = 보이는 폭. 좁은 화면(MIN_CANVAS_PX)과 작은 책상이 많은 층(번호가 읽히는 폭)은 더 넓혀 옆으로 민다.
+  // 보이는 폭보다 조금(10% 안)만 넓어야 하면 그냥 맞춘다: 몇 px만 넓히면 100%에서도 몇 px씩 밀리는 스크롤이 생겨
+  // 도면이 흔들려 보였다
+  const widen = (w: number) => (w > availPx * 1.1 ? w : availPx);
+  const baseW = widen(Math.max(MIN_CANVAS_PX, minPlanWidth(deskFont, DESK_READABLE_PX)));
+  const canvasW = Math.round(baseW * zoom);
   const canvasH = Math.round((canvasW * height) / width);
   const pxPerM = canvasW / width;
   // 보이는 높이는 100%일 때의 도면 높이로 둔다: 확대하면 영역이 길어지는 대신 스크롤돼서 포인터 자리가 그대로 남는다
-  const baseW = Math.max(availPx, MIN_CANVAS_PX, minW);
   // (작은 책상이 많아 100%가 화면보다 넓은 층도 보이는 높이는 화면 폭에 맞춘 도면 높이까지)
-  const fitW = Math.max(availPx, MIN_CANVAS_PX);
-  const viewH = Math.round((fitW * height) / width) + RULER_PX + (baseW > availPx ? 16 : 0);
+  const fitW = widen(MIN_CANVAS_PX);
+  const viewH = Math.round((fitW * height) / width) + RULER_PX + (baseW > availPx ? scrollbarPx : 0);
 
   // 배율이 바뀌면 기준점(포인터 자리, 버튼이면 화면 가운데)이 제자리에 있도록 스크롤을 맞춘다
   const zoomRef = useRef(zoom);

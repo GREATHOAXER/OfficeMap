@@ -580,6 +580,9 @@
   overflow: auto;
   max-height: max(420px, calc(100vh - 240px));
   overscroll-behavior-x: contain;
+  /* 세로 스크롤바 자리를 늘 비워 둔다. 윈도처럼 스크롤바가 폭을 차지하면, 배율을 바꿀 때 스크롤바가 생겼다 사라지며
+     보이는 폭이 바뀌고 → 100% 도면 폭을 다시 재고 → 다시 스크롤바가 바뀌는 것을 되풀이해 화면이 흔들렸다 */
+  scrollbar-gutter: stable;
 }
 
 /* 도면 안의 크기는 도면 폭(cqw) 기준. 직원 화면과 같은 좌표·비율 */
