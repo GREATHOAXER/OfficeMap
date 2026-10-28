@@ -12,6 +12,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
 from app.db import get_setting, pool
+from app.people_order import person_order
 from app.realtime import SSE_HEADERS, hub
 from app.routers.employees import NO_WINDOW, find_employees
 from app.session import CurrentUser, load_session
@@ -70,7 +71,7 @@ def my_team(user: CurrentUser) -> dict[str, Any]:
         members = find_employees(
             conn,
             "e.department_id = %(team)s",
-            "e.id = %(me)s DESC, e.name, e.emp_no",
+            person_order(),  # 직급 순 → 입사연도 → 입사일 (app/people_order.py)
             {"me": user["employee_id"], "team": team["id"], "limit": 500, **NO_WINDOW},
         )
     return {"team": {"id": team["id"], "name": team["name"]}, "fetched_at": team["fetched_at"], "members": members}

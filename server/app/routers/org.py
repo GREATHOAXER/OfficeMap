@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.admin_auth import CurrentAdmin, is_company_wide
 from app.db import pool
+from app.people_order import person_order
 from app.routers.auth import client_info
 from app.security import hash_password
 
@@ -389,7 +390,7 @@ def members(dept_id: int, admin: CurrentAdmin) -> dict[str, Any]:
     with pool.connection() as conn:
         dept = _dept(conn, dept_id, active=False)
         rows = conn.execute(
-            """
+            f"""
             SELECT e.emp_no, e.name, e.rank_name AS rank, e.position_name AS position, e.email, e.extension,
                    e.employment_status AS status, e.hired_on,
                    s.code AS seat_code, f.name AS floor_name, si.name AS site_name,
@@ -408,7 +409,7 @@ def members(dept_id: int, admin: CurrentAdmin) -> dict[str, Any]:
             LEFT JOIN floors f ON f.id = s.floor_id
             LEFT JOIN sites si ON si.id = f.site_id
             WHERE e.department_id = %s AND e.employment_status <> 'RETIRED'
-            ORDER BY e.position_name IS NULL, e.employment_status, e.name
+            ORDER BY {person_order()}
             """,
             (dept_id,),
         ).fetchall()

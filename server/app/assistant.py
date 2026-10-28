@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app.config import settings
 from app.db import pool
+from app.people_order import person_order
 from app.routers.employees import NO_WINDOW, TimeWindow, find_employees
 from app.routers.employees import search as search_employees
 from app.routers.rooms import KST, ReservationIn, _at, _check_request, _policy
@@ -483,7 +484,7 @@ def propose_reservation(ctx: Context, a: ProposeReservation) -> dict[str, Any]:
         attendees = find_employees(
             conn,
             "e.emp_no = ANY(%(emp_nos)s)",
-            "e.name",
+            person_order(),
             {"me": ctx.user["employee_id"], "limit": 50, "emp_nos": emp_nos, **window},
         )
     warnings = []

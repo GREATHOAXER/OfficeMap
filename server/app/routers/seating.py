@@ -26,6 +26,7 @@ from starlette.concurrency import run_in_threadpool
 from app.admin_auth import COMPANY_WIDE, CurrentAdmin, grants_of, load_admin
 from app.config import settings
 from app.db import pool
+from app.people_order import person_order
 from app.plan_geometry import to_ratio
 from app.realtime import SSE_HEADERS, hub
 from app.routers.auth import client_info
@@ -254,7 +255,7 @@ def _seating(conn: Connection, admin: dict[str, Any], floor: dict[str, Any], acc
         LEFT JOIN floors uf ON uf.id = us.floor_id
         WHERE e.employment_status = 'ACTIVE' AND e.department_id = ANY(%(depts)s)
           AND NOT EXISTS (SELECT 1 FROM seat_assignments a WHERE a.employee_id = e.id AND a.kind = 'FIXED' AND {_now()})
-        ORDER BY d.sort_order, e.name, e.emp_no
+        ORDER BY d.sort_order, {person_order()}
         """,
         {"depts": _departments(conn, access, floor_id), "new_days": NEW_HIRE_DAYS},
     ).fetchall()

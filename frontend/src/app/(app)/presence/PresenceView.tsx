@@ -3,14 +3,13 @@
 import Link from "next/link";
 import { useState } from "react";
 import { GridIcon } from "@/components/icons";
-import type { EmployeeHit, MyPresenceInfo, MyReservation, MyTeam, PresenceStatus } from "@/lib/api";
+import type { EmployeeHit, MyPresenceInfo, MyReservation, MyTeam } from "@/lib/api";
 import { kstDate } from "@/lib/dates";
 import { useLivePresence, withLiveMine } from "@/lib/livePresence";
 import {
   NO_STATUS_LABEL,
   PRESENCE_HINT,
   PRESENCE_LABEL,
-  PRESENCE_ORDER,
   presenceMessage,
   STATUS_FILTERS,
   type StatusFilter,
@@ -28,9 +27,6 @@ type Props = {
   upcoming: MyReservation[];
   today: string;
 };
-
-/** 상태 순서 (상태 없음은 맨 뒤) */
-const rank = (status: PresenceStatus | undefined) => (status ? PRESENCE_ORDER.indexOf(status) : PRESENCE_ORDER.length);
 
 /**
  * 내 재실 상태 (초안). 디자인 시안의 "내 재실 상태"(상태 4가지·메시지·자동 해제)에
@@ -56,9 +52,8 @@ export default function PresenceView({ myEmpNo, info, team, upcoming, today }: P
     status,
     count: members.filter((m) => (m.presence?.status ?? "NONE") === status).length,
   }));
-  const shown = members
-    .filter((m) => !filter || (m.presence?.status ?? "NONE") === filter)
-    .sort((a, b) => rank(a.presence?.status) - rank(b.presence?.status) || a.name.localeCompare(b.name, "ko"));
+  // 서버가 준 순서 그대로: 직급 순 → 입사연도 → 입사일 (server/app/people_order.py, 모든 사람 목록이 같은 순서)
+  const shown = members.filter((m) => !filter || (m.presence?.status ?? "NONE") === filter);
 
   // 오늘 남은 일정: 내가 실제로 들어가는 회의만 (취소된 회의, 예약만 해 준 회의는 빼고). 끝난 회의는 열어 둔 채로도 빠지고,
   // 날짜가 바뀌면 다시 읽는다
