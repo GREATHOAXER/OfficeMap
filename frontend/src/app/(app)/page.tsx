@@ -5,7 +5,7 @@ import { redirectToLogin } from "@/lib/expiredRedirect";
 import OfficeView from "./OfficeView";
 import styles from "./office.module.css";
 
-export const metadata: Metadata = { title: "자리·재실 현황 · 오피스 안내" };
+export const metadata: Metadata = { title: "자리·재실 현황 · Office Map" };
 
 // ① 자리·재실 현황
 // 주소의 ?floor=층ID 또는 ?site=사업장ID 로 고른다. 둘 다 없으면 내 자리가 있는 층을 연다

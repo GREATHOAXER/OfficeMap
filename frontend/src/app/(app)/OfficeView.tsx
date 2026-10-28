@@ -70,13 +70,8 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
 
   const floorId = map.floor.id;
   const searchParams = useSearchParams();
-  // AI 도우미: 머리글 단추로 열고, 왼쪽 메뉴의 "AI 도우미"는 주소(?ai=1)로 연다
-  const [aiState, setAiState] = useState(false);
-  const aiOpen = aiState || searchParams.get("ai") === "1";
-  const setAiOpen = (open: boolean) => {
-    setAiState(open);
-    if (!open && searchParams.has("ai")) replaceQuery({ ai: null });
-  };
+  // AI 도우미: 머리글 단추로 연다
+  const [aiOpen, setAiOpen] = useState(false);
   // 배율은 층을 바꿀 때마다(뒤로 가기 포함) 100%에서 시작한다 (층마다 도면 크기가 달라 "전체 보기" 배율도 다르다)
   const [zoomState, setZoomState] = useState({ floorId, zoom: 1 });
   if (zoomState.floorId !== floorId) setZoomState({ floorId, zoom: 1 });
@@ -253,10 +248,13 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
   }, [aiOpen]);
 
   const selectedSeat = map.seats.find((s) => s.id === selectedSeatId) ?? null;
-  // AI 도우미를 연 채 자리를 고르거나 사람을 찾으면, 그 정보를 AI 대신 위에 보여 준다.
-  // AI 대화는 뒤에 그대로 두고, 자리 선택을 풀면(✕·Esc) 다시 AI가 보인다
-  const infoOverAi = aiOpen && (selectedSeat !== null || noSeatHit !== null);
+  const personShown = selectedSeat !== null || noSeatHit !== null;
+  // AI 도우미를 연 채 자리를 고르거나 사람을 찾으면: 넓은 화면은 AI 아래에 사람 카드를 붙이고(AI가 줄어 둘 다 보인다),
+  // 패널이 도면 아래로 내려가는 좁은 화면(AI가 화면 전체)은 그 정보를 AI 대신 보여 준다.
+  // AI 대화는 그대로 두고, 자리 선택을 풀면(✕·Esc) 다시 AI만 보인다
+  const infoOverAi = aiOpen && stacked && personShown;
   const aiShown = aiOpen && !infoOverAi;
+  const cardUnderAi = aiShown && personShown;
   const hasSeats = map.seats.length > 0;
   const seatless = myFloorId === null;
 
@@ -282,11 +280,12 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
           aria-controls="ai-panel"
           aria-label="AI 도우미"
           onClick={() => {
-            if (infoOverAi) {
-              // 자리 정보에 가려 있던 AI를 다시 앞으로
+            if (!aiOpen || infoOverAi) {
+              // 보고 있던 사람 카드는 닫고 AI를 앞으로 (카드에 가려 AI가 안 열린 것처럼 보이지 않게)
               selectSeat(null);
               setNoSeatHit(null);
-            } else setAiOpen(!aiOpen);
+              setAiOpen(true);
+            } else setAiOpen(false);
           }}
         >
           <SparkleIcon size={18} />
@@ -521,14 +520,17 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
           )}
         </div>
 
-        <div ref={sideRef} className={styles.side}>
+        <div ref={sideRef} className={styles.side} data-ai-card={cardUnderAi || undefined}>
           {aiOpen && <AiPanel onClose={() => setAiOpen(false)} asPage={stacked} hidden={!aiShown} />}
-          {!aiShown &&
-            (noSeatHit && !selectedSeat ? (
-              <NoSeatCard hit={noSeatHit} onClose={() => setNoSeatHit(null)} />
-            ) : (
-              <SeatPanel map={map} seat={selectedSeat} myEmpNo={myEmpNo} onClear={unpin} />
-            ))}
+          {(!aiShown || cardUnderAi) && (
+            <div className={cardUnderAi ? styles.aiCard : undefined}>
+              {noSeatHit && !selectedSeat ? (
+                <NoSeatCard hit={noSeatHit} onClose={() => setNoSeatHit(null)} />
+              ) : (
+                <SeatPanel map={map} seat={selectedSeat} myEmpNo={myEmpNo} onClear={unpin} />
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

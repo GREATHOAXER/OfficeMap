@@ -11,7 +11,7 @@ import { safeNext } from "@/lib/loginRedirect";
 import Logo from "@/components/Logo";
 
 export const metadata: Metadata = {
-  title: "관리자 비밀번호 변경 · 오피스 안내",
+  title: "관리자 비밀번호 변경 · Office Map",
 };
 
 /**

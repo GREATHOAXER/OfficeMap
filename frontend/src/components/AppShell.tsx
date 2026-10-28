@@ -34,7 +34,6 @@ import {
   PenIcon,
   PersonIcon,
   ShieldIcon,
-  SparkleIcon,
   TransferIcon,
   TruckIcon,
 } from "./icons";
@@ -48,9 +47,8 @@ type MenuItem = { label: string; icon: ReactNode; href?: string; badge?: string 
 type MenuGroup = { title?: string; items: MenuItem[] };
 
 // href가 없는 메뉴는 아직 화면이 없어서 "준비 중" 표시를 붙인 버튼만 둔다.
-// AI 도우미는 자리·재실 현황 오른쪽에 대화 패널을 연다 (머리글의 AI 도우미 단추와 같다)
+// AI 도우미는 메뉴에 따로 두지 않는다: 자리·재실 현황 머리글의 "AI 도우미" 단추로 연다
 const MAIN_MENU: MenuItem[] = [
-  { label: "AI 도우미", icon: <SparkleIcon />, href: "/?ai=1" },
   { label: "자리·재실 현황", icon: <GridIcon />, href: "/" },
   { label: "회의실 확인·예약", icon: <CalendarIcon />, href: "/rooms" },
   { label: "내 예약", icon: <ChecklistIcon />, href: "/reservations" },

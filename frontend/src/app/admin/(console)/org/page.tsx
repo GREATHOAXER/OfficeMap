@@ -4,7 +4,7 @@ import { ApiError, fetchAdmin, fetchOrg } from "@/lib/api";
 import { redirectToAdminLogin } from "@/lib/expiredRedirect";
 import OrgView from "./OrgView";
 
-export const metadata: Metadata = { title: "조직도 · 오피스 안내" };
+export const metadata: Metadata = { title: "조직도 · Office Map" };
 
 // 조직도: 부서 나무, 부서마다 팀원. 고치기는 전사 관리자, 보기는 관리자 누구나. ?dept=부서ID 로 고른 부서
 export default async function OrgPage({ searchParams }: PageProps<"/admin/org">) {

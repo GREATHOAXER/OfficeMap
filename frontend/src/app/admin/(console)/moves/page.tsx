@@ -6,7 +6,7 @@ import { redirectToAdminLogin } from "@/lib/expiredRedirect";
 import ui from "../seating/seating.module.css";
 import MoveWizard from "./MoveWizard";
 
-export const metadata: Metadata = { title: "팀 이사 · 오피스 안내" };
+export const metadata: Metadata = { title: "팀 이사 · Office Map" };
 
 // 팀 이사 도우미: 한 팀을 다른 층(또는 같은 층의 다른 자리)으로 한 번에. 목적지 층의 층 관리자 이상
 export default async function MovesPage() {

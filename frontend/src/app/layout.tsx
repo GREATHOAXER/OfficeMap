@@ -16,7 +16,7 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "오피스 안내",
+  title: "Office Map",
   description: "층별 좌석과 동료의 재실 상태, 회의실 예약을 한 곳에서",
 };
 

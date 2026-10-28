@@ -3,6 +3,7 @@
 import { forwardRef } from "react";
 import { type DrawingSeat, type DrawingStyle, type FloorDrawing, teamColor } from "@/lib/floorDrawing";
 import { DEFAULT_LINE, DESK } from "@/lib/planGeometry";
+import { zonePieces, zoneTags } from "@/lib/zoneShape";
 
 // 내보낸 그림에서도 같은 모양이 나오게 글꼴·색을 속성으로 직접 적는다 (CSS를 쓰지 않는다)
 const FONT = "-apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', 'Noto Sans CJK KR', sans-serif";
@@ -182,15 +183,19 @@ const FloorSvg = forwardRef<SVGSVGElement, Props>(function FloorSvg(props, ref) 
         {d.pillars.map((p, i) => (
           <rect key={`pillar-${i}`} x={p.x} y={p.y} width={p.w} height={p.h} fill={INK} />
         ))}
-        {d.zones.map((z) => {
-          const r = [...z.rects].sort((a, b) => b.w * b.h - a.w * a.h)[0];
-          if (!r) return null;
-          const text = `${z.name} · ${z.code}`;
-          const w = Math.min(text.length * 0.62 + 0.6, r.w);
+        {/* 이름표: 조각마다 그 조각 안에 (화면과 같은 자리, lib/zoneShape.ts zoneTags. 여기 좌표는 m라 크기 1 × 1) */}
+        {zoneTags(
+          zonePieces(d.zones, (z) => z.rects),
+          { width_m: 1, height_m: 1 },
+        ).map(({ zone: z, x, y, maxW }, i) => {
+          const full = `${z.name} · ${z.code}`;
+          const fits = Math.max(1, Math.floor((maxW - 0.6) / 0.62)); // 글자 0.62 m, 양옆 여백 0.3 m
+          const text = full.length > fits ? `${full.slice(0, Math.max(1, fits - 1))}…` : full;
+          const w = Math.min(text.length * 0.62 + 0.6, maxW);
           return (
-            <g key={`tag-${z.id}`}>
-              <rect x={r.x} y={r.y} width={w} height={1.05} rx={0.2} fill={teamColor(z.color).line} />
-              <text x={r.x + 0.3} y={r.y + 0.78} fontSize={0.7} fontWeight={600} fill="#ffffff">
+            <g key={`tag-${z.id}-${i}`}>
+              <rect x={x} y={y} width={w} height={1.05} rx={0.2} fill={teamColor(z.color).line} />
+              <text x={x + 0.3} y={y + 0.78} fontSize={0.7} fontWeight={600} fill="#ffffff">
                 {text}
               </text>
             </g>

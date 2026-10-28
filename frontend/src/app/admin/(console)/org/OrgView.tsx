@@ -113,8 +113,9 @@ export default function OrgView({
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   // 검색에서 고른 사람: 그 부서의 팀원 표에서 그 줄을 표시하고 보여 준다
   const [found, setFound] = useState<string | null>(null);
-  // 팀원 표 정렬: 기본은 서버 순서(직급 순 → 입사연도 → 입사일), 칸 제목을 누르면 그 칸으로 (한 번 더 누르면 반대로)
-  const [sort, setSort] = useState<MemberSort | null>(null);
+  // 팀원 표 정렬: 기본은 이름 가나다순, 칸 제목을 누르면 그 칸으로 (한 번 더 누르면 반대로).
+  // null이면 서버 순서(직급 순 → 입사연도 → 입사일)
+  const [sort, setSort] = useState<MemberSort | null>(NAME_SORT);
   const dept = selected !== null ? (tree.byId.get(selected) ?? null) : null;
   const canEdit = org.can_edit;
 
@@ -386,12 +387,20 @@ export default function OrgView({
               <div className={styles.membersHead}>
                 <div className={styles.membersTitle}>
                   <h3>팀원</h3>
-                  {sort ? (
-                    <button type="button" className={ui.linkButton} onClick={() => setSort(null)}>
-                      기본 순서(직급순)로
-                    </button>
+                  {sort?.key === NAME_SORT.key && sort.dir === NAME_SORT.dir ? (
+                    <>
+                      <span className={ui.muted}>이름순 · 칸 제목을 누르면 정렬</span>
+                      <button type="button" className={ui.linkButton} onClick={() => setSort(null)}>
+                        직급순으로
+                      </button>
+                    </>
                   ) : (
-                    <span className={ui.muted}>직급순 · 칸 제목을 누르면 정렬</span>
+                    <>
+                      {!sort && <span className={ui.muted}>직급순</span>}
+                      <button type="button" className={ui.linkButton} onClick={() => setSort(NAME_SORT)}>
+                        기본 순서(이름순)로
+                      </button>
+                    </>
                   )}
                 </div>
                 {canEdit && dept.is_active && (
@@ -606,9 +615,11 @@ const MEMBER_COLUMNS: [MemberSort["key"], string][] = [
   ["seat", "자리"],
   ["extension", "내선"],
 ];
+const NAME_SORT: MemberSort = { key: "name", dir: "asc" }; // 기본: 이름 가나다순 (같은 이름은 직급순)
 const collator = new Intl.Collator("ko", { numeric: true });
 
-/** 팀원 표 정렬. sort가 없으면 서버 순서(직급 순 → 입사연도 → 입사일). 빈 칸(자리 없음·내선 없음)은 늘 뒤로 */
+/** 팀원 표 정렬. sort가 없으면 서버 순서(직급 순 → 입사연도 → 입사일). 빈 칸(자리 없음·내선 없음)은 늘 뒤로.
+ *  같은 값끼리는 서버 순서 그대로 (정렬이 안정적이라) */
 function sortMembers(members: OrgMember[], sort: MemberSort | null): OrgMember[] {
   if (!sort) return members;
   const value = (m: OrgMember) =>

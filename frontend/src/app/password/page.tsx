@@ -10,7 +10,7 @@ import PasswordForm from "./PasswordForm";
 import own from "./password.module.css";
 import Logo from "@/components/Logo";
 
-export const metadata: Metadata = { title: "비밀번호 변경 · 오피스 안내" };
+export const metadata: Metadata = { title: "비밀번호 변경 · Office Map" };
 
 /**
  * 비밀번호 변경. 임시 비밀번호로 로그인하면 다른 화면에 가기 전에 여기로 온다 (바꾸기 전에는 못 나간다).

@@ -18,13 +18,20 @@ import Avatar from "@/components/Avatar";
 import { CloseIcon } from "@/components/icons";
 import type { FloorMap, Occupant, Rect, Room, Seat, ShapeStyle, Zone } from "@/lib/api";
 import { agoText } from "@/lib/dates";
-import { NO_STATUS_LABEL, PRESENCE_LABEL, presenceMessage, type StatusFilter } from "@/lib/presence";
-import { hhmm, roomStatusText } from "@/lib/rooms";
+import {
+  NO_STATUS_LABEL,
+  PRESENCE_LABEL,
+  presenceMessage,
+  presencePeriod,
+  presenceUntil,
+  type StatusFilter,
+} from "@/lib/presence";
+import { roomStatusText } from "@/lib/rooms";
 import { useMediaQuery } from "@/lib/useMediaQuery";
 import { seatRatio } from "@/lib/planGeometry";
 import { baseSeatFont, compactAt, minPlanWidth, type SeatBox, seatBox, seatFont } from "@/lib/seatLabel";
 import { useNow } from "@/lib/useNow";
-import { zonePieces, zoneRects } from "@/lib/zoneShape";
+import { zonePieces, zoneRects, zoneTags } from "@/lib/zoneShape";
 import styles from "./office.module.css";
 import PlanShapes, { fitLabelStyle, lineStyle } from "./PlanShapes";
 import { zoneColorVars } from "@/lib/zoneColors";
@@ -372,6 +379,7 @@ export default function FloorPlan(props: Props) {
   }
   const geometry = plan.geometry ?? {};
   const zones = new Map(map.zones.map((z) => [z.id, z]));
+  const pieces = zonePieces(map.zones, (zone) => zoneRects(zone.shape));
   // 고정한 카드가 먼저. 마우스를 올려 띄운 카드는 그 자리가 고정 카드가 아닐 때만
   const cardSeatId = pinnedSeatId ?? hoverSeatId;
   const cardSeat = map.seats.find((s) => s.id === cardSeatId && s.occupant);
@@ -427,7 +435,7 @@ export default function FloorPlan(props: Props) {
         {map.rooms.map(
           (room) => room.shape && <RoomBox key={room.id} room={room} shape={room.shape} floorId={map.floor.id} />,
         )}
-        {zonePieces(map.zones, (zone) => zoneRects(zone.shape)).map(({ zone, rect }, i) => (
+        {pieces.map(({ zone, rect }, i) => (
           <div
             key={`${zone.id}-${i}`}
             className={`${styles.zone} ${focusZoneId && focusZoneId !== zone.id ? styles.dim : ""} ${
@@ -438,19 +446,17 @@ export default function FloorPlan(props: Props) {
             style={{ ...rectStyle(rect), ...zoneColorVars(zone.color_key) }}
           />
         ))}
-        {/* 이름표는 모든 구역을 칠한 뒤에 그려서 다른 구역 조각에 가려지지 않게 */}
-        {zonePieces(map.zones, (zone) => zoneRects(zone.shape))
-          .filter((piece) => piece.tagged)
-          .map(({ zone, rect }) => (
-            <span
-              key={`tag-${zone.id}`}
-              className={`${styles.zoneTag} ${focusZoneId && focusZoneId !== zone.id ? styles.dim : ""}`}
-              data-color={zone.color_key}
-              style={{ left: pct(rect.x), top: pct(rect.y), ...zoneColorVars(zone.color_key) }}
-            >
-              {zone.name} · {zone.code}
-            </span>
-          ))}
+        {/* 이름표는 모든 구역을 칠한 뒤에 그려서 다른 구역 조각에 가려지지 않게 (조각마다, 조각 안에) */}
+        {zoneTags(pieces, plan).map(({ zone, x, y, maxW }, i) => (
+          <span
+            key={`tag-${zone.id}-${i}`}
+            className={`${styles.zoneTag} ${focusZoneId && focusZoneId !== zone.id ? styles.dim : ""}`}
+            data-color={zone.color_key}
+            style={{ left: pct(x), top: pct(y), maxWidth: pct(maxW), ...zoneColorVars(zone.color_key) }}
+          >
+            {zone.name} · {zone.code}
+          </span>
+        ))}
         {map.seats.map((seat) => (
           <SeatButton
             key={seat.id}
@@ -750,18 +756,22 @@ export function PresenceLine({ occupant }: { occupant: Occupant }) {
   }
   const ago = presence.updated_at ? agoText(presence.updated_at, now) : "";
   const message = presenceMessage(presence);
+  // 휴가·출장처럼 자리에 없는 상태는 기간을 이름 옆에 (휴가 · 10/31(금)까지), 아니면 아래 줄에 언제 풀리는지
+  const period = presencePeriod(presence);
+  const until = !period && presence.expires_at ? presenceUntil(presence.expires_at) : null;
   return (
     <>
       <span className={styles.popoverStatus}>
         <span className="mk" data-status={presence.status} aria-hidden="true" />
         <strong>{PRESENCE_LABEL[presence.status]}</strong>
+        {period && <span className={styles.popoverPeriod}>{period}</span>}
         {message && <span className={styles.popoverMessage}>{message}</span>}
       </span>
-      {(ago || presence.expires_at) && (
+      {(ago || until) && (
         <span className={styles.popoverMuted}>
           {ago && `${ago} 변경`}
-          {ago && presence.expires_at && " · "}
-          {presence.expires_at && `${hhmm.format(new Date(presence.expires_at))}에 자동 해제`}
+          {ago && until && " · "}
+          {until}
         </span>
       )}
     </>

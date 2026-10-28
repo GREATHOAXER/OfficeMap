@@ -110,7 +110,7 @@ export default function AdminLoginForm({ supportContact, maxFailedCount, next, k
           ref={passwordRef}
           name="password"
           type="password"
-          placeholder="직원 화면 비밀번호와 다릅니다"
+          placeholder="비밀번호 입력"
           autoComplete="current-password"
           maxLength={128}
           aria-invalid={passwordError || undefined}
@@ -127,7 +127,7 @@ export default function AdminLoginForm({ supportContact, maxFailedCount, next, k
       )}
 
       <span id="admin-login-rule" className={styles.formRule}>
-        관리자 비밀번호를 {maxFailedCount}회 연속 틀리면 관리자 계정이 잠깁니다 (직원 화면 로그인은 그대로)
+        관리자 비밀번호를 {maxFailedCount}회 연속 틀리면 관리자 계정이 잠깁니다
       </span>
 
       <button type="submit" className={styles.primaryButton} disabled={submitting}>
@@ -166,7 +166,7 @@ function errorMessage(error: AdminLoginError, contact: string, max: number): str
     case "INVALID_CREDENTIALS":
       return `사번 또는 관리자 비밀번호가 맞지 않습니다. ${max}회 연속 틀리면 관리자 계정이 잠깁니다.`;
     case "LOCKED":
-      return `관리자 비밀번호를 ${error.maxFailedCount}회 잘못 입력해 관리자 계정이 잠겼습니다. 직원 화면 로그인은 그대로 쓸 수 있습니다. 잠금 해제 문의: ${contact}`;
+      return `관리자 비밀번호를 ${error.maxFailedCount}회 잘못 입력해 관리자 계정이 잠겼습니다. 잠금 해제 문의: ${contact}`;
     case "NOT_ACTIVE":
       return `로그인할 수 없는 계정입니다. 문의: ${contact}`;
     case "NO_PERMISSION":

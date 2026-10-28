@@ -5,7 +5,7 @@
 from datetime import timedelta
 from typing import Any
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -19,6 +19,7 @@ from app.admin_auth import (
     grants_of,
     is_company_wide,
     load_admin,
+    require_admin_allow_temporary,
 )
 from app.config import settings
 from app.db import get_setting, pool
@@ -138,9 +139,19 @@ def admin_login(body: AdminLoginRequest, request: Request) -> JSONResponse:
 
 
 @router.get("/auth/me")
-def admin_me(admin: CurrentAdminAllowTemporary) -> dict[str, Any]:
-    """로그인한 관리자. 임시 비밀번호 상태(must_change_password)면 화면이 비밀번호 변경으로 보낸다"""
-    return {"admin": admin_out(admin)}
+def admin_me(request: Request) -> JSONResponse:
+    """로그인한 관리자. 임시 비밀번호 상태(must_change_password)면 화면이 비밀번호 변경으로 보낸다.
+
+    끊겼으면 401과 함께 남은 관리자 쿠키를 지운다. 관리자 로그인 화면이 끊긴 이유("15분 넘게 …")를 보여 준 뒤
+    브라우저에서 이것을 불러, 다음에 들어올 때 다시 "끊김"으로 보지 않게 한다
+    (그사이 다시 로그인했으면 쿠키는 그대로)"""
+    try:
+        admin = require_admin_allow_temporary(request)
+    except HTTPException as error:
+        response = JSONResponse(status_code=error.status_code, content={"detail": error.detail})
+        response.delete_cookie(settings.admin_cookie_name, path="/")
+        return response
+    return JSONResponse(jsonable_encoder({"admin": admin_out(admin)}))
 
 
 @router.post("/auth/password", status_code=204)

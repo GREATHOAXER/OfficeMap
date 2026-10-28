@@ -1,10 +1,48 @@
-/* 관리자 로그인: 직원 로그인 화면(login.module.css)을 그대로 쓰고, 관리자 화면임을 알리는 표시만 더한다 */
+/* 관리자 로그인: 직원 로그인 화면(login.module.css)을 바탕으로, 왼쪽 짙은 칸은 로고와 "관리자 페이지"만 둔다 */
 
 .intro {
   box-shadow: inset 0 4px 0 var(--link); /* 위쪽 파란 줄: 관리자 화면 */
 }
 
-.modeTag,
+/* 한 단(태블릿·휴대폰)일 때 위쪽 띠가 남는 높이를 나눠 갖지 않게 */
+@media (max-width: 900px) {
+  .page {
+    align-content: flex-start;
+  }
+}
+
+/* 왼쪽 짙은 칸: 로고 아래 "관리자 페이지" (휴대폰에서는 위쪽 띠에 한 줄로) */
+.brand {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  margin: 0;
+  text-align: center;
+}
+
+.brandLabel {
+  font-size: clamp(18px, 2vw, 26px);
+  font-weight: 700;
+  color: var(--muted-on-dark);
+}
+
+@media (max-width: 900px) {
+  .brand {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 6px 12px;
+  }
+
+  .brandLabel {
+    padding-left: 12px;
+    border-left: 1px solid rgba(255, 255, 255, 0.3);
+  }
+}
+
 .badge {
   display: inline-block;
   font-size: 11px;
@@ -16,49 +54,8 @@
   vertical-align: middle;
 }
 
-.modeTag {
-  margin-left: 6px;
-}
-
 .title {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.levels {
-  margin: 8px 0 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.levels li {
-  display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-  column-gap: 12px;
-  align-items: baseline;
-  padding: 10px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: var(--radius);
-  font-size: 13px;
-}
-
-.levels li > span:first-child {
-  grid-row: span 2;
-  font-size: 11px;
-  color: var(--faint-on-dark);
-}
-
-.levels li > span:last-child {
-  font-size: 12px;
-  color: var(--muted-on-dark);
-}
-
-@media (max-width: 640px) {
-  .levels {
-    display: none;
-  }
 }

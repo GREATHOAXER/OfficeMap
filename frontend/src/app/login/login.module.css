@@ -16,10 +16,6 @@
   gap: 32px;
 }
 
-.brand {
-  font-size: 18px;
-}
-
 .introBody {
   flex: 1;
   display: flex;

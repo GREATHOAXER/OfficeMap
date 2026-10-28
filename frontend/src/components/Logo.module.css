@@ -11,6 +11,12 @@
 
 .logo svg {
   flex: none;
+  width: var(--logo-h);
+  height: var(--logo-h);
+}
+
+.logo[data-on-dark] {
+  color: #fff;
 }
 
 .word {

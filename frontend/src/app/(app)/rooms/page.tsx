@@ -6,7 +6,7 @@ import { redirectToLogin } from "@/lib/expiredRedirect";
 import { ROOMS_FLOOR_COOKIE } from "@/lib/roomsFloor";
 import RoomsView from "./RoomsView";
 
-export const metadata: Metadata = { title: "회의실 확인·예약 · 오피스 안내" };
+export const metadata: Metadata = { title: "회의실 확인·예약 · Office Map" };
 
 // ② 회의실 확인·예약
 // 주소의 ?date=YYYY-MM-DD 로 날짜를, ?site=사업장ID 로 사업장을 고른다. 없으면 오늘, 층(아래)의 사업장, 내 자리가 있는 사업장.

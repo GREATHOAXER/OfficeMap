@@ -6,7 +6,7 @@ import { ADMIN_COOKIE, fetchAdmin } from "@/lib/api";
 import { loginUrl } from "@/lib/loginRedirect";
 import { SIDEBAR_COOKIE } from "@/lib/sidebar";
 
-export const metadata: Metadata = { title: "관리자 · 오피스 안내" };
+export const metadata: Metadata = { title: "관리자 · Office Map" };
 
 // 관리자 페이지의 공통 틀. 관리자 쿠키로 로그인한 관리자만 들어온다 (직원 로그인과 따로)
 export default async function AdminLayout({ children }: LayoutProps<"/admin">) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { type CSSProperties, type DragEvent, type PointerEvent, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type DragEvent, type PointerEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import office from "@/app/(app)/office.module.css";
 import PlanShapes, { labelStyle, lineStyle } from "@/app/(app)/PlanShapes";
 import type { Rect, SeatingData, SeatingSeat, SeatingZone } from "@/lib/api";
@@ -9,7 +9,7 @@ import { seatRatio } from "@/lib/planGeometry";
 import type { Layout, Person } from "@/lib/seating";
 import { baseSeatFont, compactAt, isVertical, minPlanWidth, seatBox, seatFont } from "@/lib/seatLabel";
 import { useTouchPan } from "@/lib/useTouchPan";
-import { zonePieces } from "@/lib/zoneShape";
+import { zonePieces, zoneTags } from "@/lib/zoneShape";
 import styles from "./seating.module.css";
 import { zoneColorVars } from "@/lib/zoneColors";
 
@@ -17,6 +17,8 @@ import { zoneColorVars } from "@/lib/zoneColors";
 const pct = (v: number) => `${(v * 100).toFixed(3)}%`;
 const rectStyle = (r: Rect): CSSProperties => ({ left: pct(r.x), top: pct(r.y), width: pct(r.w), height: pct(r.h) });
 const BOX_THRESHOLD_PX = 5; // 이보다 적게 움직이면 네모 묶기가 아니라 누르기
+
+type GestureLike = Event & { scale: number; clientX: number; clientY: number };
 
 /** 좌석 하나를 어떻게 그릴지 (편집 화면이 정한다) */
 export type SeatView = {
@@ -61,12 +63,15 @@ type Props = {
   onDropSeat: (seat: SeatingSeat) => void;
   /** 도면 전체가 영역에 들어오는 배율 (사람이 많아 책상이 작은 층은 1보다 작다) */
   onFitZoom?: (zoom: number) => void;
+  /** 트랙패드 핀치·Ctrl(⌘)+휠로 바꾼 배율 (min~max 안으로) */
+  onZoom?: (zoom: number) => void;
+  zoomLimits?: { min: number; max: number };
 };
 
 export default function SeatingCanvas(props: Props) {
   const { data, layout, people, zoom, readOnly, plain, viewOf, selectedSeatId, pickedSeatId, dragOverId } = props;
   const { focusZones, zoneOf, rectsOf, boxSelect, onBoxSelect } = props;
-  const { onSeatClick, onDragStartPerson, onDragEnd, onDragOverSeat, onDropSeat, onFitZoom } = props;
+  const { onSeatClick, onDragStartPerson, onDragEnd, onDragOverSeat, onDropSeat, onFitZoom, onZoom, zoomLimits } = props;
   const canvasRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const boxStart = useRef<{ x: number; y: number; px: number; py: number; id: number } | null>(null);
@@ -114,10 +119,80 @@ export default function SeatingCanvas(props: Props) {
     return () => observer.disconnect();
   }, [hasPlan]);
 
+  // 배율이 바뀌면 기준점(포인터 위치, 단추면 보이는 영역 가운데)이 제자리에 있도록 스크롤을 맞춘다 (직원 화면과 같다)
+  const zoomRef = useRef(zoom);
+  const prevZoomRef = useRef(zoom);
+  const anchorRef = useRef<{ x: number; y: number } | null>(null);
+  const gestureRef = useRef({ onZoom, zoomLimits });
+  useEffect(() => {
+    gestureRef.current = { onZoom, zoomLimits };
+  });
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    const prev = prevZoomRef.current;
+    prevZoomRef.current = zoom;
+    zoomRef.current = zoom;
+    if (!el || prev === zoom) return;
+    const anchor = anchorRef.current ?? { x: el.clientWidth / 2, y: el.clientHeight / 2 };
+    anchorRef.current = null;
+    const k = zoom / prev;
+    el.scrollLeft = (el.scrollLeft + anchor.x) * k - anchor.x;
+    el.scrollTop = (el.scrollTop + anchor.y) * k - anchor.y;
+  }, [zoom]);
+
+  // 확대·축소: 트랙패드 핀치(Chrome·Edge·Firefox는 ctrlKey가 붙은 wheel, Safari는 gesture*)와 Ctrl(⌘)+마우스 휠.
+  // 그냥 휠·두 손가락 밀기는 막지 않아 도면·페이지가 원래대로 스크롤된다 (페이지 스크롤을 가로채지 않게).
+  // 핀치가 브라우저 화면 전체를 확대하지 않게 도면 위에서만 막는다
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let gestureBase: number | null = null;
+    function zoomAt(next: number, clientX: number, clientY: number) {
+      const { onZoom: report, zoomLimits: limits } = gestureRef.current;
+      if (!report) return;
+      const zoom = Math.min(limits?.max ?? 2, Math.max(limits?.min ?? 0.5, next));
+      if (Math.abs(zoom - zoomRef.current) < 0.001) return;
+      const rect = el!.getBoundingClientRect();
+      anchorRef.current = { x: clientX - rect.left, y: clientY - rect.top };
+      zoomRef.current = zoom;
+      report(zoom);
+    }
+    function onWheel(event: WheelEvent) {
+      if (!(event.ctrlKey || event.metaKey) || gestureBase !== null) return;
+      event.preventDefault();
+      const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY; // 줄 단위면 픽셀로
+      zoomAt(zoomRef.current * Math.exp(-Math.max(-50, Math.min(50, delta)) * 0.01), event.clientX, event.clientY);
+    }
+    function onGestureStart(event: Event) {
+      event.preventDefault();
+      gestureBase = zoomRef.current;
+    }
+    function onGestureChange(event: Event) {
+      event.preventDefault();
+      const g = event as GestureLike;
+      if (gestureBase !== null) zoomAt(gestureBase * g.scale, g.clientX, g.clientY);
+    }
+    function onGestureEnd(event: Event) {
+      event.preventDefault();
+      gestureBase = null;
+    }
+    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("gesturestart", onGestureStart);
+    el.addEventListener("gesturechange", onGestureChange);
+    el.addEventListener("gestureend", onGestureEnd);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("gesturestart", onGestureStart);
+      el.removeEventListener("gesturechange", onGestureChange);
+      el.removeEventListener("gestureend", onGestureEnd);
+    };
+  }, [hasPlan]);
+
   if (!plan)
     return <p className={office.noPlan}>{data.floor.name}에 게시된 도면이 아직 없어요. 도면을 먼저 게시하세요.</p>;
   const geometry = plan.geometry ?? {};
   const zones = new Map(data.zones.map((z) => [z.id, z]));
+  const pieces = zonePieces(data.zones, rectsOf);
 
   // 팀 구역 지정: 도면 위를 끌어서 네모 안 좌석을 한 번에 고른다 (조금만 움직이면 좌석 누르기)
   const ratio = (event: PointerEvent) => {
@@ -193,7 +268,7 @@ export default function SeatingCanvas(props: Props) {
               </div>
             ),
         )}
-        {zonePieces(data.zones, rectsOf).map(({ zone, rect }, i) => (
+        {pieces.map(({ zone, rect }, i) => (
           <div
             key={`${zone.id}-${i}`}
             className={`${office.zone} ${focusZones && !focusZones.has(zone.id) ? styles.dim : ""}`}
@@ -202,20 +277,18 @@ export default function SeatingCanvas(props: Props) {
             style={{ ...rectStyle(rect), ...zoneColorVars(zone.color_key) }}
           />
         ))}
-        {/* 이름표는 모든 구역을 칠한 뒤에 그려서 다른 구역 조각에 가려지지 않게 */}
-        {zonePieces(data.zones, rectsOf)
-          .filter((piece) => piece.tagged)
-          .map(({ zone, rect }) => (
-            <span
-              key={`tag-${zone.id}`}
-              className={`${office.zoneTag} ${focusZones && !focusZones.has(zone.id) ? styles.dim : ""}`}
-              data-color={zone.color_key}
-              style={{ left: pct(rect.x), top: pct(rect.y), ...zoneColorVars(zone.color_key) }}
-            >
-              {zone.name} · {zone.code}
-              {!zone.editable && !plain && " · 잠김"}
-            </span>
-          ))}
+        {/* 이름표는 모든 구역을 칠한 뒤에 그려서 다른 구역 조각에 가려지지 않게 (조각마다, 조각 안에) */}
+        {zoneTags(pieces, plan).map(({ zone, x, y, maxW }, i) => (
+          <span
+            key={`tag-${zone.id}-${i}`}
+            className={`${office.zoneTag} ${focusZones && !focusZones.has(zone.id) ? styles.dim : ""}`}
+            data-color={zone.color_key}
+            style={{ left: pct(x), top: pct(y), maxWidth: pct(maxW), ...zoneColorVars(zone.color_key) }}
+          >
+            {zone.name} · {zone.code}
+            {!zone.editable && !plain && " · 잠김"}
+          </span>
+        ))}
         {data.seats.map((seat) => {
           const view = viewOf(seat);
           const emp = layout.occupant(seat.id);
