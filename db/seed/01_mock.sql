@@ -400,7 +400,7 @@ VALUES ((SELECT id FROM employees WHERE emp_no = '20130003'), 'LEAVE',
 INSERT INTO presence_status (employee_id, status, message, expires_at, updated_at)
 SELECT e.id, v.status, v.message, v.expires_at, least(now(), pg_temp.kst(0, '09:00'))  -- 9시 전에 만들면 지금
 FROM (VALUES
-    ('20190005', 'AVAILABLE',      '편하게 자리로 찾아오세요',       NULL::timestamptz),
+    ('20190005', 'AVAILABLE',      '메신저 바로 확인해요',           NULL::timestamptz),
     ('20150004', 'IN_MEETING',     '대회의실 701 · 14:30 종료 예정', pg_temp.kst(0, '14:30')),
     ('20170008', 'DO_NOT_DISTURB', '장애 대응 중 · 메신저로 연락',   pg_temp.kst(0, '18:00')),
     ('20130003', 'VACATION',       '연차 · 급한 일은 팀 메신저로',   pg_temp.kst(1, '00:00')),     -- 오늘까지
@@ -518,7 +518,7 @@ SELECT c.id, v.role, v.content, v.tool_name, v.tool_args::jsonb,
 FROM (VALUES
     ('USER',      '법인카드 사용 내역 정산은 누구한테 물어봐야 해?', NULL,         NULL,                           interval '0 s'),
     ('TOOL',      '{"task": "법인카드 정산", "primary": "조시우", "seat": "7F B-01"}', 'find_owner', '{"query": "법인카드 정산"}', interval '1 s'),
-    ('ASSISTANT', '법인카드 정산은 재무팀 조시우 님 담당이에요. 지금 방문 가능 상태이고 7F B-01 자리에 있어요.', NULL, NULL, interval '2 s')
+    ('ASSISTANT', '법인카드 정산은 재무팀 조시우 님 담당이에요. 지금 재실 상태이고 7F B-01 자리에 있어요.', NULL, NULL, interval '2 s')
 ) AS v(role, content, tool_name, tool_args, after)
 CROSS JOIN ai_conversations c;
 

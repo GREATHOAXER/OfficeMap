@@ -247,6 +247,20 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
     wasAiOpen.current = aiOpen;
   }, [aiOpen]);
 
+  // 휴대폰: 자리를 누르면 화면 아래 시트가 뜨고, 도면 아래(패널 자리)에도 같은 사람 카드가 있다.
+  // 스크롤해서 그 카드가 화면에 들어오면 시트를 숨겨 둘이 겹치지 않게 한다 (다시 도면으로 올라가면 시트가 돌아온다)
+  const [sideInView, setSideInView] = useState(false);
+  useEffect(() => {
+    const side = sideRef.current;
+    if (!side || !stacked) return;
+    const observer = new IntersectionObserver(([entry]) => setSideInView(entry.isIntersecting));
+    observer.observe(side);
+    return () => {
+      observer.disconnect();
+      setSideInView(false);
+    };
+  }, [stacked]);
+
   const selectedSeat = map.seats.find((s) => s.id === selectedSeatId) ?? null;
   const personShown = selectedSeat !== null || noSeatHit !== null;
   // AI 도우미를 연 채 자리를 고르거나 사람을 찾으면: 넓은 화면은 AI 아래에 사람 카드를 붙이고(AI가 줄어 둘 다 보인다),
@@ -463,6 +477,7 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
               onSelectSeat={(seatId) => selectSeat(seatId === selectedSeatId ? null : seatId)}
               pinnedSeatId={pinnedSeatId}
               onUnpin={unpin}
+              hideSheet={stacked && sideInView}
             />
           </div>
 

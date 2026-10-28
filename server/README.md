@@ -376,15 +376,18 @@ scripts/
 |---|---|
 | `GET /api/presence/me` | 지금 내 상태(없거나 해제 시각이 지났으면 `null`)와 지금 "퇴근 시"를 고르면 풀리는 시각 `end_of_day_at` |
 | `GET /api/presence/team` | 우리 팀(내 부서) 사람들의 재실 상태와 자리 (내 재실 상태 화면) |
-| `PUT /api/presence/me` | 상태 저장. `{"status", "message", "duration"}` |
+| `PUT /api/presence/me` | 상태 저장. `{"status", "message", "duration", "until"}` |
 | `DELETE /api/presence/me` | 상태 지우기 (204) |
 | `GET /api/presence/stream` | 누구든 상태가 바뀔 때마다 보내는 실시간 알림 (SSE, 아래 참고) |
 
-- `status`: `AVAILABLE` 방문 가능, `DO_NOT_DISTURB` 방해 금지, `IN_MEETING` 회의 중, `AWAY` 부재
+- `status`: 자리에 있음 `AVAILABLE` 재실, `DO_NOT_DISTURB` 방해 금지, `IN_MEETING` 회의 중, `STEPPED_OUT` 잠시 자리 비움 /
+  자리에 없음 `OUTSIDE` 외근, `BUSINESS_TRIP` 출장, `REMOTE` 재택, `TRAINING` 교육, `VACATION` 휴가, `AWAY` 부재
+  (DB `db/schema/14_presence_statuses.sql`, 화면 `frontend/src/lib/presence.ts`와 같아야 함)
 - `message`: 100자까지, 빈 문자열이면 지웁니다.
 - `duration`: 자동 해제 시각(`expires_at`). `NONE` 해제 안 함, `30M`, `1H`, `END_OF_DAY` 퇴근 시
   (`app_settings`의 `presence.workday_end`, 기본 18:00. 이미 지났으면 오늘 자정),
-  `KEEP` 지금 걸린 해제 시각 그대로 (메시지만 고칠 때 해제 시각이 바뀌지 않게)
+  `KEEP` 지금 걸린 해제 시각 그대로 (메시지만 고칠 때 해제 시각이 바뀌지 않게),
+  `UNTIL_DATE` 그날까지 (`until`: 마지막 날 `YYYY-MM-DD`, 그날 포함. 다음 날 0시 KST에 풀림. 오늘부터 366일 안, 아니면 422 `BAD_UNTIL`)
 
 ### 실시간 알림 (`/api/presence/stream`)
 

@@ -39,7 +39,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
           <h1 className={styles.headline}>
             누가 어디에 앉아 있는지,
             <br />
-            지금 찾아가도 되는지.
+            지금 자리에 있는지.
           </h1>
           <p className={styles.lead}>층별 좌석과 동료의 재실 상태, 회의실 예약을 한 곳에서 확인하세요.</p>
           <FloorIllustration className={styles.illustration} />

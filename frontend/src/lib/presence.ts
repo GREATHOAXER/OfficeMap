@@ -21,7 +21,7 @@ export const PRESENCE_LABEL: Record<PresenceStatus, string> = {
 };
 
 export const PRESENCE_HINT: Record<PresenceStatus, string> = {
-  AVAILABLE: "자리에 있어요 · 찾아와도 돼요",
+  AVAILABLE: "자리에서 일하고 있어요",
   DO_NOT_DISTURB: "메신저로만 연락",
   IN_MEETING: "회의·미팅 중",
   STEPPED_OUT: "식사·잠깐 자리를 비워요",
@@ -35,7 +35,7 @@ export const PRESENCE_HINT: Record<PresenceStatus, string> = {
 
 /** 상태 메시지 칸의 예시 (고른 상태에 맞춰) */
 export const PRESENCE_PLACEHOLDER: Record<PresenceStatus, string> = {
-  AVAILABLE: "예: 편하게 자리로 찾아오세요",
+  AVAILABLE: "예: 오늘은 7F 자율석에 있어요",
   DO_NOT_DISTURB: "예: 15시까지 집중 업무",
   IN_MEETING: "예: 예산 회의 (7F 701)",
   STEPPED_OUT: "예: 점심 식사, 13시 복귀",

@@ -68,6 +68,8 @@ type Props = {
   /** 눌러서 고정한 정보 카드 (좁은 화면에서는 오른쪽 패널 대신 이걸 띄운다) */
   pinnedSeatId: number | null;
   onUnpin: () => void;
+  /** 휴대폰: 도면 아래 자리 카드가 화면에 보이는 동안은 아래 시트를 띄우지 않는다 (같은 사람이 겹쳐 두 번 보이지 않게) */
+  hideSheet?: boolean;
 };
 
 /** 그려진 도면 폭(px)에서 이름 글자가 너무 작아 읽을 수 없는 자리(돌린 책상·이름이 긴 자리)는 이름을 숨기고 재실 표시만 둔다.
@@ -90,7 +92,7 @@ function reportScale(scale: { px: number; widthM: number; report?: (px: number) 
 
 export default function FloorPlan(props: Props) {
   const { map, myEmpNo, zoom, onZoomChange, focusZoneId, visibleStatuses, selectedSeatId, onSelectSeat } = props;
-  const { pinnedSeatId, onUnpin, onFitZoom, onScale } = props;
+  const { pinnedSeatId, onUnpin, onFitZoom, onScale, hideSheet = false } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
   const planRef = useRef<HTMLDivElement>(null);
   const [hoverSeatId, setHoverSeatId] = useState<number | null>(null);
@@ -484,6 +486,7 @@ export default function FloorPlan(props: Props) {
             zone={cardSeat.zone_id ? zones.get(cardSeat.zone_id) : undefined}
             floorName={map.floor.name}
             pinned={cardSeat.id === pinnedSeatId}
+            hideSheet={hideSheet}
             onClose={onUnpin}
           />
         )}
@@ -620,6 +623,7 @@ type CardProps = {
   zone: Zone | undefined;
   floorName: string;
   pinned: boolean;
+  hideSheet: boolean;
   onClose: () => void;
 };
 
@@ -630,9 +634,9 @@ const CARD_SKILLS = 4; // 카드에 보여 줄 업무 키워드 수 (나머지�
 /**
  * 자리 위(모자라면 아래)에 뜨는 사람 정보 카드. 글자 크기는 배율과 상관없이 같다.
  * 화면(body)에 띄우고 자리 위치에 맞춰 놓아서, 도면 영역 가장자리나 화면 끝에서 잘리지 않는다 (넘치면 안쪽으로 민다).
- * 휴대폰에서 눌러 고정한 카드는 화면 아래에서 올라오는 시트로 띄운다
+ * 휴대폰에서 눌러 고정한 카드는 화면 아래에서 올라오는 시트로 띄운다 (도면 아래 자리 카드가 보이는 동안은 띄우지 않는다)
  */
-function SeatCard({ seat, zone, floorName, pinned, onClose }: CardProps) {
+function SeatCard({ seat, zone, floorName, pinned, hideSheet, onClose }: CardProps) {
   const phone = useMediaQuery("(max-width: 720px)");
   const sheet = pinned && phone;
   const cardRef = useRef<HTMLDivElement>(null);
@@ -722,6 +726,7 @@ function SeatCard({ seat, zone, floorName, pinned, onClose }: CardProps) {
     </>
   );
 
+  if (sheet && hideSheet) return null;
   return createPortal(
     sheet ? (
       <div className={styles.sheet} role="dialog" aria-label={`${occupant.name} 정보`}>
