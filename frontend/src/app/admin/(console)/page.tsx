@@ -27,6 +27,7 @@ import { redirectToAdminLogin } from "@/lib/expiredRedirect";
 import ApprovalInbox from "./ApprovalInbox";
 import { GrantButton, GrantEditButton, type GrantPreset } from "./GrantActions";
 import { FloorButton, SiteButton } from "./SiteActions";
+import SiteFold from "./SiteFold";
 import styles from "./admin.module.css";
 
 /** 관리자 첫 화면 (디자인 ④ 사업장·층·권한): 사업장별 층 현황, 관리자 권한 체계와 관리자 목록 */
@@ -112,7 +113,9 @@ export default async function AdminHomePage() {
               {g.label} · {g.scope}
             </span>
           ))}
-          <span className={styles.muted}>현황은 전체를 보고, 편집은 맡은 범위 안에서만 해요</span>
+          <span className={styles.muted}>
+            {isCompany ? "모든 사업장을 보고 관리해요" : "맡은 사업장·층만 보이고, 그 안에서만 편집해요"}
+          </span>
         </p>
 
         {admin.role === "SUPER_ADMIN" && (
@@ -139,8 +142,15 @@ export default async function AdminHomePage() {
 
         {(reviewer || approvals.length > 0) && <ApprovalInbox requests={approvals} reviewer={reviewer} />}
 
+        {/* 사업장이 여럿이면 접어 두고, 사업장 이름을 누르면 그 사업장의 층이 펼쳐진다 */}
         {overview.sites.map((site) => (
-          <SiteSection key={site.id} site={site} admin={admin} isCompany={isCompany} />
+          <SiteSection
+            key={site.id}
+            site={site}
+            admin={admin}
+            isCompany={isCompany}
+            defaultOpen={overview.sites.length === 1}
+          />
         ))}
 
         <section className={styles.section} aria-labelledby="levels-title">
@@ -247,38 +257,55 @@ function floorPreset(admin: Admin, siteId: number, floor: AdminFloor): GrantPres
   return null;
 }
 
-function SiteSection({ site, admin, isCompany }: { site: AdminSite; admin: Admin; isCompany: boolean }) {
+function SiteSection({
+  site,
+  admin,
+  isCompany,
+  defaultOpen,
+}: {
+  site: AdminSite;
+  admin: Admin;
+  isCompany: boolean;
+  defaultOpen: boolean;
+}) {
   const seats = site.floors.reduce((n, f) => n + f.seats, 0);
   const occupied = site.floors.reduce((n, f) => n + f.occupied, 0);
   const siteWide = canManageSite(admin, site.id);
 
   return (
-    <section className={styles.site} aria-labelledby={`site-${site.id}`}>
-      <div className={styles.siteHead}>
-        <span className={styles.chip}>{site.kind}</span>
-        <h2 id={`site-${site.id}`}>{site.name}</h2>
-        {site.address && <span className={styles.muted}>{site.address}</span>}
-        <div className={styles.siteMeta}>
-          <span>
-            층 <strong className="mono">{site.floors.length}</strong>
-          </span>
-          <span>
-            개인석 배정{" "}
-            <strong className="mono">
-              {occupied}/{seats}
-            </strong>
-          </span>
-          <span>
-            담당 <strong>{site.admins.join(", ") || "—"}</strong>
-          </span>
-        </div>
-        {(siteWide || isCompany) && (
-          <div className={styles.siteActions}>
-            {isCompany && <SiteButton site={site} />}
-            {siteWide && <FloorButton siteId={site.id} floors={site.floors} />}
+    <SiteFold
+      id={`site-${site.id}`}
+      className={styles.site}
+      headClassName={styles.siteHead}
+      defaultOpen={defaultOpen}
+      title={site.name}
+      head={
+        <>
+          <span className={styles.chip}>{site.kind}</span>
+          {site.address && <span className={styles.muted}>{site.address}</span>}
+          <div className={styles.siteMeta}>
+            <span>
+              층 <strong className="mono">{site.floors.length}</strong>
+            </span>
+            <span>
+              개인석 배정{" "}
+              <strong className="mono">
+                {occupied}/{seats}
+              </strong>
+            </span>
+            <span>
+              담당 <strong>{site.admins.join(", ") || "—"}</strong>
+            </span>
           </div>
-        )}
-      </div>
+          {(siteWide || isCompany) && (
+            <div className={styles.siteActions}>
+              {isCompany && <SiteButton site={site} />}
+              {siteWide && <FloorButton siteId={site.id} floors={site.floors} />}
+            </div>
+          )}
+        </>
+      }
+    >
       <div className={styles.tableScroll}>
         <table className={styles.table}>
           <caption className="visually-hidden">{site.name} 층별 현황</caption>
@@ -326,7 +353,7 @@ function SiteSection({ site, admin, isCompany }: { site: AdminSite; admin: Admin
           </tbody>
         </table>
       </div>
-    </section>
+    </SiteFold>
   );
 }
 
