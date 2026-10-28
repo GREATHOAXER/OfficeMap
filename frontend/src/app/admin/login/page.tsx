@@ -9,7 +9,7 @@ import ForgetLoginReason from "@/app/login/ForgetLoginReason";
 import own from "./adminLogin.module.css";
 import Logo from "@/components/Logo";
 
-export const metadata: Metadata = { title: "관리자 로그인 · 오피스 안내" };
+export const metadata: Metadata = { title: "관리자 로그인 · Office Map" };
 
 export default async function AdminLoginPage({ searchParams }: PageProps<"/admin/login">) {
   const cookieHeader = (await headers()).get("cookie");

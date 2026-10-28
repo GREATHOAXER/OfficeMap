@@ -7,7 +7,7 @@ import { redirectToAdminLogin } from "@/lib/expiredRedirect";
 import ui from "../seating/seating.module.css";
 import PersonnelWizard from "./PersonnelWizard";
 
-export const metadata: Metadata = { title: "인사이동 · 오피스 안내" };
+export const metadata: Metadata = { title: "인사이동 · Office Map" };
 
 // 인사이동: 발령 엑셀로 여러 사람의 소속을 한 번에 바꾸고 새 팀 구역에 자리를 정한다. 최종·전사 관리자 (조직도와 같다)
 export default async function PersonnelPage() {

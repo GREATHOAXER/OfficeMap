@@ -5,7 +5,7 @@ import { kstDate } from "@/lib/dates";
 import { redirectToLogin } from "@/lib/expiredRedirect";
 import ReservationsView from "./ReservationsView";
 
-export const metadata: Metadata = { title: "내 예약 · 오피스 안내" };
+export const metadata: Metadata = { title: "내 예약 · Office Map" };
 
 /** 서버 기준 오늘 (서울) */
 const todayInSeoul = () => kstDate(new Date().toISOString());

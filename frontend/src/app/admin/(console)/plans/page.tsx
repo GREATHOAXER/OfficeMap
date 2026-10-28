@@ -7,7 +7,7 @@ import ui from "../seating/seating.module.css";
 import PlanEditor from "./PlanEditor";
 import PlanHome from "./PlanHome";
 
-export const metadata: Metadata = { title: "도면 편집 · 오피스 안내" };
+export const metadata: Metadata = { title: "도면 편집 · Office Map" };
 
 // ⑥ 도면 편집 (층 관리자 이상). 주소에 ?floor=층ID 가 없으면 첫 화면(층 고르기),
 // 있으면 그 층의 편집 화면. 내 범위가 아닌 층이면 맡은 층 중 첫 층

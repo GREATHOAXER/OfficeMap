@@ -9,7 +9,7 @@ import LoginForm from "./LoginForm";
 import styles from "./login.module.css";
 import Logo from "@/components/Logo";
 
-export const metadata: Metadata = { title: "로그인 · 오피스 안내" };
+export const metadata: Metadata = { title: "로그인 · Office Map" };
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const cookieHeader = (await headers()).get("cookie");
@@ -35,7 +35,6 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   return (
     <div className={styles.page}>
       <section className={styles.intro}>
-        <strong className={styles.brand}>오피스 안내</strong>
         <div className={styles.introBody}>
           <h1 className={styles.headline}>
             누가 어디에 앉아 있는지,
