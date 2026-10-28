@@ -23,7 +23,7 @@ from app.config import settings
 from app.db import get_setting, pool
 from app.routers.auth import PasswordChange, client_info, error_response, password_problems
 from app.security import hash_password, new_session_token, verify_password
-from app.session import end_other_identity, end_sessions
+from app.session import end_sessions
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -121,12 +121,9 @@ def admin_login(body: AdminLoginRequest, request: Request) -> JSONResponse:
         )
         record("SUCCESS")
         loaded = load_admin(conn, token, touch=False)
-        # 같은 브라우저에 다른 사람의 직원 화면 로그인이 남아 있으면 끝낸다 (공용 PC에서 신원이 섞이지 않게)
-        drop_user = end_other_identity(conn, request, settings.session_cookie_name, admin["id"])
 
+    # 같은 브라우저의 직원 화면 로그인은 건드리지 않는다 (계정·세션이 따로)
     response = JSONResponse(jsonable_encoder({"admin": admin_out(loaded)}))
-    if drop_user:
-        response.delete_cookie(settings.session_cookie_name, path="/")
     response.set_cookie(
         settings.admin_cookie_name,
         token,
@@ -208,8 +205,8 @@ def admin_session_status(request: Request) -> JSONResponse:
 
 @router.post("/auth/logout", status_code=204)
 def admin_logout(request: Request) -> Response:
-    """관리자 페이지 로그아웃. 직원 화면 로그인도 같이 끝낸다 (로그아웃 = 이 브라우저에서 완전히 나가기)"""
-    return end_sessions(request)
+    """관리자 페이지 로그아웃. 같은 브라우저의 직원 화면 로그인은 그대로 둔다"""
+    return end_sessions(request, settings.admin_cookie_name)
 
 
 def _scope(grants: list[dict[str, Any]], floors: list[dict[str, Any]]) -> dict[str, Any]:
@@ -237,7 +234,8 @@ def _scope(grants: list[dict[str, Any]], floors: list[dict[str, Any]]) -> dict[s
 def overview(admin: CurrentAdmin) -> dict[str, Any]:
     """관리자 첫 화면: 사업장별 층 현황(입주 팀, 층 관리자, 도면 상태, 좌석), 관리자 권한 목록, 요약 숫자.
 
-    조회는 전체를 보여 주고, 층마다 내 관리 범위인지(in_scope)를 붙인다.
+    전사 관리자는 모든 사업장을, 그 아래 단계는 맡은 범위만 본다: 사업장 관리자는 맡은 사업장(모든 층),
+    층·구역 관리자는 맡은 층이 있는 사업장의 그 층만. 층마다 내 관리 범위인지(in_scope)를 붙인다.
     """
     with pool.connection() as conn:
         sites = conn.execute(
@@ -342,6 +340,16 @@ def overview(admin: CurrentAdmin) -> dict[str, Any]:
     for z in zones:
         by_floor_zones.setdefault(z.pop("floor_id"), []).append(z)
 
+    company_wide = is_company_wide(mine)
+    my_sites = {g["site_id"] for g in mine if g["role"] == "SITE_ADMIN"}
+
+    def site_visible(site: dict[str, Any]) -> bool:
+        """맡은 사업장이거나 맡은 층이 있는 사업장 (아직 층이 없는 사업장도 사업장 관리자에게는 보인다)"""
+        return company_wide or site["id"] in my_sites or any(f["site_id"] == site["id"] and in_scope(f) for f in floors)
+
+    def floor_visible(floor: dict[str, Any]) -> bool:
+        return company_wide or floor["site_id"] in my_sites or in_scope(floor) is not None
+
     return {
         "summary": {
             **summary,
@@ -376,10 +384,11 @@ def overview(admin: CurrentAdmin) -> dict[str, Any]:
                         "in_scope": in_scope(f),
                     }
                     for f in floors
-                    if f["site_id"] == s["id"]
+                    if f["site_id"] == s["id"] and floor_visible(f)
                 ],
             }
             for s in sites
+            if site_visible(s)
         ],
         "grants": grants,
     }

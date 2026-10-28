@@ -196,6 +196,11 @@
   font-size: 22px;
 }
 
+/* 접힌 사업장: 머리줄 아래 선 없이 한 줄 카드 */
+.site[data-open="false"] .siteHead {
+  border-bottom: 0;
+}
+
 .siteMeta {
   margin-left: auto;
   display: flex;

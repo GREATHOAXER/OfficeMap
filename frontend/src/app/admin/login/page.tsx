@@ -27,7 +27,7 @@ export default async function AdminLoginPage({ searchParams }: PageProps<"/admin
     params.reason === "expired"
       ? `${info.admin_idle_minutes}분 넘게 사용하지 않았거나 권한이 바뀌어 로그아웃되었습니다. 다시 로그인하세요.`
       : params.reason === "logout"
-        ? "로그아웃했습니다. 이 브라우저의 관리자 페이지와 직원 화면 로그인이 모두 끝났습니다."
+        ? "관리자 페이지에서 로그아웃했습니다."
         : params.reason === "locked"
           ? `관리자 비밀번호를 여러 번 잘못 입력해 관리자 계정이 잠겼습니다. 상위 관리자에게 잠금 해제(비밀번호 초기화)를 요청하세요. 문의: ${contact}`
           : null;
@@ -95,7 +95,7 @@ export default async function AdminLoginPage({ searchParams }: PageProps<"/admin
 
           <aside className={styles.notices} aria-label="안내">
             <p className={styles.noticeEmpty}>
-              관리자 비밀번호는 직원 화면 비밀번호와 따로 관리합니다. 로그아웃하면 직원 화면에서도 함께 로그아웃됩니다.
+              관리자 비밀번호와 로그인은 직원 화면과 따로 관리합니다. 여기서 로그인·로그아웃해도 직원 화면 로그인은 그대로입니다.
             </p>
             <p className={styles.noticeEmpty}>
               관리자 화면은 {info.admin_idle_minutes}분간 사용하지 않으면 자동 로그아웃됩니다.

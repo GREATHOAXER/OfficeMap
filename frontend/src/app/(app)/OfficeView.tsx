@@ -229,7 +229,6 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
   }, [selectedSeatId, pinnedSeatId, selectSeat]);
 
   function goToPerson(hit: EmployeeHit) {
-    setAiState(false);
     if (!hit.seat) {
       // 도면에 보여 줄 곳이 없으니 오른쪽 패널에 연락처를 보여 준다 (패널이 도면 아래면 거기로 내려 보여 준다)
       selectSeat(null);
@@ -253,6 +252,10 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
   }, [aiOpen]);
 
   const selectedSeat = map.seats.find((s) => s.id === selectedSeatId) ?? null;
+  // AI 도우미를 연 채 자리를 고르거나 사람을 찾으면, 그 정보를 AI 대신 위에 보여 준다.
+  // AI 대화는 뒤에 그대로 두고, 자리 선택을 풀면(✕·Esc) 다시 AI가 보인다
+  const infoOverAi = aiOpen && (selectedSeat !== null || noSeatHit !== null);
+  const aiShown = aiOpen && !infoOverAi;
   const hasSeats = map.seats.length > 0;
   const seatless = myFloorId === null;
 
@@ -266,7 +269,7 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
   }
 
   return (
-    <div className={styles.page} data-ai={aiOpen || undefined} data-stacked={stacked || undefined}>
+    <div className={styles.page} data-ai={aiShown || undefined} data-stacked={stacked || undefined}>
       <header className={styles.header}>
         <h1 className={styles.title}>자리·재실 현황</h1>
         <EmployeeSearch onPick={goToPerson} />
@@ -274,10 +277,16 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
           ref={aiButtonRef}
           type="button"
           className={styles.aiButton}
-          aria-expanded={aiOpen}
+          aria-expanded={aiShown}
           aria-controls="ai-panel"
           aria-label="AI 도우미"
-          onClick={() => setAiOpen(!aiOpen)}
+          onClick={() => {
+            if (infoOverAi) {
+              // 자리 정보에 가려 있던 AI를 다시 앞으로
+              selectSeat(null);
+              setNoSeatHit(null);
+            } else setAiOpen(!aiOpen);
+          }}
         >
           <SparkleIcon size={18} />
           <span className={styles.aiButtonText}>AI 도우미</span>
@@ -511,13 +520,13 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
         </div>
 
         <div ref={sideRef} className={styles.side}>
-          {aiOpen ? (
-            <AiPanel onClose={() => setAiOpen(false)} asPage={stacked} />
-          ) : noSeatHit && !selectedSeat ? (
-            <NoSeatCard hit={noSeatHit} onClose={() => setNoSeatHit(null)} />
-          ) : (
-            <SeatPanel map={map} seat={selectedSeat} myEmpNo={myEmpNo} onClear={unpin} />
-          )}
+          {aiOpen && <AiPanel onClose={() => setAiOpen(false)} asPage={stacked} hidden={!aiShown} />}
+          {!aiShown &&
+            (noSeatHit && !selectedSeat ? (
+              <NoSeatCard hit={noSeatHit} onClose={() => setNoSeatHit(null)} />
+            ) : (
+              <SeatPanel map={map} seat={selectedSeat} myEmpNo={myEmpNo} onClear={unpin} />
+            ))}
         </div>
       </div>
     </div>

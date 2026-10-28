@@ -1,0 +1,56 @@
+/* 사업장 접기·펼치기 (SiteFold.tsx). 머리줄의 배치·여백은 쓰는 화면이 headClassName으로 정한다 */
+.head {
+  cursor: pointer;
+}
+
+.title {
+  margin: 0;
+  font-size: inherit;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  margin: 0 0 0 -6px;
+  padding: 0 10px 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .head:hover .toggle {
+    background: var(--bg);
+  }
+}
+
+.chevron {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--surface);
+  transition: transform 0.15s;
+}
+
+/* 접혀 있으면 오른쪽(▶), 펼치면 아래(▼) */
+.fold[data-open="false"] .chevron {
+  transform: rotate(-90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
+}

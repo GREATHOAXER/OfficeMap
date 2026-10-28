@@ -166,6 +166,9 @@ div.body[data-cols="3"] {
   overflow: auto;
   max-height: max(420px, calc(100vh - 230px));
   overscroll-behavior: contain;
+  /* 세로 스크롤바 자리를 늘 비워 둔다. 윈도처럼 스크롤바가 폭을 차지하면, 배율을 바꿀 때 스크롤바가 생겼다 사라지며
+     보이는 폭이 바뀌고 → 100% 도면 폭을 다시 재고 → 다시 스크롤바가 바뀌는 것을 되풀이해 화면이 흔들렸다 */
+  scrollbar-gutter: stable;
 }
 
 /* 눈금자 두 개(위·왼쪽, 스크롤해도 붙어 있다)와 도면. 칸 크기는 PlanCanvas.tsx가 픽셀로 정한다 */
@@ -860,6 +863,19 @@ div.body[data-cols="3"] {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.homeSiteHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  font-size: 17px;
+}
+
+.homeSiteMeta {
+  font-size: 12.5px;
+  color: var(--muted);
 }
 
 .homeFloors {

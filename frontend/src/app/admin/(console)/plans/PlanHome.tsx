@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { Admin, PlanFloor } from "@/lib/api";
 import { agoText } from "@/lib/dates";
 import { useNow } from "@/lib/useNow";
+import SiteFold from "../SiteFold";
 import ui from "../seating/seating.module.css";
 import styles from "./plans.module.css";
 
@@ -34,13 +35,26 @@ export default function PlanHome({ admin, floors }: { admin: Admin; floors: Plan
           고칠 층을 고르세요. 초안은 게시하기 전까지 직원 화면에 보이지 않고, 고친 내용은 자동 저장돼서 언제든 이어서
           고칠 수 있어요.
         </p>
-        {sites.map(([siteId, site]) => (
-          <section key={siteId} className={styles.homeSite} aria-labelledby={`plan-site-${siteId}`}>
-            <h2 id={`plan-site-${siteId}`}>{site}</h2>
-            <ul className={styles.homeFloors}>
-              {floors
-                .filter((f) => f.site_id === siteId)
-                .map((f) => {
+        {/* 사업장이 여럿이면 접어 두고, 사업장 이름을 누르면 그 사업장의 층이 펼쳐진다 */}
+        {sites.map(([siteId, site]) => {
+          const siteFloors = floors.filter((f) => f.site_id === siteId);
+          const drafts = siteFloors.filter((f) => f.drafting).length;
+          return (
+            <SiteFold
+              key={siteId}
+              id={`plan-site-${siteId}`}
+              className={styles.homeSite}
+              headClassName={styles.homeSiteHead}
+              defaultOpen={sites.length === 1}
+              title={site}
+              head={
+                <span className={styles.homeSiteMeta}>
+                  층 {siteFloors.length}개{drafts > 0 ? ` · 초안 ${drafts}개` : ""}
+                </span>
+              }
+            >
+              <ul className={styles.homeFloors}>
+                {siteFloors.map((f) => {
                   const state = floorState(f);
                   const saved = f.drafting && f.draft_updated_at ? agoText(f.draft_updated_at, now) : "";
                   return (
@@ -60,9 +74,10 @@ export default function PlanHome({ admin, floors }: { admin: Admin; floors: Plan
                     </li>
                   );
                 })}
-            </ul>
-          </section>
-        ))}
+              </ul>
+            </SiteFold>
+          );
+        })}
       </div>
     </main>
   );

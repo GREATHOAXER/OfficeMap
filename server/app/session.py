@@ -79,50 +79,24 @@ def session_end_reason(conn: Connection, token: str) -> str | None:
     return "max" if row["over"] else "expired"
 
 
-def end_sessions(request: Request) -> Response:
-    """이 브라우저의 직원·관리자 로그인을 모두 끝낸다 (어느 쪽에서 로그아웃해도 같다).
+def end_sessions(request: Request, cookie_name: str) -> Response:
+    """이 브라우저에서 한쪽 로그인만 끝낸다 (직원 화면 로그아웃은 직원 세션, 관리자 페이지 로그아웃은 관리자 세션).
 
-    관리자 로그인만 끝내고 직원 로그인이 남아 있으면, 로그아웃했는데 직원 화면이 그대로 열려서 헷갈린다."""
-    hashes = [
-        hash_token(token)
-        for token in (
-            request.cookies.get(settings.session_cookie_name),
-            request.cookies.get(settings.admin_cookie_name),
-        )
-        if token
-    ]
-    if hashes:
+    직원 화면과 관리자 페이지는 계정·세션이 따로라, 한쪽에서 로그아웃하거나 다른 계정으로 로그인해도
+    다른 쪽 로그인은 그대로 둔다."""
+    token = request.cookies.get(cookie_name)
+    if token:
         with pool.connection() as conn:
             conn.execute(
                 """
                 UPDATE user_sessions SET revoked_at = now(), revoked_reason = 'LOGOUT'
-                WHERE token_hash = ANY(%s) AND revoked_at IS NULL
+                WHERE token_hash = %s AND revoked_at IS NULL
                 """,
-                (hashes,),
+                (hash_token(token),),
             )
     response = Response(status_code=204)
-    response.delete_cookie(settings.session_cookie_name, path="/")
-    response.delete_cookie(settings.admin_cookie_name, path="/")
+    response.delete_cookie(cookie_name, path="/")
     return response
-
-
-def end_other_identity(conn: Connection, request: Request, cookie_name: str, employee_id: int) -> bool:
-    """로그인할 때, 같은 브라우저에 다른 사람의 로그인(직원↔관리자 반대쪽)이 남아 있으면 끝낸다.
-
-    공용 PC에서 A가 관리자 페이지에 로그인해 둔 채 B가 직원 화면에 로그인하면, B가 A의 관리자 페이지로
-    바로 들어갈 수 있다. 쿠키를 지워야 하면 True."""
-    token = request.cookies.get(cookie_name)
-    if not token:
-        return False
-    row = conn.execute(
-        """
-        UPDATE user_sessions SET revoked_at = now(), revoked_reason = 'OTHER_LOGIN'
-        WHERE token_hash = %s AND employee_id <> %s AND revoked_at IS NULL
-        RETURNING id
-        """,
-        (hash_token(token), employee_id),
-    ).fetchone()
-    return row is not None
 
 
 def _require_user(request: Request, *, allow_temporary: bool) -> dict[str, Any]:
