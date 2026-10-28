@@ -9,7 +9,7 @@ import { seatRatio } from "@/lib/planGeometry";
 import type { Layout, Person } from "@/lib/seating";
 import { baseSeatFont, compactAt, isVertical, minPlanWidth, seatBox, seatFont } from "@/lib/seatLabel";
 import { useTouchPan } from "@/lib/useTouchPan";
-import { zonePieces } from "@/lib/zoneShape";
+import { zonePieces, zoneTags } from "@/lib/zoneShape";
 import styles from "./seating.module.css";
 import { zoneColorVars } from "@/lib/zoneColors";
 
@@ -118,6 +118,7 @@ export default function SeatingCanvas(props: Props) {
     return <p className={office.noPlan}>{data.floor.name}에 게시된 도면이 아직 없어요. 도면을 먼저 게시하세요.</p>;
   const geometry = plan.geometry ?? {};
   const zones = new Map(data.zones.map((z) => [z.id, z]));
+  const pieces = zonePieces(data.zones, rectsOf);
 
   // 팀 구역 지정: 도면 위를 끌어서 네모 안 좌석을 한 번에 고른다 (조금만 움직이면 좌석 누르기)
   const ratio = (event: PointerEvent) => {
@@ -193,7 +194,7 @@ export default function SeatingCanvas(props: Props) {
               </div>
             ),
         )}
-        {zonePieces(data.zones, rectsOf).map(({ zone, rect }, i) => (
+        {pieces.map(({ zone, rect }, i) => (
           <div
             key={`${zone.id}-${i}`}
             className={`${office.zone} ${focusZones && !focusZones.has(zone.id) ? styles.dim : ""}`}
@@ -202,20 +203,18 @@ export default function SeatingCanvas(props: Props) {
             style={{ ...rectStyle(rect), ...zoneColorVars(zone.color_key) }}
           />
         ))}
-        {/* 이름표는 모든 구역을 칠한 뒤에 그려서 다른 구역 조각에 가려지지 않게 */}
-        {zonePieces(data.zones, rectsOf)
-          .filter((piece) => piece.tagged)
-          .map(({ zone, rect }) => (
-            <span
-              key={`tag-${zone.id}`}
-              className={`${office.zoneTag} ${focusZones && !focusZones.has(zone.id) ? styles.dim : ""}`}
-              data-color={zone.color_key}
-              style={{ left: pct(rect.x), top: pct(rect.y), ...zoneColorVars(zone.color_key) }}
-            >
-              {zone.name} · {zone.code}
-              {!zone.editable && !plain && " · 잠김"}
-            </span>
-          ))}
+        {/* 이름표는 모든 구역을 칠한 뒤에 그려서 다른 구역 조각에 가려지지 않게 (조각마다, 조각 안에) */}
+        {zoneTags(pieces, plan).map(({ zone, x, y, maxW }, i) => (
+          <span
+            key={`tag-${zone.id}-${i}`}
+            className={`${office.zoneTag} ${focusZones && !focusZones.has(zone.id) ? styles.dim : ""}`}
+            data-color={zone.color_key}
+            style={{ left: pct(x), top: pct(y), maxWidth: pct(maxW), ...zoneColorVars(zone.color_key) }}
+          >
+            {zone.name} · {zone.code}
+            {!zone.editable && !plain && " · 잠김"}
+          </span>
+        ))}
         {data.seats.map((seat) => {
           const view = viewOf(seat);
           const emp = layout.occupant(seat.id);

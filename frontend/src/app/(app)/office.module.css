@@ -1094,18 +1094,25 @@
   box-shadow: 0 0 0 3px var(--tc);
 }
 
-/* 구역 이름표: 구역 조각과 따로 도면에 놓는다 (위치는 화면이 구역의 가장 큰 조각 왼쪽 위로 정한다) */
+/* 구역 이름표: 구역 조각과 따로 도면에 놓는다. 위치는 화면이 조각마다 왼쪽 위 안쪽(위쪽 여백)으로 정하고
+   (lib/zoneShape.ts zoneTags), 폭은 조각 오른쪽 끝까지: 이름이 길면 조각 밖으로 나가지 않고 두 줄까지 바꾼다 */
 .zoneTag {
   position: absolute;
   z-index: 1;
-  pointer-events: none; /* 이름이 길어 옆 좌석에 걸쳐도 그 좌석을 누를 수 있게 */
+  pointer-events: none; /* 이름이 길어도 아래 좌석을 누를 수 있게 */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
   padding: 1px 7px;
   border-radius: 6px 0 6px 0;
   background: var(--tc);
   color: #fff;
   font-size: max(9px, 0.95cqw);
   font-weight: 600;
-  white-space: nowrap;
+  line-height: 1.3;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 
 .dim {
