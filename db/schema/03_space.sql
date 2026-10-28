@@ -76,7 +76,7 @@ CREATE TABLE zones (
     name          varchar(100) NOT NULL,                  -- 예: 재무팀, 공용 자율석, 교육장
     name_custom   boolean      NOT NULL DEFAULT false,    -- false면 부서 이름을 따라간다 (조직도에서 이름이 바뀌면 같이)
     department_id bigint REFERENCES departments(id),      -- 공용 구역이면 NULL
-    color_key     varchar(10)  NOT NULL,                  -- 디자인의 t0~t4
+    color_key     varchar(10)  NOT NULL,                  -- 기본 색 t0~t11 또는 직접 고른 색 #rrggbb (화면 lib/zoneColors.ts)
     -- {"type":"rect","x","y","w","h"} 또는 좌석 덩어리가 여럿이면 {"type":"rects","rects":[{x,y,w,h}, …]}
     -- 좌석이 하나도 없으면 NULL (그리지 않는다)
     shape         jsonb,

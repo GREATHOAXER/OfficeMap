@@ -16,6 +16,7 @@ import { ScaleLegend } from "./PlanShapes";
 import SeatPanel, { NoSeatCard } from "./SeatPanel";
 import { useFloorUpdates } from "./useFloorUpdates";
 import styles from "./office.module.css";
+import { zoneColorVars } from "@/lib/zoneColors";
 
 // 도면(.main)과 오른쪽 패널(.side)의 최소 폭 (office.module.css flex-basis와 같게)
 const MAIN_MIN_PX = 560;
@@ -378,6 +379,7 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
                     type="button"
                     className={`${styles.chip} ${on ? styles.chipOn : ""}`}
                     data-color={zone.color_key}
+                    style={zoneColorVars(zone.color_key)}
                     aria-pressed={on}
                     onClick={() =>
                       setPicked({ floorId, seatId: selectedSeatId, zoneId: on ? null : zone.id, pinned: picked.pinned })

@@ -16,6 +16,7 @@ import {
   type Admin,
   type AdminFloor,
   type AdminGrant,
+  type AdminOverview,
   type AdminSite,
   ApiError,
   fetchAdmin,
@@ -29,6 +30,7 @@ import { GrantButton, GrantEditButton, type GrantPreset } from "./GrantActions";
 import { FloorButton, SiteButton } from "./SiteActions";
 import SiteFold from "./SiteFold";
 import styles from "./admin.module.css";
+import { zoneColorVars } from "@/lib/zoneColors";
 
 /** 관리자 첫 화면 (디자인 ④ 사업장·층·권한): 사업장별 층 현황, 관리자 권한 체계와 관리자 목록 */
 export default async function AdminHomePage() {
@@ -142,6 +144,8 @@ export default async function AdminHomePage() {
 
         {(reviewer || approvals.length > 0) && <ApprovalInbox requests={approvals} reviewer={reviewer} />}
 
+        {overview.unseated_teams.length > 0 && <UnseatedNotice teams={overview.unseated_teams} />}
+
         {/* 사업장이 여럿이면 접어 두고, 사업장 이름을 누르면 그 사업장의 층이 펼쳐진다 */}
         {overview.sites.map((site) => (
           <SiteSection
@@ -150,6 +154,7 @@ export default async function AdminHomePage() {
             admin={admin}
             isCompany={isCompany}
             defaultOpen={overview.sites.length === 1}
+            acting={overview.acting_floor_admin}
           />
         ))}
 
@@ -242,6 +247,44 @@ export default async function AdminHomePage() {
   );
 }
 
+/** 미배치 인원 알림: 인사이동·신규 입사로 자리가 없는 사람이 어느 팀(층)에 몇 명인지. 그 층 좌석 배치 편집으로 바로 간다 */
+function UnseatedNotice({ teams }: { teams: AdminOverview["unseated_teams"] }) {
+  const total = teams.reduce((n, t) => n + t.people, 0);
+  return (
+    <section className={styles.unseated} aria-labelledby="unseated-title">
+      <div className={styles.sectionHead}>
+        <h2 id="unseated-title">
+          미배치 인원 <span className={styles.unseatedCount}>{total}명</span>
+        </h2>
+        <span className={styles.muted}>
+          재직 중인데 자리가 없는 사람이에요 (인사이동·신규 입사). 좌석 배치 편집의 &ldquo;미배치 인원&rdquo;에서
+          자리를 정해 주세요
+        </span>
+      </div>
+      <ul className={styles.unseatedList}>
+        {teams.map((t) => (
+          <li key={t.department}>
+            <span className={styles.unseatedTeam}>
+              <strong>{t.department}</strong> <span className="mono">{t.people}명</span>
+            </span>
+            {t.floors.length > 0 ? (
+              <span className={styles.unseatedActions}>
+                {t.floors.map((f) => (
+                  <Link key={f.id} href={`/admin/seating?floor=${f.id}`} className={styles.btn}>
+                    {f.label} 배치 편집
+                  </Link>
+                ))}
+              </span>
+            ) : (
+              <span className={styles.muted}>팀 구역이 아직 없어요 · 좌석 배치 편집에서 팀 구역을 먼저 만들어요</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 /** 그 사람의 관리자 비밀번호를 초기화할 수 있나: 그 사람의 권한을 모두 내가 다룰 수 있을 때 (서버와 같은 규칙) */
 function canResetPassword(admin: Admin, target: AdminGrant, all: AdminGrant[]) {
   if (target.employee.emp_no === admin.emp_no) return false;
@@ -262,11 +305,13 @@ function SiteSection({
   admin,
   isCompany,
   defaultOpen,
+  acting,
 }: {
   site: AdminSite;
   admin: Admin;
   isCompany: boolean;
   defaultOpen: boolean;
+  acting: AdminOverview["acting_floor_admin"];
 }) {
   const seats = site.floors.reduce((n, f) => n + f.seats, 0);
   const occupied = site.floors.reduce((n, f) => n + f.occupied, 0);
@@ -346,6 +391,7 @@ function SiteSection({
                 floor={floor}
                 preset={floorPreset(admin, site.id, floor)}
                 siteWide={siteWide}
+                acting={acting}
                 editPlan={canEditPlan(admin, { id: floor.id, siteId: site.id })}
                 edit={siteWide ? <FloorButton siteId={site.id} floors={site.floors} floor={floor} /> : null}
               />
@@ -363,6 +409,7 @@ function FloorRow({
   floor,
   preset,
   siteWide,
+  acting,
   editPlan,
   edit,
 }: {
@@ -370,6 +417,8 @@ function FloorRow({
   /** "+ 지정"으로 바로 줄 권한 (내가 줄 수 없으면 null) */
   preset: GrantPreset | null;
   siteWide: boolean;
+  /** 층 관리자가 없을 때 임시로 맡는 최고 단계 관리자 */
+  acting: AdminOverview["acting_floor_admin"];
   editPlan: boolean;
   /** 층 고치기 (사업장 관리자 이상) */
   edit: ReactNode;
@@ -389,6 +438,7 @@ function FloorRow({
               key={z.code}
               className={styles.team}
               data-color={z.color_key}
+              style={zoneColorVars(z.color_key)}
               title={z.department_active ? undefined : "조직도에서 없어진 부서의 구역이에요"}
             >
               {z.name}
@@ -407,7 +457,15 @@ function FloorRow({
         {floor.out_of_service > 0 && <span className={styles.subLine}>사용 중지 {floor.out_of_service}</span>}
       </td>
       <td data-label="층 관리자">
-        {admins || <span className={styles.muted}>미지정</span>}
+        {admins ||
+          (acting ? (
+            <span title="층 관리자를 정하기 전까지 최고 단계 관리자가 맡아요">
+              {acting.name}
+              <span className={styles.actingTag}>임시 · {acting.role_label}</span>
+            </span>
+          ) : (
+            <span className={styles.muted}>미지정</span>
+          ))}
         {floor.zone_admins > 0 ? (
           <span className={styles.subLine}>구역 관리자 {floor.zone_admins}명</span>
         ) : (

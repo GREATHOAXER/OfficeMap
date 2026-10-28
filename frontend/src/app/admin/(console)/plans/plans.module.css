@@ -1553,3 +1553,21 @@ div.body[data-cols="3"] {
   align-items: center;
   gap: 6px;
 }
+
+/* 휴대폰(아이폰 13 폭 390px 등)에서는 작은 글자를 한 단계 키운다 (칸이 좁아도 줄을 바꿔 잘리지 않게) */
+@media (max-width: 720px) {
+  .homeMeta,
+  .homeAction {
+    font-size: 14px;
+  }
+
+  .startCard p,
+  .homeSiteMeta {
+    font-size: 14.5px;
+  }
+
+  .startCard h3,
+  .homeLead {
+    font-size: 15px;
+  }
+}

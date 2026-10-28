@@ -6,6 +6,7 @@ import type { EmployeeHit } from "@/lib/api";
 import { PRESENCE_LABEL } from "@/lib/presence";
 import { useEmployeeSearch } from "@/lib/useEmployeeSearch";
 import styles from "./office.module.css";
+import { zoneColorVars } from "@/lib/zoneColors";
 
 const QUERY_MAX = 50; // 서버(/api/employees/search)가 받는 검색어 길이
 
@@ -127,7 +128,12 @@ export default function EmployeeSearch({ onPick }: { onPick: (hit: EmployeeHit) 
                       {hit.is_me && <span className={styles.searchMe}>나</span>}
                     </span>
                     <span className={styles.searchMeta}>
-                      <span className={styles.swatch} data-color={hit.seat?.color_key ?? "t0"} aria-hidden="true" />
+                      <span
+                        className={styles.swatch}
+                        data-color={hit.seat?.color_key ?? "t0"}
+                        style={zoneColorVars(hit.seat?.color_key)}
+                        aria-hidden="true"
+                      />
                       {hit.department} ·{" "}
                       {hit.seat
                         ? `${hit.seat.site_name} ${hit.seat.floor_name} ${hit.seat.code}`

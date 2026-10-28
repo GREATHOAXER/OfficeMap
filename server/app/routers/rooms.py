@@ -9,6 +9,7 @@ from psycopg import Connection
 from pydantic import BaseModel, Field
 
 from app.db import get_setting, pool
+from app.people_order import person_order
 from app.session import CurrentUser
 
 router = APIRouter(prefix="/api", tags=["rooms"])
@@ -605,7 +606,7 @@ def reservation_detail(reservation_id: int, user: CurrentUser) -> dict[str, Any]
         if row is None:
             raise _error(404, "RESERVATION_NOT_FOUND")
         attendees = conn.execute(
-            """
+            f"""
             SELECT e.emp_no, e.name, e.rank_name AS rank, d.name AS department, e.id = %(me)s AS is_me,
                    e.id = %(organizer)s AS is_organizer,
                    z.color_key, CASE WHEN p.expires_at IS NULL OR p.expires_at > now() THEN p.status END AS presence
@@ -620,7 +621,7 @@ def reservation_detail(reservation_id: int, user: CurrentUser) -> dict[str, Any]
             LEFT JOIN zones z ON z.id = cur.zone_id
             LEFT JOIN presence_status p ON p.employee_id = e.id
             WHERE ra.reservation_id = %(id)s
-            ORDER BY e.id = %(organizer)s DESC, d.name, e.name
+            ORDER BY e.id = %(organizer)s DESC, {person_order()}
             """,
             {"id": reservation_id, "me": user["employee_id"], "organizer": row["organizer_id"]},
         ).fetchall()

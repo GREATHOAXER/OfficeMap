@@ -1,59 +1,136 @@
-/* 사업장 → 층 고르기 (도면 편집·좌석 배치 편집 머리줄) */
+/* 사업장 | 층 두 칸 목록 (SiteFloorPicker.tsx). 칸마다 테두리 단추를 세로로 늘어놓는다 */
 .picker {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-/* 사업장 버튼은 서로 붙이지 않고, 층 고르기와도 세로줄로 나눈다 */
-.sites {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding-right: 8px;
-  border-right: 1px solid var(--divider);
-}
-
-.site {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  border: 1px solid var(--divider);
+  border-radius: 8px;
   background: var(--surface);
-  color: var(--ink);
-  font: inherit;
-  font-size: 12.5px;
-  white-space: nowrap;
-  cursor: pointer;
+  overflow: hidden;
 }
 
-.site:hover {
-  border-color: var(--ink);
+.col {
+  min-width: 0;
 }
 
-.site[aria-pressed="true"] {
-  border-color: var(--ink);
-  background: var(--ink);
-  color: #fff;
-  font-weight: 600;
+.col + .col {
+  border-left: 1px solid var(--divider);
 }
 
-.floor {
-  height: 32px;
-  padding: 0 28px 0 10px;
+.colHead {
+  display: block;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--divider);
+  background: var(--surface-sunken);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* 층이 많으면 이 안에서 스크롤 */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 264px;
+  margin: 0;
+  padding: 6px;
+  overflow: auto;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 36px;
+  padding: 4px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface);
   color: var(--ink);
   font: inherit;
   font-size: 13px;
+  text-align: left;
+  cursor: pointer;
 }
 
-.only {
-  font-size: 13px;
+@media (hover: hover) {
+  .item:hover:not([aria-pressed="true"]) {
+    border-color: var(--ink);
+  }
+}
+
+.item[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fff;
   font-weight: 600;
+}
+
+.label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.note {
+  flex: none;
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.item[aria-pressed="true"] .note {
+  color: var(--muted-on-dark);
+}
+
+/* 머리줄의 "사업장 · 층 ▾" 단추와 펼친 목록 (SiteFloorMenu) */
+.menu {
+  position: relative;
+}
+
+.menuButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.menuButton[aria-expanded="true"] {
+  background: var(--bg);
+}
+
+.menuPanel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  width: min(420px, calc(100vw - 32px));
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(28, 28, 28, 0.18);
+}
+
+/* 휴대폰(아이폰 13 폭 390px 등)에서는 작은 글자를 한 단계 키운다 (칸이 좁아도 줄을 바꿔 잘리지 않게) */
+@media (max-width: 720px) {
+  .note {
+    font-size: 13px;
+  }
+
+  .colHead {
+    font-size: 13.5px;
+  }
+
+  .item,
+  .menuButton {
+    font-size: 15px;
+  }
 }

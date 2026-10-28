@@ -27,6 +27,7 @@ import { useNow } from "@/lib/useNow";
 import { zonePieces, zoneRects } from "@/lib/zoneShape";
 import styles from "./office.module.css";
 import PlanShapes, { fitLabelStyle, lineStyle } from "./PlanShapes";
+import { zoneColorVars } from "@/lib/zoneColors";
 
 const HOVER_DELAY_MS = 700; // 자리에 마우스를 이만큼(0.7초) 올려 두면 정보 카드가 뜬다
 const DRAG_THRESHOLD_PX = 5; // 이보다 적게 움직이면 끌기가 아니라 누르기
@@ -434,7 +435,7 @@ export default function FloorPlan(props: Props) {
             }`}
             data-color={zone.color_key}
             data-shared={zone.department === null}
-            style={rectStyle(rect)}
+            style={{ ...rectStyle(rect), ...zoneColorVars(zone.color_key) }}
           />
         ))}
         {/* 이름표는 모든 구역을 칠한 뒤에 그려서 다른 구역 조각에 가려지지 않게 */}
@@ -445,7 +446,7 @@ export default function FloorPlan(props: Props) {
               key={`tag-${zone.id}`}
               className={`${styles.zoneTag} ${focusZoneId && focusZoneId !== zone.id ? styles.dim : ""}`}
               data-color={zone.color_key}
-              style={{ left: pct(rect.x), top: pct(rect.y) }}
+              style={{ left: pct(rect.x), top: pct(rect.y), ...zoneColorVars(zone.color_key) }}
             >
               {zone.name} · {zone.code}
             </span>
@@ -578,6 +579,7 @@ const SeatButton = memo(function SeatButton(props: SeatProps) {
         // 의자는 책상 깊이에 맞춘다
         fontSize: `${font.toFixed(3)}cqw`,
         ...({ "--d": `${Math.min(box.w, box.h).toFixed(3)}cqw` } as CSSProperties),
+        ...zoneColorVars(zone?.color_key),
       }}
       title={seat.code}
       aria-label={label}
@@ -692,7 +694,7 @@ function SeatCard({ seat, zone, floorName, pinned, onClose }: CardProps) {
           </button>
         )}
       </div>
-      <span className={styles.popoverTeam} data-color={zone?.color_key ?? "t0"}>
+      <span className={styles.popoverTeam} data-color={zone?.color_key ?? "t0"} style={zoneColorVars(zone?.color_key)}>
         <span className={styles.swatch} aria-hidden="true" />
         {occupant.department}
       </span>

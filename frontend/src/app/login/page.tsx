@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { fetchLoginInfo, fetchMe } from "@/lib/api";
@@ -7,6 +6,7 @@ import { safeNext } from "@/lib/loginRedirect";
 import FloorIllustration from "./FloorIllustration";
 import LoginForm from "./LoginForm";
 import styles from "./login.module.css";
+import Logo from "@/components/Logo";
 
 export const metadata: Metadata = { title: "로그인 · 오피스 안내" };
 
@@ -49,7 +49,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
 
       <main className={styles.formSide}>
         <div className={styles.formBox}>
-          <Image src="/kftc-logo.jpg" alt="금융결제원" width={152} height={48} priority className={styles.logo} />
+          <Logo size={36} className={styles.logo} />
           <div>
             <h2 className={styles.title}>로그인</h2>
             <p className={styles.subtitle}>사내 계정으로 로그인하세요</p>

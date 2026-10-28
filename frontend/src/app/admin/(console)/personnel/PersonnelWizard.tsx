@@ -197,11 +197,6 @@ export default function PersonnelWizard({ admin, moves }: { admin: Admin; moves:
             <strong>{admin.role_label}</strong>
           </span>
         </div>
-        <div className={ui.headerActions}>
-          <button type="button" className={ui.btn} onClick={() => void downloadTemplate()}>
-            발령 양식 받기
-          </button>
-        </div>
       </header>
 
       <div className={styles.body}>
@@ -218,6 +213,19 @@ export default function PersonnelWizard({ admin, moves }: { admin: Admin; moves:
                 직급 · 직책 열이 있으면 바뀌는 사람만 함께 바꿔요. 머리글 이름이 조금 달라도(성명, 발령부서, 신소속 …)
                 읽어요.
               </p>
+              {/* 양식을 받아 그 틀에 맞춰 쓰면 열을 잘못 읽을 일이 없다 */}
+              <div className={styles.template}>
+                <span className={styles.templateFile} aria-hidden="true">
+                  XLSX
+                </span>
+                <span className={styles.templateText}>
+                  <strong>인사이동_발령_양식.xlsx</strong>
+                  <span>이 양식에 맞춰 쓰면 바로 읽어요 · &ldquo;안내&rdquo; 시트에 쓰는 법과 예시가 있어요</span>
+                </span>
+                <button type="button" className={`${ui.btn} ${ui.pri}`} onClick={() => void downloadTemplate()}>
+                  양식 내려받기
+                </button>
+              </div>
               <label
                 className={styles.drop}
                 data-over={dragOver || undefined}

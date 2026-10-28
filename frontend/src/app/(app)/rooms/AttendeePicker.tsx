@@ -7,6 +7,7 @@ import { NO_STATUS_LABEL, PRESENCE_LABEL } from "@/lib/presence";
 import { type SearchWhen, useDebouncedJson, useEmployeeSearch, useTeamSearch } from "@/lib/useEmployeeSearch";
 import type { Attendee } from "./slots";
 import styles from "./rooms.module.css";
+import { zoneColorVars } from "@/lib/zoneColors";
 
 const ABSENCE_LABEL = { LEAVE: "휴가", BUSINESS_TRIP: "출장", REMOTE: "재택" } as const;
 
@@ -259,7 +260,12 @@ export default function AttendeePicker(props: Props) {
     const conflict = conflictOf(person);
     return (
       <li key={person.emp_no} className={styles.chip} data-conflict={!!conflict || undefined} title={conflict ?? undefined}>
-        <span className={styles.chipSwatch} data-color={person.seat?.color_key ?? "t0"} aria-hidden="true" />
+        <span
+          className={styles.chipSwatch}
+          data-color={person.seat?.color_key ?? "t0"}
+          style={zoneColorVars(person.seat?.color_key)}
+          aria-hidden="true"
+        />
         {person.name}
         {showRank(person) && person.rank ? ` ${person.rank}` : ""}
         {!person.via && ` · ${person.department}`}
@@ -454,7 +460,12 @@ export default function AttendeePicker(props: Props) {
                         {reason && <span className={styles.tag}>{reason}</span>}
                       </span>
                       <span className={styles.attendeeMeta}>
-                        <span className={styles.chipSwatch} data-color={hit.seat?.color_key ?? "t0"} aria-hidden="true" />
+                        <span
+                          className={styles.chipSwatch}
+                          data-color={hit.seat?.color_key ?? "t0"}
+                          style={zoneColorVars(hit.seat?.color_key)}
+                          aria-hidden="true"
+                        />
                         {hit.division ? `${hit.division} ` : ""}
                         {hit.department} · {hit.seat ? `${hit.seat.floor_name} ${hit.seat.code}` : "자리 없음"}
                       </span>

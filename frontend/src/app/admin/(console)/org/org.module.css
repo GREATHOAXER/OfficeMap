@@ -22,10 +22,97 @@
   overflow: auto;
 }
 
+/* 한 단일 때(휴대폰 등)는 붙여 두면 아래 팀원 목록을 가린다 */
+@media (max-width: 860px) {
+  .treeCard {
+    position: static;
+  }
+}
+
 .tree {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* 이름·사번으로 사람 찾기 (부서 나무 위) */
+.finder {
+  margin-bottom: 10px;
+}
+
+.finderField {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.finderField:focus-within {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+
+.finderField input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+.finderList {
+  margin: 6px 0 0;
+  padding: 0;
+  max-height: 280px;
+  overflow: auto;
+  list-style: none;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+}
+
+.finderList li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.finderList li + li {
+  border-top: 1px solid var(--divider);
+}
+
+.finderList li[aria-selected="true"] {
+  background: var(--info-bg);
+}
+
+.finderName {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+
+.finderMeta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.finderNote {
+  margin: 4px 2px 0;
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .node {
@@ -110,6 +197,18 @@
   min-width: 0;
 }
 
+/* 고른 부서 머리: 넓으면 이름 | 단추, 휴대폰에서는 단추가 이름 아래 온 폭으로 */
+.detailHead {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+@media (max-width: 720px) {
+  .detailHead > * {
+    flex: 1 1 100%;
+  }
+}
+
 .path {
   margin: 0;
   font-size: 12px;
@@ -159,6 +258,13 @@
   margin-top: 4px;
 }
 
+.membersTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
 .membersHead h3 {
   margin: 0;
   font-size: 14px;
@@ -192,9 +298,113 @@
   color: var(--muted);
 }
 
+/* 검색에서 고른 사람 */
+.table tr[data-found] td {
+  background: var(--info-bg);
+}
+
+.table tr[data-found] td:first-child {
+  box-shadow: inset 3px 0 0 var(--link);
+}
+
 .rowActions {
   text-align: right;
   white-space: nowrap;
+}
+
+/* 휴대폰: 팀원 표를 사람마다 두 줄 카드로 (옆으로 밀어야 보이는 칸·잘린 단추가 없게). 정렬 단추는 표 위 한 줄 */
+@media (max-width: 720px) {
+  .table,
+  .table thead,
+  .table tbody {
+    display: block;
+  }
+
+  .table thead tr {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--divider);
+  }
+
+  .table thead th {
+    padding: 0;
+    border: 0;
+  }
+
+  .table thead th:last-child {
+    display: none;
+  }
+
+  .table thead .sortButton {
+    margin: 0;
+    padding: 0 10px;
+    min-height: 32px;
+    border-color: var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+  }
+
+  .table thead .sortButton[data-active] {
+    border-color: var(--ink);
+  }
+
+  /* 첫 줄: 이름·직급 | 수정하기, 둘째 줄: 사번·자리·내선 (좁으면 줄을 바꾼다) */
+  .table tbody tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 14px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--divider);
+  }
+
+  .table tbody tr::after {
+    content: "";
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .table tbody td {
+    order: 4;
+    padding: 0;
+    border: 0;
+    font-size: 14px;
+  }
+
+  .table tbody td:first-child {
+    order: 1;
+    flex: 1 1 0;
+    min-width: 0;
+    font-size: 15px;
+  }
+
+  .table tbody td.rowActions {
+    order: 2;
+  }
+
+  .table tbody td.rowActions:empty {
+    display: none;
+  }
+
+  .table td[data-label]::before {
+    content: attr(data-label) " ";
+    font-family: var(--font-body);
+    color: var(--muted);
+  }
+
+  .table tr[data-found] {
+    background: var(--info-bg);
+    box-shadow: inset 3px 0 0 var(--link);
+    padding-left: 10px;
+  }
+
+  .table tr[data-found] td,
+  .table tr[data-found] td:first-child {
+    background: none;
+    box-shadow: none;
+  }
 }
 
 .grid2 {
@@ -268,4 +478,193 @@
   background: var(--t2-fill);
   font-size: 12.5px;
   line-height: 1.5;
+}
+
+/* 부서 고르기: 본부 → 부서 → 팀 칸 (DeptCascade). 칸마다 테두리 단추, 깊으면 옆으로 민다 */
+.cascadeField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cascadeLabel {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.cascadePath {
+  margin: 0;
+  font-size: 13px;
+}
+
+.cascade {
+  display: flex;
+  overflow-x: auto;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.cascadeCol {
+  flex: 1 0 168px;
+  min-width: 0;
+}
+
+.cascadeCol + .cascadeCol {
+  border-left: 1px solid var(--divider);
+}
+
+.cascadeHead {
+  display: block;
+  padding: 6px 10px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--divider);
+  background: var(--surface-sunken);
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cascadeCol ul {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 216px;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.cascadeItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  min-height: 34px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cascadeItem > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cascadeItem svg {
+  flex: none;
+  color: var(--muted);
+}
+
+@media (hover: hover) {
+  .cascadeItem:hover:not([aria-pressed="true"]) {
+    border-color: var(--ink);
+  }
+}
+
+/* 고른 부서까지 지나온 부서 */
+.cascadeItem[data-on-path] {
+  border-color: var(--ink);
+  background: var(--bg);
+  font-weight: 600;
+}
+
+.cascadeItem[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fff;
+  font-weight: 600;
+}
+
+.cascadeItem[aria-pressed="true"] svg {
+  color: var(--muted-on-dark);
+}
+
+/* 팀원 표 칸 제목: 누르면 그 칸으로 정렬 */
+.sortButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  margin: -4px -6px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .sortButton:hover {
+    border-color: var(--border);
+    background: var(--surface);
+  }
+}
+
+.sortButton[data-active] {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.sortMark {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.sortButton[data-active] .sortMark {
+  color: var(--ink);
+}
+
+/* 휴대폰(아이폰 13 폭 390px 등)에서는 작은 글자를 한 단계 키운다 (칸이 좁아도 줄을 바꿔 잘리지 않게) */
+@media (max-width: 720px) {
+  .sortMark {
+    font-size: 12px;
+  }
+
+  .badge {
+    font-size: 13px;
+  }
+
+  .cascadeHead {
+    font-size: 13.5px;
+  }
+
+  .finderMeta,
+  .finderNote,
+  .fold,
+  .count,
+  .path,
+  .renameButton,
+  .deptTitle :global(.mono),
+  .table th,
+  .cascadeLabel {
+    font-size: 14px;
+  }
+
+  .warn {
+    font-size: 14.5px;
+  }
+
+  .finderField input,
+  .finderList li,
+  .nodeName,
+  .membersHead h3,
+  .table,
+  .pickList label,
+  .cascadePath,
+  .cascadeItem {
+    font-size: 15px;
+  }
 }

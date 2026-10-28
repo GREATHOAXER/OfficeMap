@@ -30,6 +30,7 @@ import { useTouchPan } from "@/lib/useTouchPan";
 import { joinedEnds, setEnd, type Snapped, snapMove, snapPoint, type SnapTargets, snapTargets } from "@/lib/wallSnap";
 import ui from "../seating/seating.module.css";
 import styles from "./plans.module.css";
+import { zoneColorVars } from "@/lib/zoneColors";
 
 export type DrawTool = "wall" | "wall_line" | "pillar" | "space" | "room" | "entrance";
 export type Tool = "select" | DrawTool | "desk";
@@ -672,7 +673,7 @@ export default function PlanCanvas(props: Props) {
                         data-chair={CHAIR_SIDE[c.rotation]}
                         data-vertical={size.h > size.w || undefined}
                         data-color={seat?.color_key ?? "t0"}
-                        style={style}
+                        style={{ ...style, ...zoneColorVars(seat?.color_key) }}
                         title={
                           cell.desk
                             ? `${cell.code}${seat?.occupant ? ` · ${seat.occupant}` : seat ? " · 빈 자리" : " · 새 책상"}`

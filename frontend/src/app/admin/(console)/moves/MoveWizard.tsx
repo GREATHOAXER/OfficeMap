@@ -11,6 +11,7 @@ import { type DrawingSeat, drawingFromSeating } from "@/lib/floorDrawing";
 import { adminExpiredUrl } from "@/lib/loginRedirect";
 import ui from "../seating/seating.module.css";
 import styles from "./moves.module.css";
+import { zoneColorVars } from "@/lib/zoneColors";
 
 const MAX_SCHEDULE_DAYS = 365;
 const STAY = "stay"; // 옮기지 않음
@@ -343,6 +344,7 @@ export default function MoveWizard({ admin, options }: Props) {
                           <button
                             type="button"
                             data-color={z?.color_key ?? "t0"}
+                            style={zoneColorVars(z?.color_key)}
                             aria-pressed={picked}
                             disabled={free === 0}
                             onClick={() => takeZone(z?.id ?? null)}

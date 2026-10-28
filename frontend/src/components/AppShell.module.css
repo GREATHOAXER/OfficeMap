@@ -68,16 +68,16 @@
 }
 
 .logo {
-  height: 32px;
-  width: auto;
-  mix-blend-mode: multiply; /* 로고의 흰 배경을 메뉴 배경에 녹인다 */
+  min-width: 0;
 }
 
+/* 메뉴를 접으면 로고 대신 심볼만 */
 .symbol {
   display: none;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   margin: 4px 0 8px;
+  line-height: 0;
 }
 
 .site {
@@ -570,7 +570,7 @@
   }
 
   .mobileBar .logo {
-    height: 28px;
+    margin-left: 2px;
   }
 }
 

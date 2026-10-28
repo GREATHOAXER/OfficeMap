@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from psycopg import Connection
 
 from app.db import pool
+from app.people_order import person_order
 from app.routers.profile import PROFILE_COLUMNS, PROFILE_JOIN, profile_out
 from app.session import CurrentUser
 
@@ -246,7 +247,7 @@ def team_members(department_id: int, user: CurrentUser, window: Window) -> dict[
         members = find_employees(
             conn,
             f"e.department_id IN ({_SUBTREE})",
-            "d.sort_order, e.name, e.emp_no",
+            person_order(),
             {"me": user["employee_id"], "team": department_id, "limit": 1000, **window.params},
         )
     return {"team": team, "members": members}
