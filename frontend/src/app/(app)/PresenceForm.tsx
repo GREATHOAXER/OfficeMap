@@ -116,7 +116,7 @@ export default function PresenceForm({ info, heading, headingId, onSaved }: Prop
   const preview = durations.find((d) => d.value === draft.duration)?.preview;
 
   // 상태를 바꾸면, 메시지를 손대지 않았을 때는 앞 상태의 메시지를 비운다
-  // ("편하게 찾아오세요"가 방해 금지에 그대로 붙지 않게). 원래 상태로 돌아오면 원래 메시지를 되살린다
+  // ("오늘은 7F 자율석에 있어요"가 휴가에 그대로 붙지 않게). 원래 상태로 돌아오면 원래 메시지를 되살린다
   // 자리에 있음 ↔ 없음을 오가면 고를 수 있는 해제 방법이 달라서, 없는 방법이면 그 상태의 기본으로.
   // 휴가·출장·교육으로 바꾸면 마지막 날 고르기가 먼저
   function pickStatus(status: PresenceStatus) {
