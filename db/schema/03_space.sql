@@ -120,7 +120,7 @@ CREATE UNIQUE INDEX seats_floor_element_idx ON seats (floor_id, plan_element_key
 -- 구역 모양 자동 계산 ----------------------------------------------------------
 -- 구역 좌석들을 가까운 것끼리 덩어리로 묶고(책상을 붙여 놓은 섬), 덩어리마다 좌석을 감싸는 사각형을 만든다.
 -- 좌석 크기·여백은 미터로 정하고 층의 게시본 도면 크기로 나눠 비율로 쓴다 (없으면 50 × 30 m).
--- 화면(frontend/src/lib/zoneShape.ts)과 같아야 한다. 위쪽 여백은 구역 이름표 자리
+-- 화면(frontend/src/lib/zoneShape.ts)과 같아야 한다. 위쪽은 의자 자리까지 조금 넉넉하게
 CREATE OR REPLACE FUNCTION zone_auto_shape(p_zone bigint) RETURNS jsonb
 LANGUAGE plpgsql STABLE AS $$
 DECLARE

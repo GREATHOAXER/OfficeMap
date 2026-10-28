@@ -3,7 +3,7 @@
 import Link, { useLinkStatus } from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeftIcon, ChevronRightIcon, SparkleIcon } from "@/components/icons";
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, SparkleIcon } from "@/components/icons";
 import type { EmployeeHit, FloorMap, FloorSummary, MyPresenceInfo } from "@/lib/api";
 import { useLivePresence, withLiveMine, withLivePresence } from "@/lib/livePresence";
 import { useRefreshAt } from "@/lib/useRefreshAt";
@@ -98,6 +98,8 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
   });
   const selectedSeatId = picked.floorId === floorId ? picked.seatId : null;
   const focusZoneId = picked.floorId === floorId ? picked.zoneId : null;
+  // 팀 칩에 마우스를 올리면 그 구역을 미리 진하게 (누르지 않아도 어느 색이 어디인지 바로 보인다)
+  const [hoverZoneId, setHoverZoneId] = useState<number | null>(null);
   const pinnedSeatId = picked.pinned ? selectedSeatId : null;
 
   const router = useRouter();
@@ -383,23 +385,30 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
               {map.floor.site.name} › <strong>{map.floor.name}</strong>
             </span>
             {map.zones.length > 0 && <span className={styles.sep} aria-hidden="true" />}
-            <div role="group" aria-label="팀 구역 강조" className={styles.chips}>
+            {/* 도면에는 구역 이름을 쓰지 않는다: 이 칩이 범례. 칩이 도면의 구역과 같은 색·테두리라 색만 보고 안다 */}
+            <div role="group" aria-label="팀 구역 (누르면 도면에서 그 구역만 진하게)" className={styles.chips}>
               {map.zones.map((zone) => {
                 const on = focusZoneId === zone.id;
+                // 한 팀 구역이 이 층에 둘 이상이면 이름이 같다: 구역 기호를 붙여 구분한다
+                const twin = map.zones.some((z) => z.id !== zone.id && z.name === zone.name);
                 return (
                   <button
                     key={zone.id}
                     type="button"
                     className={`${styles.chip} ${on ? styles.chipOn : ""}`}
                     data-color={zone.color_key}
+                    data-shared={zone.department === null}
                     style={zoneColorVars(zone.color_key)}
                     aria-pressed={on}
+                    onPointerEnter={(event) => event.pointerType === "mouse" && setHoverZoneId(zone.id)}
+                    onPointerLeave={() => setHoverZoneId(null)}
                     onClick={() =>
                       setPicked({ floorId, seatId: selectedSeatId, zoneId: on ? null : zone.id, pinned: picked.pinned })
                     }
                   >
-                    <span className={styles.swatch} aria-hidden="true" />
+                    {on ? <CheckIcon size={15} /> : <span className={styles.chipSeat} aria-hidden="true" />}
                     {zone.name}
+                    {twin && <span className={styles.chipCode}>{zone.code}</span>}
                   </button>
                 );
               })}
@@ -471,7 +480,7 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
               onZoomChange={setZoom}
               onFitZoom={setFitZoom}
               onScale={setPxPerMeter}
-              focusZoneId={focusZoneId}
+              focusZoneId={map.zones.some((z) => z.id === hoverZoneId) ? hoverZoneId : focusZoneId}
               visibleStatuses={visible}
               selectedSeatId={selectedSeatId}
               onSelectSeat={(seatId) => selectSeat(seatId === selectedSeatId ? null : seatId)}

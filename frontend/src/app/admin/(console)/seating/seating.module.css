@@ -534,6 +534,33 @@
   color: var(--ink);
 }
 
+/* 도면 위 팀 구역 색 범례: 직원 화면 팀 칩과 같은 모양(구역과 같은 채움·테두리, 공용은 점선). 누르는 것은 아님 */
+.zoneKey {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.zoneKey li {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 9px;
+  border: 2px solid var(--tc);
+  border-radius: 6px;
+  background: var(--tf);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.zoneKey li[data-shared="true"] {
+  border-style: dashed;
+}
+
 .check {
   display: flex;
   align-items: center;
@@ -1235,7 +1262,8 @@
   .legendConflict,
   .legendLocked,
   .statusChip,
-  .colorUsed {
+  .colorUsed,
+  .zoneKey li {
     font-size: 13px;
   }
 

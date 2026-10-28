@@ -1,5 +1,5 @@
 // 팀 구역 색. 기본 색(키 t0~t11, globals.css의 [data-color])과 관리자가 직접 고른 색(#rrggbb, DB zones.color_key)
-// 기본 색의 선(line)은 모두 흰 글자가 읽히는 진하기(흰색과 4.5:1 이상)다. 구역 이름표가 선 색 바탕에 흰 글자라서
+// 기본 색의 선(line)은 모두 흰 글자가 읽히는 진하기(흰색과 4.5:1 이상)다. 고른 팀 칩(도면 범례)이 선 색 바탕에 흰 글자라서
 import type { CSSProperties } from "react";
 
 export const ZONE_PALETTE: { key: string; label: string; line: string; fill: string }[] = [
