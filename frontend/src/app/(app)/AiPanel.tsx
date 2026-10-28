@@ -63,8 +63,17 @@ function storeConversation(id: number | null) {
   }
 }
 
-/** asPage: 패널이 도면 아래로 내려가는 좁은 화면이라 도면 화면 대신 이 화면만 보일 때 (페이지째 스크롤) */
-export default function AiPanel({ onClose, asPage = false }: { onClose: () => void; asPage?: boolean }) {
+/** asPage: 패널이 도면 아래로 내려가는 좁은 화면이라 도면 화면 대신 이 화면만 보일 때 (페이지째 스크롤).
+ *  hidden: 자리 정보가 위에 떠 있는 동안 숨긴다 (대화는 그대로 두고, 자리 선택을 풀면 다시 보인다) */
+export default function AiPanel({
+  onClose,
+  asPage = false,
+  hidden = false,
+}: {
+  onClose: () => void;
+  asPage?: boolean;
+  hidden?: boolean;
+}) {
   const router = useRouter();
   const closeRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLElement>(null);
@@ -216,6 +225,7 @@ export default function AiPanel({ onClose, asPage = false }: { onClose: () => vo
       ref={panelRef}
       id="ai-panel"
       className={styles.ai}
+      hidden={hidden}
       aria-labelledby="ai-title"
       onKeyDown={(event) => {
         if (event.key === "Escape") onClose();
