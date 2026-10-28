@@ -28,16 +28,28 @@ export function LogoSymbol({ size = 32, onDark = false, className }: { size?: nu
   );
 }
 
-/** 심볼 + "Office Map" 글자. size: 심볼 높이 px (글자 크기도 여기에 맞춘다) */
-export default function Logo({ size = 28, className }: { size?: number; className?: string }) {
+/**
+ * 심볼 + "Office Map" 글자. size: 심볼 높이 px, 또는 화면 폭에 따라 바뀌는 CSS 길이("clamp(…)"). 글자 크기도 여기에 맞춘다.
+ * onDark면 짙은 바탕 위용 흰 글자
+ */
+export default function Logo({
+  size = 28,
+  onDark = false,
+  className,
+}: {
+  size?: number | string;
+  onDark?: boolean;
+  className?: string;
+}) {
   return (
     <span
       className={`${styles.logo} ${className ?? ""}`}
-      style={{ "--logo-h": `${size}px` } as CSSProperties}
+      style={{ "--logo-h": typeof size === "number" ? `${size}px` : size } as CSSProperties}
+      data-on-dark={onDark || undefined}
       role="img"
       aria-label="Office Map"
     >
-      <LogoSymbol size={size} />
+      <LogoSymbol size={typeof size === "number" ? size : undefined} onDark={onDark} />
       <span className={styles.word} aria-hidden="true">
         Office Map
       </span>

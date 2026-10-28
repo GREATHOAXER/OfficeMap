@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import styles from "@/app/login/login.module.css";
-import { LEVELS } from "@/lib/admin";
 import { fetchAdmin, fetchLoginInfo, fetchMe } from "@/lib/api";
 import { safeNext } from "@/lib/loginRedirect";
 import AdminLoginForm from "./AdminLoginForm";
@@ -33,37 +32,18 @@ export default async function AdminLoginPage({ searchParams }: PageProps<"/admin
           : null;
 
   return (
-    <div className={styles.page}>
+    <div className={`${styles.page} ${own.page}`}>
+      {/* 로그인 전에는 로고와 "관리자 페이지"만: 관리자 단계·범위 같은 안쪽 구조는 들어온 뒤 첫 화면에서 보여 준다 */}
       <section className={`${styles.intro} ${own.intro}`}>
-        <strong className={styles.brand}>
-          오피스 안내 <span className={own.modeTag}>관리자</span>
-        </strong>
-        <div className={styles.introBody}>
-          <h1 className={styles.headline}>
-            사업장·층·좌석 배치를
-            <br />
-            맡은 범위 안에서 관리합니다.
-          </h1>
-          <p className={styles.lead}>
-            관리자 권한이 있는 직원만 들어올 수 있습니다. 상위 관리자가 맡은 범위 안의 아래 단계 관리자를 지정하고,
-            각자 맡은 범위 안에서만 편집합니다.
-          </p>
-          <ol className={own.levels}>
-            {LEVELS.map((l) => (
-              <li key={l.level}>
-                <span className="mono">{l.level === 0 ? "최종" : `LEVEL ${l.level}`}</span>
-                <strong>{l.name}</strong>
-                <span>범위: {l.scope}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
+        <h1 className={own.brand}>
+          <Logo size="clamp(30px, 4.2vw, 56px)" onDark />
+          <span className={own.brandLabel}>관리자 페이지</span>
+        </h1>
         <p className={styles.introFoot}>사내망 전용 · 관리자 로그인은 모두 기록됩니다</p>
       </section>
 
       <main className={styles.formSide}>
         <div className={styles.formBox}>
-          <Logo size={36} className={styles.logo} />
           <div>
             <h2 className={`${styles.title} ${own.title}`}>
               관리자 로그인 <span className={own.badge}>관리자</span>
