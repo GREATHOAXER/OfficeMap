@@ -376,7 +376,21 @@
 .statusOptions {
   display: flex;
   flex-direction: column;
+  gap: 12px;
+}
+
+/* 자리에 있어요 / 자리에 없어요: 폭이 넓으면 두 칸씩 */
+.statusGroup {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   gap: 6px;
+}
+
+.statusGroupLabel {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
 }
 
 .statusOption {
@@ -384,8 +398,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 48px;
-  padding: 0 12px;
+  min-height: 52px;
+  padding: 6px 12px;
   border: 1px solid var(--divider);
   border-radius: 8px;
   cursor: pointer;
@@ -409,7 +423,7 @@
 
 .statusOption:has(input:checked) {
   border: 2px solid var(--ink);
-  padding: 0 11px;
+  padding: 5px 11px;
 }
 
 .statusOption:has(input:focus-visible),
@@ -423,10 +437,28 @@
   font-weight: 600;
 }
 
+/* 상태 이름 아래에 설명 */
+.statusOptionText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .statusOptionHint {
-  margin-left: auto;
   font-size: 12px;
   color: var(--muted);
+}
+
+/* "마지막 날 고르기": 날짜 단추 */
+.untilRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.untilRow .durationsLabel {
+  margin-bottom: 0;
 }
 
 .statusField {
@@ -925,6 +957,20 @@
   gap: 2px 6px;
 }
 
+/* 휴가·출장 등의 기간 (휴가 · 10/31(금)까지) */
+.popoverPeriod,
+.statusPeriod {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.popoverPeriod::before,
+.statusPeriod::before {
+  content: "· ";
+  font-weight: 400;
+  color: var(--muted);
+}
+
 /* 상태 메시지는 길면 다음 줄 전체를 쓴다 (줄 첫머리가 "·"로 시작하지 않게 구분점은 넣지 않는다) */
 .popoverMessage {
   flex-basis: 100%;
@@ -1227,13 +1273,10 @@
 
 /* 재실 표시는 이름 바로 앞에 붙여서 어느 자리 것인지 헷갈리지 않게 한다. 확대하면 같이 커진다 */
 .seatMark {
+  --mk-ring: max(2px, 0.18cqw); /* 빈 모양(부재·휴가·교육 등)의 테두리: 확대하면 같이 굵어진다 */
   width: max(9px, 1em);
   height: max(9px, 1em);
   margin-right: max(2px, 0.2em);
-}
-
-.seatMark[data-status="AWAY"] {
-  border-width: max(2px, 0.18cqw);
 }
 
 /* 의자: 책상에 붙은 반원 */

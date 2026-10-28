@@ -95,7 +95,18 @@ export async function fetchLoginInfo(): Promise<LoginInfo> {
 
 // 자리·재실 현황 ----------------------------------------------------------------
 
-export type PresenceStatus = "AVAILABLE" | "DO_NOT_DISTURB" | "IN_MEETING" | "AWAY";
+/** 자리에 있음 4가지 · 자리에 없음 6가지 (lib/presence.ts, 서버 presence.py와 같다) */
+export type PresenceStatus =
+  | "AVAILABLE"
+  | "DO_NOT_DISTURB"
+  | "IN_MEETING"
+  | "STEPPED_OUT"
+  | "OUTSIDE"
+  | "BUSINESS_TRIP"
+  | "REMOTE"
+  | "TRAINING"
+  | "VACATION"
+  | "AWAY";
 
 /** 도면 위 영역. 모두 도면 너비·높이 대비 비율(0~1) */
 export type Rect = { x: number; y: number; w: number; h: number };
@@ -227,8 +238,8 @@ export type MySeat = {
   change: { at: string; seat: SeatRef | null } | null;
 };
 
-/** 재실 상태 자동 해제: 해제 안 함 / 30분 / 1시간 / 퇴근 시 / 지금 해제 시각 그대로 */
-export type PresenceDuration = "NONE" | "30M" | "1H" | "END_OF_DAY" | "KEEP";
+/** 재실 상태 자동 해제: 해제 안 함 / 30분 / 1시간 / 퇴근 시 / 지금 해제 시각 그대로 / 그날까지(until, 휴가·출장) */
+export type PresenceDuration = "NONE" | "30M" | "1H" | "END_OF_DAY" | "KEEP" | "UNTIL_DATE";
 
 /** 내 재실 상태 + 지금 "퇴근 시"를 고르면 풀리는 시각 (퇴근 시각이 지났으면 오늘 자정) */
 export type MyPresenceInfo = { presence: MyPresence; end_of_day_at: string; workday_end: string };
@@ -280,7 +291,7 @@ export type EmployeeHit = {
     site_name: string;
     color_key: string | null;
   } | null;
-  presence: { status: PresenceStatus; message: string | null } | null;
+  presence: { status: PresenceStatus; message: string | null; expires_at: string | null } | null;
   /** 시간을 같이 넘겨 검색했을 때만: 그 시간에 겹치는 다른 회의 / 휴가·외근 */
   busy: { title: string; starts_at: string; ends_at: string } | null;
   absence: "LEAVE" | "BUSINESS_TRIP" | "REMOTE" | null;

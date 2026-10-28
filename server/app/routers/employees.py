@@ -88,6 +88,7 @@ def find_employees(conn: Connection, where: str, order: str, params: dict[str, A
                si.name AS site_name, z.color_key,
                CASE WHEN p.expires_at IS NULL OR p.expires_at > now() THEN p.status END AS presence_status,
                CASE WHEN p.expires_at IS NULL OR p.expires_at > now() THEN p.message END AS presence_message,
+               CASE WHEN p.expires_at IS NULL OR p.expires_at > now() THEN p.expires_at END AS presence_expires_at,
                busy.title AS busy_title, busy.starts_at AS busy_starts_at, busy.ends_at AS busy_ends_at,
                absence.kind AS absence_kind, dp.path AS dept_path, {PROFILE_COLUMNS}
         FROM employees e
@@ -276,7 +277,13 @@ def _hit(row: dict[str, Any]) -> dict[str, Any]:
             else None
         ),
         "presence": (
-            {"status": row["presence_status"], "message": row["presence_message"]} if row["presence_status"] else None
+            {
+                "status": row["presence_status"],
+                "message": row["presence_message"],
+                "expires_at": row["presence_expires_at"],  # 휴가·출장 등 "10/31까지"를 보여 준다
+            }
+            if row["presence_status"]
+            else None
         ),
         "busy": (
             {"title": row["busy_title"], "starts_at": row["busy_starts_at"], "ends_at": row["busy_ends_at"]}

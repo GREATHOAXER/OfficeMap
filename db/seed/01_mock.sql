@@ -403,21 +403,29 @@ FROM (VALUES
     ('20190005', 'AVAILABLE',      '편하게 자리로 찾아오세요',       NULL::timestamptz),
     ('20150004', 'IN_MEETING',     '대회의실 701 · 14:30 종료 예정', pg_temp.kst(0, '14:30')),
     ('20170008', 'DO_NOT_DISTURB', '장애 대응 중 · 메신저로 연락',   pg_temp.kst(0, '18:00')),
-    ('20130003', 'AWAY',           '연차 휴가 · 내일 복귀',          pg_temp.kst(1, '00:00')),
+    ('20130003', 'VACATION',       '연차 · 급한 일은 팀 메신저로',   pg_temp.kst(1, '00:00')),     -- 오늘까지
     ('20200007', 'AVAILABLE',      NULL,                            pg_temp.kst(0, '19:00')),   -- 퇴근 시 자동 해제
     ('20090001', 'AVAILABLE',      NULL,                            NULL),
     ('20120002', 'AVAILABLE',      '오늘은 7F 자율석에 있어요',      pg_temp.kst(0, '18:00')),
-    ('20100009', 'DO_NOT_DISTURB', '임원 일정 조율 중',              NULL)
+    ('20100009', 'DO_NOT_DISTURB', '임원 일정 조율 중',              NULL),
+    ('20180010', 'BUSINESS_TRIP',  '부산 센터 출장 · 메신저 가능',    pg_temp.kst(3, '00:00'))      -- 모레까지
 ) AS v(emp_no, status, message, expires_at)
 JOIN employees e ON e.emp_no = v.emp_no;
 
--- 나머지 직원: 대부분 방문 가능, 일부는 방해 금지·회의 중·부재, 일부는 상태를 정하지 않음
-INSERT INTO presence_status (employee_id, status, message, updated_at)
-SELECT e.id,
-       (ARRAY['AVAILABLE', 'AVAILABLE', 'AVAILABLE', 'AVAILABLE', 'DO_NOT_DISTURB', 'IN_MEETING', 'AWAY'])[1 + e.id % 7],
-       (ARRAY[NULL, NULL, NULL, NULL, '집중 업무 중', '회의 중', '외근'])[1 + e.id % 7],
-       least(now(), pg_temp.kst(0, '09:00'))
+-- 나머지 직원: 대부분 재실, 일부는 방해 금지·회의 중·잠시 자리 비움·외근·재택·교육·휴가, 일부는 상태를 정하지 않음
+-- (휴가·교육은 며칠 가는 상태: 마지막 날 다음 날 0시에 풀린다)
+INSERT INTO presence_status (employee_id, status, message, expires_at, updated_at)
+SELECT e.id, v.status, v.message, v.expires_at, least(now(), pg_temp.kst(0, '09:00'))
 FROM employees e
+CROSS JOIN LATERAL (
+    SELECT (ARRAY['AVAILABLE', 'AVAILABLE', 'AVAILABLE', 'AVAILABLE', 'AVAILABLE', 'DO_NOT_DISTURB', 'IN_MEETING',
+                  'STEPPED_OUT', 'OUTSIDE', 'REMOTE', 'TRAINING', 'VACATION'])[1 + e.id % 12] AS status,
+           (ARRAY[NULL, NULL, NULL, NULL, NULL, '집중 업무 중', '회의 중', '점심 식사', '고객사 방문 · 16시 복귀',
+                  NULL, '신입 직무 교육', '여름 휴가 · 급한 일은 팀장님께'])[1 + e.id % 12] AS message,
+           (ARRAY[NULL, NULL, NULL, NULL, NULL, NULL, NULL, pg_temp.kst(0, '13:00'), pg_temp.kst(0, '18:00'),
+                  pg_temp.kst(1, '00:00'), pg_temp.kst(2, '00:00'), pg_temp.kst(4, '00:00')])[1 + e.id % 12]
+               AS expires_at
+) v
 WHERE e.emp_no LIKE '21%' AND e.id % 9 <> 0;
 
 -- ② 예약 ---------------------------------------------------------------------

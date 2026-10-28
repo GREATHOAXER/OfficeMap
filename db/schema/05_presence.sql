@@ -5,6 +5,7 @@
 -- 자동 해제(30분, 1시간, 퇴근 시)는 expires_at으로 처리: 지난 값은 화면에서 기본 상태로 본다
 CREATE TABLE presence_status (
     employee_id bigint      PRIMARY KEY REFERENCES employees(id),
+    -- 상태 종류는 14_presence_statuses.sql에서 늘렸다 (외근·출장·재택·교육·휴가·잠시 자리 비움)
     status      varchar(15) NOT NULL CHECK (status IN ('AVAILABLE', 'DO_NOT_DISTURB', 'IN_MEETING', 'AWAY')),
     message     varchar(100),                             -- 예: 15시까지 집중 업무
     expires_at  timestamptz,                              -- NULL이면 직접 바꿀 때까지 유지

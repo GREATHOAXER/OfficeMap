@@ -9,8 +9,11 @@ import { useLivePresence, withLiveMine } from "@/lib/livePresence";
 import {
   NO_STATUS_LABEL,
   PRESENCE_HINT,
+  PRESENCE_IN,
   PRESENCE_LABEL,
   presenceMessage,
+  presencePeriod,
+  presenceUntil,
   STATUS_FILTERS,
   type StatusFilter,
 } from "@/lib/presence";
@@ -29,7 +32,7 @@ type Props = {
 };
 
 /**
- * 내 재실 상태 (초안). 디자인 시안의 "내 재실 상태"(상태 4가지·메시지·자동 해제)에
+ * 내 재실 상태 (초안). 디자인 시안의 "내 재실 상태"(상태·메시지·자동 해제)에
  * 지금 내 상태, 오늘 내 일정, 우리 팀 재실 현황을 붙였다. 팀 현황과 내 상태는 실시간으로 바뀐다
  */
 export default function PresenceView({ myEmpNo, info, team, upcoming, today }: Props) {
@@ -44,14 +47,21 @@ export default function PresenceView({ myEmpNo, info, team, upcoming, today }: P
   const members: EmployeeHit[] = team.members.map((m) => {
     const change = live.get(m.emp_no);
     if (!change || Date.parse(change.at) <= fetchedAt) return m;
-    return { ...m, presence: change.presence && { status: change.presence.status, message: change.presence.message } };
+    return {
+      ...m,
+      presence: change.presence && {
+        status: change.presence.status,
+        message: change.presence.message,
+        expires_at: change.presence.expires_at,
+      },
+    };
   });
   const me = members.find((m) => m.is_me);
-  // 상태 4가지 + 상태를 정하지 않은 사람
+  // 상태별 인원 + 상태를 정하지 않은 사람. 자리에 없는 상태(외근·휴가 등)는 그 상태인 사람이 있을 때만 단추로 보인다
   const counts = STATUS_FILTERS.map((status) => ({
     status,
     count: members.filter((m) => (m.presence?.status ?? "NONE") === status).length,
-  }));
+  })).filter(({ status, count }) => count > 0 || status === "NONE" || PRESENCE_IN.includes(status) || status === filter);
   // 서버가 준 순서 그대로: 직급 순 → 입사연도 → 입사일 (server/app/people_order.py, 모든 사람 목록이 같은 순서)
   const shown = members.filter((m) => !filter || (m.presence?.status ?? "NONE") === filter);
 
@@ -108,7 +118,7 @@ export default function PresenceView({ myEmpNo, info, team, upcoming, today }: P
                   {!mine
                     ? "–"
                     : mine.expires_at
-                      ? `${hhmm.format(new Date(mine.expires_at))}에 자동으로 풀려요`
+                      ? `${presenceUntil(mine.expires_at)} · 그 뒤 자동으로 풀려요`
                       : "직접 바꿀 때까지 유지"}
                 </dd>
                 <dt>내 자리</dt>
@@ -204,6 +214,7 @@ export default function PresenceView({ myEmpNo, info, team, upcoming, today }: P
                       </span>
                       <span className={styles.muted} title={presenceMessage(m.presence) || undefined}>
                         {m.presence ? PRESENCE_LABEL[m.presence.status] : NO_STATUS_LABEL}
+                        {presencePeriod(m.presence) && ` · ${presencePeriod(m.presence)}`}
                         {presenceMessage(m.presence) && ` · ${presenceMessage(m.presence)}`}
                       </span>
                     </span>

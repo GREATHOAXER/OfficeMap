@@ -3,6 +3,7 @@
 내 상태 읽기·바꾸기·지우기와, 동료들의 상태가 바뀔 때마다 화면에 바로 보내는 실시간 알림(SSE).
 """
 
+import datetime as dt
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -19,10 +20,26 @@ from app.session import CurrentUser, load_session
 
 router = APIRouter(prefix="/api/presence", tags=["presence"])
 
-PresenceStatus = Literal["AVAILABLE", "DO_NOT_DISTURB", "IN_MEETING", "AWAY"]
+# 자리에 있음: 재실 · 방해 금지 · 회의 중 · 잠시 자리 비움 / 자리에 없음: 외근 · 출장 · 재택 · 교육 · 휴가 · 부재
+# (DB db/schema/14_presence_statuses.sql, 화면 frontend/src/lib/presence.ts와 같아야 한다)
+PresenceStatus = Literal[
+    "AVAILABLE",
+    "DO_NOT_DISTURB",
+    "IN_MEETING",
+    "STEPPED_OUT",
+    "OUTSIDE",
+    "BUSINESS_TRIP",
+    "REMOTE",
+    "TRAINING",
+    "VACATION",
+    "AWAY",
+]
 # 자동 해제: 해제 안 함 / 30분 뒤 / 1시간 뒤 / 퇴근 시(오늘 퇴근 시각, 이미 지났으면 자정)
 # / 지금 해제 시각 그대로 (메시지만 고칠 때 해제 시각이 바뀌지 않게)
-Duration = Literal["NONE", "30M", "1H", "END_OF_DAY", "KEEP"]
+# / 그날까지 (until 날짜가 끝나는 자정, 휴가·출장처럼 며칠 가는 상태)
+Duration = Literal["NONE", "30M", "1H", "END_OF_DAY", "KEEP", "UNTIL_DATE"]
+MAX_UNTIL_DAYS = 366  # "그날까지"는 1년 안
+KST = dt.timezone(dt.timedelta(hours=9), "KST")
 
 # "퇴근 시"의 해제 시각: 오늘 퇴근 시각, 이미 지났으면 오늘 자정. %(workday_end)s 를 받는다
 END_OF_DAY_SQL = """
@@ -37,6 +54,7 @@ class PresenceUpdate(BaseModel):
     status: PresenceStatus
     message: str | None = Field(default=None, max_length=100)
     duration: Duration = "END_OF_DAY"
+    until: dt.date | None = None  # duration이 UNTIL_DATE일 때 마지막 날 (그날 포함, KST)
 
 
 @router.get("/me")
@@ -80,6 +98,10 @@ def my_team(user: CurrentUser) -> dict[str, Any]:
 @router.put("/me")
 def set_my_presence(body: PresenceUpdate, user: CurrentUser) -> dict[str, Any]:
     message = (body.message or "").strip() or None
+    if body.duration == "UNTIL_DATE":
+        today = dt.datetime.now(KST).date()
+        if body.until is None or not today <= body.until <= today + dt.timedelta(days=MAX_UNTIL_DAYS):
+            raise HTTPException(status_code=422, detail={"code": "BAD_UNTIL", "max_days": MAX_UNTIL_DAYS})
     with pool.connection() as conn:
         workday_end = get_setting(conn, "presence.workday_end", "18:00")
         row = conn.execute(
@@ -89,6 +111,8 @@ def set_my_presence(body: PresenceUpdate, user: CurrentUser) -> dict[str, Any]:
                     WHEN '30M' THEN now() + interval '30 minutes'
                     WHEN '1H' THEN now() + interval '1 hour'
                     WHEN 'END_OF_DAY' THEN {END_OF_DAY_SQL}
+                    -- 그날까지: 마지막 날 다음 날 0시 (KST)
+                    WHEN 'UNTIL_DATE' THEN (%(until)s::date + 1)::timestamp AT TIME ZONE 'Asia/Seoul'
                     -- 그대로: 지금 걸려 있는 해제 시각. 없거나 이미 지났으면 퇴근 시
                     WHEN 'KEEP' THEN coalesce(
                         (SELECT p.expires_at FROM presence_status p
@@ -105,6 +129,7 @@ def set_my_presence(body: PresenceUpdate, user: CurrentUser) -> dict[str, Any]:
             """,
             {
                 "duration": body.duration,
+                "until": body.until,
                 "workday_end": workday_end,
                 "employee_id": user["employee_id"],
                 "status": body.status,

@@ -85,6 +85,15 @@ def main() -> None:
         codes = {s.get("code") for s in (floor or {}).get("seats", [])}
         check("도면에 내 자리가 보임", seat["code"] in codes, sorted(codes)[:10])
     expect(user, "내 재실 상태", "GET", "/api/presence/me")
+    # 휴가처럼 며칠 가는 상태는 마지막 날이 있어야 한다 (막히는지만 본다: 상태를 바꾸지 않는다)
+    expect(
+        user,
+        "'그날까지'인데 날짜가 없으면 막힘",
+        "PUT",
+        "/api/presence/me",
+        {"status": "VACATION", "duration": "UNTIL_DATE"},
+        status=422,
+    )
     expect(user, "회의실 예약표", "GET", "/api/rooms/day")
     expect(user, "내 예약", "GET", "/api/reservations/mine")
     expect(user, "직원은 관리자 API 못 씀", "GET", "/api/admin/overview", status=401)

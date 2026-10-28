@@ -5,8 +5,16 @@ import Avatar from "@/components/Avatar";
 import { CloseIcon } from "@/components/icons";
 import type { EmployeeHit, FloorMap, Occupant, Seat } from "@/lib/api";
 import { agoText } from "@/lib/dates";
-import { NO_STATUS_LABEL, PRESENCE_LABEL, PRESENCE_ORDER, presenceMessage } from "@/lib/presence";
-import { hhmm, roomStatusText } from "@/lib/rooms";
+import {
+  NO_STATUS_LABEL,
+  PRESENCE_IN,
+  PRESENCE_LABEL,
+  PRESENCE_ORDER,
+  presenceMessage,
+  presencePeriod,
+  presenceUntil,
+} from "@/lib/presence";
+import { roomStatusText } from "@/lib/rooms";
 import { useNow } from "@/lib/useNow";
 import styles from "./office.module.css";
 import { zoneColorVars } from "@/lib/zoneColors";
@@ -63,6 +71,9 @@ export default function SeatPanel({ map, seat, myEmpNo, onClear }: Props) {
                 <strong>
                   <span className="mk" data-status={occupant.presence.status} aria-hidden="true" />
                   {PRESENCE_LABEL[occupant.presence.status]}
+                  {presencePeriod(occupant.presence) && (
+                    <span className={styles.statusPeriod}>{presencePeriod(occupant.presence)}</span>
+                  )}
                 </strong>
                 {presenceMessage(occupant.presence) && <span>{presenceMessage(occupant.presence)}</span>}
               </>
@@ -159,7 +170,8 @@ function FloorSummaryCard({ map }: { map: FloorMap }) {
         </div>
       </dl>
       <ul className={styles.presenceList}>
-        {PRESENCE_ORDER.map((status) => (
+        {/* 자리에 있는 상태 4가지는 늘, 자리에 없는 상태(외근·휴가 등)는 그 상태인 사람이 있을 때만 */}
+        {PRESENCE_ORDER.filter((status) => PRESENCE_IN.includes(status) || counts.get(status)).map((status) => (
           <li key={status}>
             <span className="mk" data-status={status} aria-hidden="true" />
             {PRESENCE_LABEL[status]}
@@ -208,17 +220,19 @@ function SharedFloorCard({ map }: { map: FloorMap }) {
   );
 }
 
-/** 언제 바꾼 상태인지, 언제 풀리는지. 오래된 상태(예: 어제 정한 "방문 가능")를 알아보게 */
+/** 언제 바꾼 상태인지, 언제 풀리는지. 오래된 상태(예: 어제 정한 "재실")를 알아보게 */
 function Freshness({ presence }: { presence: Occupant["presence"] }) {
   const now = useNow();
   if (!presence) return null;
   const ago = presence.updated_at ? agoText(presence.updated_at, now) : "";
   if (!ago && !presence.expires_at) return null;
+  // 기간을 상태 이름 옆에 이미 보여 줬으면(휴가 · 10/31(금)까지) 여기서는 바꾼 때만
+  const until = presencePeriod(presence) ? null : presence.expires_at ? presenceUntil(presence.expires_at) : "직접 바꿀 때까지 유지";
   return (
     <span className={styles.freshness}>
       {ago && `${ago} 변경`}
-      {ago && " · "}
-      {presence.expires_at ? `${hhmm.format(new Date(presence.expires_at))}에 자동 해제` : "직접 바꿀 때까지 유지"}
+      {ago && until && " · "}
+      {until}
     </span>
   );
 }
@@ -249,6 +263,7 @@ export function NoSeatCard({ hit, onClose }: { hit: EmployeeHit; onClose: () => 
           <strong>
             <span className="mk" data-status={hit.presence.status} aria-hidden="true" />
             {PRESENCE_LABEL[hit.presence.status]}
+            {presencePeriod(hit.presence) && <span className={styles.statusPeriod}>{presencePeriod(hit.presence)}</span>}
           </strong>
         ) : (
           <span>{NO_STATUS_LABEL}</span>

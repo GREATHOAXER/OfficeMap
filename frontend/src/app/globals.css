@@ -20,6 +20,12 @@
   --st-available: #16a34a;
   --st-dnd: #dc2626;
   --st-meeting: #7c3aed;
+  --st-stepped: #d97706;
+  --st-outside: #c2410c;
+  --st-trip: #2563eb;
+  --st-remote: #0d9488;
+  --st-training: #be185d;
+  --st-vacation: #0284c7;
   --st-away: #8a8a85;
 
   /* 팀 구역 색 (t1~t4, t0 = 공용) */
@@ -195,10 +201,10 @@ a:hover {
   --tf: var(--t11-fill);
 }
 
-/* 재실 상태 표시. 색만으로 구분하지 않도록 모양이 다르다:
-   채운 원 = 방문 가능, 가로줄 원 = 방해 금지, 회색 네모 = 회의 중, 점선 원 = 부재 */
 /* 재실 표시: 멀리서도 구분되게 색과 모양을 둘 다 다르게 한다 (색을 못 보는 사람도 모양으로 구분)
-   방문 가능 = 초록 원, 방해 금지 = 빨간 원에 흰 가로줄, 회의 중 = 보라 네모, 부재 = 회색 점선 원 */
+   자리에 있음: 재실 = 초록 원, 방해 금지 = 빨간 원에 흰 가로줄, 회의 중 = 보라 네모, 잠시 자리 비움 = 주황 반쯤 찬 원
+   자리에 없음: 외근 = 갈색 마름모, 출장 = 파란 세모, 재택 = 청록 집, 교육 = 분홍 빈 네모, 휴가 = 하늘색 고리,
+   부재 = 회색 점선 원. 빈 모양의 테두리 두께는 --mk-ring (기본 2px, 도면 위·큰 표시는 더 굵게) */
 .mk {
   display: inline-block;
   position: relative;
@@ -228,8 +234,34 @@ a:hover {
   border-radius: 22%;
   background: var(--st-meeting);
 }
+.mk[data-status="STEPPED_OUT"] {
+  border: var(--mk-ring, 2px) solid var(--st-stepped);
+  background: linear-gradient(90deg, var(--st-stepped) 50%, transparent 50%);
+}
+.mk[data-status="OUTSIDE"] {
+  border-radius: 2px;
+  background: var(--st-outside);
+  transform: rotate(45deg) scale(0.78);
+}
+.mk[data-status="BUSINESS_TRIP"] {
+  border-radius: 0;
+  background: var(--st-trip);
+  clip-path: polygon(50% 2%, 100% 94%, 0 94%);
+}
+.mk[data-status="REMOTE"] {
+  border-radius: 0;
+  background: var(--st-remote);
+  clip-path: polygon(50% 0, 100% 46%, 86% 46%, 86% 100%, 14% 100%, 14% 46%, 0 46%);
+}
+.mk[data-status="TRAINING"] {
+  border-radius: 22%;
+  border: calc(var(--mk-ring, 2px) + 0.5px) solid var(--st-training);
+}
+.mk[data-status="VACATION"] {
+  border: calc(var(--mk-ring, 2px) + 1px) solid var(--st-vacation);
+}
 .mk[data-status="AWAY"] {
-  border: 2px dashed var(--st-away);
+  border: var(--mk-ring, 2px) dashed var(--st-away);
 }
 
 .visually-hidden {

@@ -18,8 +18,15 @@ import Avatar from "@/components/Avatar";
 import { CloseIcon } from "@/components/icons";
 import type { FloorMap, Occupant, Rect, Room, Seat, ShapeStyle, Zone } from "@/lib/api";
 import { agoText } from "@/lib/dates";
-import { NO_STATUS_LABEL, PRESENCE_LABEL, presenceMessage, type StatusFilter } from "@/lib/presence";
-import { hhmm, roomStatusText } from "@/lib/rooms";
+import {
+  NO_STATUS_LABEL,
+  PRESENCE_LABEL,
+  presenceMessage,
+  presencePeriod,
+  presenceUntil,
+  type StatusFilter,
+} from "@/lib/presence";
+import { roomStatusText } from "@/lib/rooms";
 import { useMediaQuery } from "@/lib/useMediaQuery";
 import { seatRatio } from "@/lib/planGeometry";
 import { baseSeatFont, compactAt, minPlanWidth, type SeatBox, seatBox, seatFont } from "@/lib/seatLabel";
@@ -749,18 +756,22 @@ export function PresenceLine({ occupant }: { occupant: Occupant }) {
   }
   const ago = presence.updated_at ? agoText(presence.updated_at, now) : "";
   const message = presenceMessage(presence);
+  // 휴가·출장처럼 자리에 없는 상태는 기간을 이름 옆에 (휴가 · 10/31(금)까지), 아니면 아래 줄에 언제 풀리는지
+  const period = presencePeriod(presence);
+  const until = !period && presence.expires_at ? presenceUntil(presence.expires_at) : null;
   return (
     <>
       <span className={styles.popoverStatus}>
         <span className="mk" data-status={presence.status} aria-hidden="true" />
         <strong>{PRESENCE_LABEL[presence.status]}</strong>
+        {period && <span className={styles.popoverPeriod}>{period}</span>}
         {message && <span className={styles.popoverMessage}>{message}</span>}
       </span>
-      {(ago || presence.expires_at) && (
+      {(ago || until) && (
         <span className={styles.popoverMuted}>
           {ago && `${ago} 변경`}
-          {ago && presence.expires_at && " · "}
-          {presence.expires_at && `${hhmm.format(new Date(presence.expires_at))}에 자동 해제`}
+          {ago && until && " · "}
+          {until}
         </span>
       )}
     </>

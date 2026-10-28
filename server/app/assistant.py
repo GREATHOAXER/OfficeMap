@@ -46,7 +46,18 @@ MAX_ROWS = 80  # 대화 하나에 쌓을 수 있는 줄 수. 넘으면 새 대�
 PROPOSAL_LIMIT = 3  # 질문 하나에 보여 줄 예약 제안 수
 
 WEEKDAYS = "월화수목금토일"
-PRESENCE = {"AVAILABLE": "방문 가능", "DO_NOT_DISTURB": "방해 금지", "IN_MEETING": "회의 중", "AWAY": "부재"}
+PRESENCE = {
+    "AVAILABLE": "재실",
+    "DO_NOT_DISTURB": "방해 금지",
+    "IN_MEETING": "회의 중",
+    "STEPPED_OUT": "잠시 자리 비움",
+    "OUTSIDE": "외근",
+    "BUSINESS_TRIP": "출장",
+    "REMOTE": "재택",
+    "TRAINING": "교육",
+    "VACATION": "휴가",
+    "AWAY": "부재",
+}
 ABSENCE = {"LEAVE": "휴가", "BUSINESS_TRIP": "출장·외근", "REMOTE": "재택"}
 
 
@@ -209,6 +220,17 @@ def _free_gaps(busy: list[tuple[int, int]], open_start: int, open_end: int, afte
     return [f"{_clock(a)}-{_clock(b)}" for a, b in gaps if b > a]
 
 
+def _presence_until(expires_at: dt.datetime | None) -> str:
+    """상태가 풀리는 때: 다른 날까지 가면(휴가·출장) " (10/31까지)", 오늘 안에 풀리면 " (18:00까지)" """
+    if expires_at is None:
+        return ""
+    at = expires_at.astimezone(KST)
+    if at.date() == dt.datetime.now(KST).date():
+        return f" ({at:%H:%M}까지)"
+    last = at - dt.timedelta(minutes=1) if (at.hour, at.minute) == (0, 0) else at  # 자정에 풀리면 그 전날까지
+    return f" ({last.month}/{last.day}까지)"
+
+
 def _person(hit: dict[str, Any]) -> dict[str, Any]:
     seat = hit["seat"]
     busy = hit["busy"]
@@ -222,6 +244,7 @@ def _person(hit: dict[str, Any]) -> dict[str, Any]:
         # 상태를 따로 정하지 않았으면 null (자리에 있는지는 모름)
         "presence": (
             PRESENCE.get(presence["status"], presence["status"])
+            + _presence_until(presence.get("expires_at"))
             + (f" — {presence['message']}" if presence["message"] else "")
             if presence
             else None
