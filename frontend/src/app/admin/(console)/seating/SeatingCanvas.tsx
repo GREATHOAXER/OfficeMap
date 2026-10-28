@@ -9,7 +9,7 @@ import { seatRatio } from "@/lib/planGeometry";
 import type { Layout, Person } from "@/lib/seating";
 import { baseSeatFont, compactAt, isVertical, minPlanWidth, seatBox, seatFont } from "@/lib/seatLabel";
 import { useTouchPan } from "@/lib/useTouchPan";
-import { zonePieces, zoneTags } from "@/lib/zoneShape";
+import { zonePieces } from "@/lib/zoneShape";
 import styles from "./seating.module.css";
 import { zoneColorVars } from "@/lib/zoneColors";
 
@@ -268,6 +268,7 @@ export default function SeatingCanvas(props: Props) {
               </div>
             ),
         )}
+        {/* 구역은 색으로만 (직원 화면과 같다). 이름은 도면 위 색 범례 줄(SeatingEditor)과 마우스를 올렸을 때 */}
         {pieces.map(({ zone, rect }, i) => (
           <div
             key={`${zone.id}-${i}`}
@@ -275,19 +276,8 @@ export default function SeatingCanvas(props: Props) {
             data-color={zone.color_key}
             data-shared={zone.department === null}
             style={{ ...rectStyle(rect), ...zoneColorVars(zone.color_key) }}
+            title={`${zone.name} · ${zone.code}구역${!zone.editable && !plain ? " · 잠김" : ""}`}
           />
-        ))}
-        {/* 이름표는 모든 구역을 칠한 뒤에 그려서 다른 구역 조각에 가려지지 않게 (조각마다, 조각 안에) */}
-        {zoneTags(pieces, plan).map(({ zone, x, y, maxW }, i) => (
-          <span
-            key={`tag-${zone.id}-${i}`}
-            className={`${office.zoneTag} ${focusZones && !focusZones.has(zone.id) ? styles.dim : ""}`}
-            data-color={zone.color_key}
-            style={{ left: pct(x), top: pct(y), maxWidth: pct(maxW), ...zoneColorVars(zone.color_key) }}
-          >
-            {zone.name} · {zone.code}
-            {!zone.editable && !plain && " · 잠김"}
-          </span>
         ))}
         {data.seats.map((seat) => {
           const view = viewOf(seat);

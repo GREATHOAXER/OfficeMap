@@ -4,7 +4,7 @@
 import type { Rect, ZoneShape } from "./api";
 import { seatRatio } from "./planGeometry";
 
-// 여백 (m). 도면 크기로 나눠 비율로 쓴다. 위쪽 여백은 구역 이름표 자리
+// 여백 (m). 도면 크기로 나눠 비율로 쓴다. 위쪽은 의자 자리까지 조금 넉넉하게
 const NEAR_X = 2.5; // 좌석 사이가 이보다 가까우면 한 덩어리
 const NEAR_Y = 1.5;
 const PAD_X = 0.5;
@@ -75,42 +75,4 @@ export function zonePieces<Z extends { id: number }>(zones: Z[], rectsOf: (zone:
   const pieces: ZonePiece<Z>[] = [];
   for (const zone of zones) for (const rect of rectsOf(zone)) pieces.push({ zone, rect });
   return pieces.sort((a, b) => b.rect.w * b.rect.h - a.rect.w * a.rect.h);
-}
-
-export type ZoneTag<Z> = { zone: Z; x: number; y: number; maxW: number };
-
-/**
- * 구역 이름표 자리 (도면 대비 비율). 조각마다 왼쪽 위 안쪽, 위쪽 여백(이름표 자리)에 붙인다:
- * 옮겨 온 좌석 한두 개의 작은 조각도 어느 팀인지 보이게. 그 자리에 다른 구역의 더 작은 조각이 들어와 있으면
- * 그 조각 오른쪽으로 비켜서, 남의 조각 위에 이름이 얹히지 않게 한다.
- * maxW: 조각 오른쪽 끝까지 남은 폭 (이름이 길면 이 안에서 줄을 바꾼다. 조각 밖으로 나가지 않게)
- */
-export function zoneTags<Z extends { id: number }>(
-  pieces: ZonePiece<Z>[],
-  size: { width_m: number; height_m: number },
-): ZoneTag<Z>[] {
-  const strip = PAD_TOP / size.height_m; // 이름표가 차지하는 높이 (위쪽 여백)
-  const minW = PAD_TOP / size.width_m; // 이름표가 들어갈 최소 폭
-  return pieces.map(({ zone, rect }, i) => {
-    const right = rect.x + rect.w;
-    let x = rect.x;
-    for (let moved = true; moved; ) {
-      moved = false;
-      for (const other of pieces.slice(i + 1)) {
-        const o = other.rect;
-        if (
-          other.zone.id !== zone.id &&
-          o.x < x + minW &&
-          o.x + o.w > x &&
-          o.y < rect.y + strip &&
-          o.y + o.h > rect.y
-        ) {
-          x = o.x + o.w;
-          moved = true;
-        }
-      }
-    }
-    if (x + minW > right) x = rect.x; // 비킬 자리가 없으면 원래 자리
-    return { zone, x, y: rect.y, maxW: right - x };
-  });
 }

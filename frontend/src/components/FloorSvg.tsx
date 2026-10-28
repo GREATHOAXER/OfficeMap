@@ -3,7 +3,7 @@
 import { forwardRef } from "react";
 import { type DrawingSeat, type DrawingStyle, type FloorDrawing, teamColor } from "@/lib/floorDrawing";
 import { DEFAULT_LINE, DESK } from "@/lib/planGeometry";
-import { zonePieces, zoneTags } from "@/lib/zoneShape";
+import { zonePieces } from "@/lib/zoneShape";
 
 // 내보낸 그림에서도 같은 모양이 나오게 글꼴·색을 속성으로 직접 적는다 (CSS를 쓰지 않는다)
 const FONT = "-apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', 'Noto Sans CJK KR', sans-serif";
@@ -13,6 +13,9 @@ const LINK = "#1d4ed8";
 const HEADER_M = 3.2; // 제목 줄 높이 (m)
 const FOOTER_M = 2.2; // 축척 줄 높이 (m)
 const NICE = [1, 2, 5, 10, 20, 50, 100];
+const LEGEND_FONT = 0.75; // 팀 구역 범례 글자 (m)
+const LEGEND_ROW = 1.4; // 범례 한 줄 높이 (m)
+const SWATCH = 0.9; // 범례 색 칸 (m)
 const HATCHED = new Set(["core", "restroom", "service", "restricted"]);
 
 type Props = {
@@ -38,17 +41,18 @@ const FloorSvg = forwardRef<SVGSVGElement, Props>(function FloorSvg(props, ref) 
   const k = (s: DrawingStyle) => (s.label_size ?? 100) / 100;
   const bold = (s: DrawingStyle) => (s.label_bold ? 700 : undefined);
   const scale = NICE.find((n) => n / d.width >= 0.08) ?? NICE[NICE.length - 1];
+  const legend = zoneLegend(d.zones, d.width);
   return (
     <svg
       ref={ref}
       xmlns="http://www.w3.org/2000/svg"
-      viewBox={`0 0 ${d.width} ${d.height + top + bottom}`}
+      viewBox={`0 0 ${d.width} ${d.height + top + legend.height + bottom}`}
       className={className}
       role="img"
       aria-label={label}
       fontFamily={FONT}
     >
-      <rect x={0} y={0} width={d.width} height={d.height + top + bottom} fill="#ffffff" />
+      <rect x={0} y={0} width={d.width} height={d.height + top + legend.height + bottom} fill="#ffffff" />
       {title && (
         <g>
           <text x={0.8} y={1.7} fontSize={1.3} fontWeight={700} fill={INK}>
@@ -74,21 +78,20 @@ const FloorSvg = forwardRef<SVGSVGElement, Props>(function FloorSvg(props, ref) 
             <line x1={0} y1={0} x2={0} y2={0.6} stroke="#d4d4d0" strokeWidth={0.08} />
           </pattern>
         </defs>
-        {d.zones.flatMap((z) =>
-          z.rects.map((r, i) => (
-            <rect
-              key={`zone-${z.id}-${i}`}
-              x={r.x}
-              y={r.y}
-              width={r.w}
-              height={r.h}
-              rx={0.25}
-              fill={teamColor(z.color).fill}
-              stroke={teamColor(z.color).line}
-              strokeWidth={0.06}
-            />
-          )),
-        )}
+        {/* 큰 조각부터: 다른 구역 안에 들어간 작은 조각이 가려지지 않게 (화면과 같다) */}
+        {zonePieces(d.zones, (z) => z.rects).map(({ zone: z, rect: r }, i) => (
+          <rect
+            key={`zone-${z.id}-${i}`}
+            x={r.x}
+            y={r.y}
+            width={r.w}
+            height={r.h}
+            rx={0.25}
+            fill={teamColor(z.color).fill}
+            stroke={teamColor(z.color).line}
+            strokeWidth={0.06}
+          />
+        ))}
         {d.spaces.map((s, i) => (
           <g key={`space-${i}`}>
             <rect
@@ -183,30 +186,32 @@ const FloorSvg = forwardRef<SVGSVGElement, Props>(function FloorSvg(props, ref) 
         {d.pillars.map((p, i) => (
           <rect key={`pillar-${i}`} x={p.x} y={p.y} width={p.w} height={p.h} fill={INK} />
         ))}
-        {/* 이름표: 조각마다 그 조각 안에 (화면과 같은 자리, lib/zoneShape.ts zoneTags. 여기 좌표는 m라 크기 1 × 1) */}
-        {zoneTags(
-          zonePieces(d.zones, (z) => z.rects),
-          { width_m: 1, height_m: 1 },
-        ).map(({ zone: z, x, y, maxW }, i) => {
-          const full = `${z.name} · ${z.code}`;
-          const fits = Math.max(1, Math.floor((maxW - 0.6) / 0.62)); // 글자 0.62 m, 양옆 여백 0.3 m
-          const text = full.length > fits ? `${full.slice(0, Math.max(1, fits - 1))}…` : full;
-          const w = Math.min(text.length * 0.62 + 0.6, maxW);
-          return (
-            <g key={`tag-${z.id}-${i}`}>
-              <rect x={x} y={y} width={w} height={1.05} rx={0.2} fill={teamColor(z.color).line} />
-              <text x={x + 0.3} y={y + 0.78} fontSize={0.7} fontWeight={600} fill="#ffffff">
-                {text}
-              </text>
-            </g>
-          );
-        })}
         {d.seats.map((s) => (
           <SeatMark key={s.id} seat={s} showName={!!showNames} onClick={onSeatClick} title={seatTitle?.(s)} />
         ))}
       </g>
+      {/* 도면에는 구역 이름을 쓰지 않고 (직원 화면과 같다) 아래 범례에서 색으로 찾는다 */}
+      {legend.items.length > 0 && (
+        <g transform={`translate(0 ${top + d.height + 0.6})`}>
+          {legend.items.map(({ zone: z, label: text, x, row }) => (
+            <g key={z.id} transform={`translate(${x} ${row * LEGEND_ROW})`}>
+              <rect
+                width={SWATCH}
+                height={SWATCH}
+                rx={0.15}
+                fill={teamColor(z.color).fill}
+                stroke={teamColor(z.color).line}
+                strokeWidth={0.12}
+              />
+              <text x={SWATCH + 0.35} y={SWATCH / 2 + LEGEND_FONT * 0.35} fontSize={LEGEND_FONT} fill={INK}>
+                {text}
+              </text>
+            </g>
+          ))}
+        </g>
+      )}
       {title && (
-        <g transform={`translate(0.8 ${top + d.height + 0.6})`} aria-label={`축척 ${scale} m`}>
+        <g transform={`translate(0.8 ${top + d.height + legend.height + 0.6})`} aria-label={`축척 ${scale} m`}>
           <path d={`M0 0 V0.7 H${scale} V0`} fill="none" stroke={INK} strokeWidth={0.08} strokeLinejoin="miter" />
           <text x={scale + 0.5} y={0.75} fontSize={0.75} fill={MUTED}>
             {scale} m · 도면 {d.width} × {d.height} m
@@ -218,6 +223,32 @@ const FloorSvg = forwardRef<SVGSVGElement, Props>(function FloorSvg(props, ref) 
 });
 
 export default FloorSvg;
+
+/** 글자 폭 어림 (m): 한글·한자는 글자 크기만큼, 빈칸은 0.3배, 나머지는 0.6배 */
+function textWidth(text: string, size: number) {
+  let w = 0;
+  for (const ch of text) w += /[\u3131-\u318e\uac00-\ud7a3\u4e00-\u9fff]/.test(ch) ? 1 : ch === " " ? 0.3 : 0.6;
+  return w * size;
+}
+
+/** 팀 구역 범례 자리: 왼쪽부터 놓고 폭이 차면 다음 줄. 한 팀 구역이 둘 이상이면 이름 뒤에 구역 기호 */
+function zoneLegend(zones: FloorDrawing["zones"], width: number) {
+  const items: { zone: FloorDrawing["zones"][number]; label: string; x: number; row: number }[] = [];
+  let x = 0.8;
+  let row = 0;
+  for (const zone of zones) {
+    const twin = zones.some((z) => z.id !== zone.id && z.name === zone.name);
+    const label = twin ? `${zone.name} · ${zone.code}` : zone.name;
+    const w = SWATCH + 0.35 + textWidth(label, LEGEND_FONT);
+    if (x > 0.8 && x + w > width - 0.8) {
+      x = 0.8;
+      row += 1;
+    }
+    items.push({ zone, label, x, row });
+    x += w + 1;
+  }
+  return { items, height: items.length ? 0.6 + (row + 1) * LEGEND_ROW : 0 };
+}
 
 function SeatMark({
   seat,

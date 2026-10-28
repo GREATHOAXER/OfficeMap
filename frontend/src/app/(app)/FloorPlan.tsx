@@ -31,7 +31,7 @@ import { useMediaQuery } from "@/lib/useMediaQuery";
 import { seatRatio } from "@/lib/planGeometry";
 import { baseSeatFont, compactAt, minPlanWidth, type SeatBox, seatBox, seatFont } from "@/lib/seatLabel";
 import { useNow } from "@/lib/useNow";
-import { zonePieces, zoneRects, zoneTags } from "@/lib/zoneShape";
+import { zonePieces, zoneRects } from "@/lib/zoneShape";
 import styles from "./office.module.css";
 import PlanShapes, { fitLabelStyle, lineStyle } from "./PlanShapes";
 import { zoneColorVars } from "@/lib/zoneColors";
@@ -437,6 +437,7 @@ export default function FloorPlan(props: Props) {
         {map.rooms.map(
           (room) => room.shape && <RoomBox key={room.id} room={room} shape={room.shape} floorId={map.floor.id} />,
         )}
+        {/* 구역은 색으로만 그린다: 이름은 위 팀 칩(범례)과 마우스를 올렸을 때. 좁은 조각·겹친 조각에서 이름표가 가려졌다 */}
         {pieces.map(({ zone, rect }, i) => (
           <div
             key={`${zone.id}-${i}`}
@@ -446,18 +447,8 @@ export default function FloorPlan(props: Props) {
             data-color={zone.color_key}
             data-shared={zone.department === null}
             style={{ ...rectStyle(rect), ...zoneColorVars(zone.color_key) }}
+            title={`${zone.name} · ${zone.code}구역`}
           />
-        ))}
-        {/* 이름표는 모든 구역을 칠한 뒤에 그려서 다른 구역 조각에 가려지지 않게 (조각마다, 조각 안에) */}
-        {zoneTags(pieces, plan).map(({ zone, x, y, maxW }, i) => (
-          <span
-            key={`tag-${zone.id}-${i}`}
-            className={`${styles.zoneTag} ${focusZoneId && focusZoneId !== zone.id ? styles.dim : ""}`}
-            data-color={zone.color_key}
-            style={{ left: pct(x), top: pct(y), maxWidth: pct(maxW), ...zoneColorVars(zone.color_key) }}
-          >
-            {zone.name} · {zone.code}
-          </span>
         ))}
         {map.seats.map((seat) => (
           <SeatButton

@@ -1474,6 +1474,21 @@ export default function SeatingEditor({ admin, initial, notice, reviewId = null 
             <span className={styles.crumb}>
               {data.floor.site.name} › <strong>{data.floor.name}</strong>
             </span>
+            {/* 도면에는 구역 이름을 쓰지 않는다 (직원 화면과 같다): 이 줄이 색 범례 */}
+            {data.zones.length > 0 && (
+              <ul className={styles.zoneKey} aria-label="팀 구역 색">
+                {data.zones.map((z) => (
+                  <li
+                    key={z.id}
+                    data-color={z.color_key}
+                    data-shared={z.department === null}
+                    style={zoneColorVars(z.color_key)}
+                  >
+                    {z.name} · {z.code}
+                  </li>
+                ))}
+              </ul>
+            )}
             {myZones && (
               <label className={styles.check}>
                 <input type="checkbox" checked={focusMine} onChange={(e) => setFocusMine(e.target.checked)} />내 구역만

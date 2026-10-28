@@ -357,7 +357,7 @@ export default function ZoneDialog(props: Props) {
             {sameColor.length > 0
               ? `같은 색을 쓰는 구역: ${sameColor.join(", ")} (도면에서 구분이 어려울 수 있어요)`
               : custom
-                ? "너무 밝은 색은 구역 이름표의 흰 글자가 보이게 테두리·이름표만 조금 진하게 그려요."
+                ? "너무 밝은 색은 도면에서 잘 보이게 테두리만 조금 진하게 그려요."
                 : "같은 층의 다른 구역과 다른 색을 고르면 도면에서 구분하기 쉬워요."}
           </p>
         </fieldset>
