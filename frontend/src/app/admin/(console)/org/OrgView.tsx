@@ -1,10 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import CopyButton from "@/components/CopyButton";
 import Dialog from "@/components/Dialog";
-import { PenIcon } from "@/components/icons";
+import { PenIcon, SearchIcon } from "@/components/icons";
 import type { Admin, OrgDepartment, OrgMember } from "@/lib/api";
 import { adminExpiredUrl } from "@/lib/loginRedirect";
 import ui from "../seating/seating.module.css";
@@ -14,7 +14,14 @@ import styles from "./org.module.css";
 const json = { "content-type": "application/json" };
 
 type Org = { departments: OrgDepartment[]; can_edit: boolean };
-type Person = { emp_no: string; name: string; rank: string | null; department_id: number; department: string };
+type Person = {
+  emp_no: string;
+  name: string;
+  rank: string | null;
+  status?: string;
+  department_id: number;
+  department: string;
+};
 
 /** 열린 대화상자 */
 type Open =
@@ -103,6 +110,8 @@ export default function OrgView({
   const [passwordKey, setPasswordKey] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // 검색에서 고른 사람: 그 부서의 팀원 표에서 그 줄을 표시하고 보여 준다
+  const [found, setFound] = useState<string | null>(null);
   const dept = selected !== null ? (tree.byId.get(selected) ?? null) : null;
   const canEdit = org.can_edit;
 
@@ -158,6 +167,34 @@ export default function OrgView({
       alive = false;
     };
   }, [selected]);
+
+  // 검색에서 고른 사람의 줄을 화면 가운데로 (그 부서 팀원을 읽은 다음)
+  useEffect(() => {
+    if (!found || !members) return;
+    document.querySelector(`tr[data-emp="${CSS.escape(found)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [found, members]);
+
+  /** 찾은 사람의 부서를 연다: 부서 나무에서 위 부서들을 펼치고 그 부서를 고른 뒤, 팀원 표에서 그 사람을 표시한다 */
+  async function showPerson(p: Person) {
+    setFound(p.emp_no);
+    let deptTree = tree;
+    if (!deptTree.byId.has(p.department_id)) {
+      // 없앤 부서에 남아 있는 사람: 없앤 부서도 보이게 한다
+      setInactive(true);
+      const next = await call<Org>("/api/admin/org?inactive=true");
+      setOrg(next);
+      deptTree = treeOf(next.departments);
+    }
+    setFolded((f) => {
+      const next = new Set(f);
+      for (let id = deptTree.byId.get(p.department_id)?.parent_id ?? null; id !== null; ) {
+        next.delete(id);
+        id = deptTree.byId.get(id)?.parent_id ?? null;
+      }
+      return next;
+    });
+    setSelected(p.department_id);
+  }
 
   async function after(text: string, deptId?: number | null) {
     await reloadOrg();
@@ -238,6 +275,7 @@ export default function OrgView({
               없앤 부서도
             </label>
           </div>
+          <PersonFinder onPick={(p) => void showPerson(p)} />
           <ul className={styles.tree} role="tree" aria-label="부서 나무">
             {tree.order
               .filter((o) => visible(o.dept.id))
@@ -274,7 +312,10 @@ export default function OrgView({
                         type="button"
                         className={styles.nodeName}
                         aria-current={d.id === selected || undefined}
-                        onClick={() => setSelected(d.id)}
+                        onClick={() => {
+                          setSelected(d.id);
+                          setFound(null);
+                        }}
                       >
                         {d.name}
                         {!d.is_active && <span className={styles.badge}>없앰</span>}
@@ -386,7 +427,12 @@ export default function OrgView({
                     </thead>
                     <tbody>
                       {members.map((m) => (
-                        <tr key={m.emp_no} data-leave={m.status === "LEAVE" || undefined}>
+                        <tr
+                          key={m.emp_no}
+                          data-emp={m.emp_no}
+                          data-leave={m.status === "LEAVE" || undefined}
+                          data-found={m.emp_no === found || undefined}
+                        >
                           <td>
                             <strong>{m.name}</strong> {[m.rank, m.position].filter(Boolean).join(" · ")}
                             {m.status === "LEAVE" && <span className={styles.badge}>휴직</span>}
@@ -525,6 +571,107 @@ type DeptSelect = (
   label: string,
   exclude?: Set<number>,
 ) => React.ReactNode;
+
+/**
+ * 이름·사번으로 사람 찾기 (부서 나무 위). 치는 대로 찾고, 고르면 그 사람의 부서를 연다(onPick).
+ * 방향키로 고르고 Enter, Esc는 지우기
+ */
+function PersonFinder({ onPick }: { onPick: (p: Person) => void }) {
+  const [q, setQ] = useState("");
+  const [result, setResult] = useState<{ q: string; people: Person[] } | null>(null);
+  const [active, setActive] = useState(0);
+  const listId = useId();
+  const text = q.trim();
+
+  useEffect(() => {
+    if (!text) return;
+    let alive = true;
+    const timer = setTimeout(() => {
+      void fetch(`/api/admin/org/people?q=${encodeURIComponent(text)}`, { cache: "no-store" })
+        .then((res) => (res.ok ? (res.json() as Promise<{ people: Person[] }>) : { people: [] }))
+        .then((out) => alive && setResult({ q: text, people: out.people }))
+        .catch(() => alive && setResult({ q: text, people: [] }));
+    }, 200);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [text]);
+
+  // 지금 친 글자의 결과만 보여 준다 (이전 글자의 결과가 늦게 와도 섞이지 않게)
+  const people = result && result.q === text ? result.people : null;
+  const listed = text !== "" && people !== null && people.length > 0;
+
+  function pick(p: Person) {
+    onPick(p);
+    setQ("");
+    setActive(0);
+  }
+
+  return (
+    <div className={styles.finder}>
+      <label className={styles.finderField}>
+        <SearchIcon size={16} />
+        <span className="visually-hidden">이름·사번으로 사람 찾기</span>
+        <input
+          type="search"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={listed}
+          aria-controls={listId}
+          aria-activedescendant={listed ? `${listId}-${Math.min(active, people.length - 1)}` : undefined}
+          placeholder="이름·사번으로 사람 찾기"
+          value={q}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setActive(0);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              if (q) e.preventDefault();
+              setQ("");
+            } else if (listed && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+              e.preventDefault();
+              const n = people.length;
+              setActive((i) => (Math.min(i, n - 1) + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+            } else if (listed && e.key === "Enter") {
+              e.preventDefault();
+              pick(people[Math.min(active, people.length - 1)]);
+            }
+          }}
+        />
+      </label>
+      {text !== "" && (
+        <>
+          <ul id={listId} role="listbox" aria-label="찾은 사람" className={styles.finderList} hidden={!listed}>
+            {(listed ? people : []).map((p, i) => (
+              <li
+                key={p.emp_no}
+                id={`${listId}-${i}`}
+                role="option"
+                aria-selected={i === Math.min(active, people!.length - 1)}
+                onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => pick(p)}
+              >
+                <span className={styles.finderName}>
+                  <strong>{p.name}</strong> {p.rank}
+                  {p.status === "LEAVE" && <span className={styles.badge}>휴직</span>}
+                </span>
+                <span className={styles.finderMeta}>
+                  {p.department} · <span className="mono">{p.emp_no}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className={styles.finderNote} aria-live="polite">
+            {people === null ? "찾는 중…" : people.length === 0 ? "찾는 사람이 없어요" : `${people.length}명`}
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
 
 function ErrorLine({ error }: { error: string | null }) {
   return error ? (
