@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from app.admin_auth import (
     COMPANY_WIDE,
+    ROLES,
     CurrentAdmin,
     CurrentAdminAllowTemporary,
     admin_out,
@@ -315,6 +316,30 @@ def overview(admin: CurrentAdmin) -> dict[str, Any]:
             """,
             {"full": scope["full"], "zones": scope["zones"], "floors": scope["floors"], "me": admin["employee_id"]},
         ).fetchone()
+        # 미배치 인원 알림: 재직 중인데 자리가 없는 사람을 부서마다 (인사이동·신규 입사로 생긴다).
+        # 그 부서의 팀 구역이 있는 층을 같이 준다 (화면이 좌석 배치 편집으로 바로 보낸다).
+        # 전사 관리자는 전부, 그 아래는 맡은 층(구역 관리자는 맡은 구역)에 팀 구역이 있는 부서만
+        unseated_teams = conn.execute(
+            """
+            WITH current AS (
+                SELECT DISTINCT a.employee_id FROM seat_assignments a
+                WHERE a.starts_at <= now() AND (a.ends_at IS NULL OR a.ends_at > now())
+            ),
+            waiting AS (
+                SELECT e.id, e.department_id FROM employees e
+                WHERE e.employment_status = 'ACTIVE' AND NOT EXISTS (SELECT 1 FROM current c WHERE c.employee_id = e.id)
+            )
+            SELECT d.id AS department_id, d.name AS department, count(DISTINCT w.id)::int AS people,
+                   coalesce(array_agg(DISTINCT z.floor_id) FILTER (WHERE z.floor_id IS NOT NULL), '{}') AS floor_ids
+            FROM waiting w
+            JOIN departments d ON d.id = w.department_id
+            LEFT JOIN zones z ON z.department_id = d.id AND z.is_active
+            WHERE %(all)s OR z.floor_id = ANY(%(full)s) OR z.id = ANY(%(zones)s)
+            GROUP BY d.id, d.name
+            ORDER BY count(DISTINCT w.id) DESC, d.name
+            """,
+            {"all": scope["kind"] == "ALL", "full": scope["full"], "zones": scope["zones"]},
+        ).fetchall()
 
     def in_scope(floor: dict[str, Any]) -> str | None:
         """내가 이 층을 관리하나: "ALL"(층 전체) / "ZONE"(층 안 일부 구역) / None"""
@@ -340,6 +365,22 @@ def overview(admin: CurrentAdmin) -> dict[str, Any]:
     for z in zones:
         by_floor_zones.setdefault(z.pop("floor_id"), []).append(z)
 
+    # 층 관리자를 아직 정하지 않은 층은 최고 단계 관리자가 임시로 맡는다 (전사 관리자는 모든 층을 관리할 수 있다).
+    # 전사 관리자(1단계) 중 가나다 순 첫 사람, 없으면 최종 관리자. 화면이 층 관리자 칸에 "임시"로 보여 준다
+    def first_holder(role: str) -> str | None:
+        names = sorted(g["employee"]["name"] for g in grants if g["role"] == role)
+        return names[0] if names else None
+
+    acting = first_holder("COMPANY_ADMIN")
+    acting_floor_admin = (
+        {"name": acting, "role_label": ROLES["COMPANY_ADMIN"][1]}
+        if acting
+        else {"name": first_holder("SUPER_ADMIN"), "role_label": ROLES["SUPER_ADMIN"][1]}
+        if first_holder("SUPER_ADMIN")
+        else None
+    )
+
+    site_names = {s["id"]: s["name"] for s in sites}
     company_wide = is_company_wide(mine)
     my_sites = {g["site_id"] for g in mine if g["role"] == "SITE_ADMIN"}
 
@@ -391,4 +432,17 @@ def overview(admin: CurrentAdmin) -> dict[str, Any]:
             if site_visible(s)
         ],
         "grants": grants,
+        "acting_floor_admin": acting_floor_admin,
+        "unseated_teams": [
+            {
+                "department": t["department"],
+                "people": t["people"],
+                "floors": [
+                    {"id": f["id"], "label": f"{site_names[f['site_id']]} {f['name']}"}
+                    for f in floors
+                    if f["id"] in t["floor_ids"] and floor_visible(f)
+                ],
+            }
+            for t in unseated_teams
+        ],
     }

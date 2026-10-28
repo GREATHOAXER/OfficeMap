@@ -126,7 +126,7 @@ export type Zone = {
   code: string;
   name: string;
   department: string | null; // 공용 구역이면 null
-  color_key: string; // t0~t4
+  color_key: string; // t0~t11, 또는 직접 고른 색 #rrggbb (lib/zoneColors.ts)
   shape: ZoneShape | null; // 좌석이 없으면 null (그리지 않는다)
 };
 
@@ -540,6 +540,10 @@ export type AdminOverview = {
   };
   sites: AdminSite[];
   grants: AdminGrant[];
+  /** 층 관리자를 정하지 않은 층을 임시로 맡는 사람: 전사 관리자 중 가나다 순 첫 사람 (없으면 최종 관리자) */
+  acting_floor_admin: { name: string; role_label: string } | null;
+  /** 미배치 인원(재직 중인데 자리가 없는 사람)을 부서마다. floors: 그 부서 팀 구역이 있는 층 (내 범위 안) */
+  unseated_teams: { department: string; people: number; floors: { id: number; label: string }[] }[];
 };
 
 /** 관리자 쿠키로 로그인한 관리자. 아니면 null. 레이아웃과 페이지가 한 번만 부르도록 cache */

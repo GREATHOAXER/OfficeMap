@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import CopyButton from "@/components/CopyButton";
 import Dialog from "@/components/Dialog";
 import type { AdminGrant, GrantOptions } from "@/lib/api";
@@ -57,6 +57,17 @@ function errorText(code: string | undefined, detail: Record<string, unknown> | u
     default:
       return validationText(detail) ?? "저장하지 못했어요. 다시 해 보세요";
   }
+}
+
+/** 창 아래쪽 오류 글: 본문이 길어 스크롤돼 있어도 보이게 그 자리로 옮긴다 */
+function AlertLine({ text }: { text: string }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  useEffect(() => ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }), [text]);
+  return (
+    <p ref={ref} className={ui.conflictText} role="alert">
+      {text}
+    </p>
+  );
 }
 
 /** 요청 → 401이면 관리자 로그인으로, 실패면 오류 글. 성공하면 응답 본문 */
@@ -373,17 +384,19 @@ export function GrantButton({ preset, label = "권한 부여" }: { preset?: Gran
   }
 
   async function save() {
-    if (!person) return setError("권한을 줄 사람을 먼저 찾아 고르세요");
+    // 찾은 사람이 한 명뿐이면 동그라미를 누르지 않았어도 그 사람에게 준다
+    const who = person ?? (q.trim() && hits.length === 1 ? hits[0] : null);
+    if (!who) return setError("권한을 줄 사람을 찾아 목록에서 고르세요");
     if (!choice?.role) return setError("줄 권한을 고르세요");
     const out = await call<{ grant: AdminGrant; temporary_password: string | null }>("/api/admin/grants", "POST", {
-      emp_no: person.emp_no,
+      emp_no: who.emp_no,
       ...payload(choice),
     });
     if (!out) return;
     refresh();
     setResult({
-      name: person.name,
-      empNo: person.emp_no,
+      name: who.name,
+      empNo: who.emp_no,
       text: `${out.grant.label} · ${out.grant.scope}`,
       password: out.temporary_password,
     });
@@ -492,11 +505,7 @@ export function GrantButton({ preset, label = "권한 부여" }: { preset?: Gran
               )}
             </>
           )}
-          {error && (
-            <p className={ui.conflictText} role="alert">
-              {error}
-            </p>
-          )}
+          {error && <AlertLine text={error} />}
         </div>
       </Dialog>
     </>
@@ -654,11 +663,7 @@ export function GrantEditButton({ grant, canReset }: { grant: AdminGrant; canRes
               )}
             </>
           )}
-          {error && (
-            <p className={ui.conflictText} role="alert">
-              {error}
-            </p>
-          )}
+          {error && <AlertLine text={error} />}
         </div>
       </Dialog>
     </>
