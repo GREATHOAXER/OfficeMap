@@ -26,7 +26,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
     changed: "다른 곳에서 비밀번호를 바꿔서 로그아웃되었습니다. 새 비밀번호로 로그인하세요.",
     locked: `비밀번호를 ${info.max_failed_count}회 잘못 입력해 계정이 잠겼습니다. 잠금 해제 문의: ${contact}`,
     inactive: `로그인할 수 없는 계정이 되어 로그아웃되었습니다. 문의: ${contact}`,
-    logout: "로그아웃했습니다. 이 브라우저의 직원 화면과 관리자 페이지 로그인이 모두 끝났습니다.",
+    logout: "로그아웃했습니다.",
   };
   const reason = typeof params.reason === "string" ? params.reason : "";
   const notice = notices[reason] ?? (next !== "/" ? "로그인하면 요청한 화면으로 이동합니다." : null);

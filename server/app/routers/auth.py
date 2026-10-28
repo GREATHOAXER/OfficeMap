@@ -14,7 +14,6 @@ from app.security import hash_password, new_session_token, verify_password
 from app.session import (
     IS_ADMIN_SQL,
     CurrentUserAllowTemporary,
-    end_other_identity,
     end_sessions,
     load_session,
     session_end_reason,
@@ -122,12 +121,9 @@ def login(body: LoginRequest, request: Request) -> JSONResponse:
             (token_hash, user["id"], timedelta(hours=settings.session_max_hours), ip, user_agent),
         )
         record("SUCCESS")
-        # 같은 브라우저에 다른 사람의 관리자 로그인이 남아 있으면 끝낸다
-        drop_admin = end_other_identity(conn, request, settings.admin_cookie_name, user["id"])
 
+    # 같은 브라우저의 관리자 페이지 로그인은 건드리지 않는다 (계정·세션이 따로)
     response = JSONResponse({"user": _user_out(user)})
-    if drop_admin:
-        response.delete_cookie(settings.admin_cookie_name, path="/")
     response.set_cookie(
         settings.session_cookie_name,
         token,
@@ -173,8 +169,8 @@ def session_status(request: Request) -> JSONResponse:
 
 @router.post("/logout", status_code=204)
 def logout(request: Request) -> Response:
-    """직원 화면 로그아웃. 같은 브라우저의 관리자 로그인도 같이 끝낸다"""
-    return end_sessions(request)
+    """직원 화면 로그아웃. 같은 브라우저의 관리자 페이지 로그인은 그대로 둔다"""
+    return end_sessions(request, settings.session_cookie_name)
 
 
 class PasswordChange(BaseModel):

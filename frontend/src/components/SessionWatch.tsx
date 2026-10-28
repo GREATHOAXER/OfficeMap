@@ -8,11 +8,11 @@ import styles from "./SessionWatch.module.css";
 const WARN_SECONDS = 60; // 자동 로그아웃 이만큼 전에 알려 준다
 const AUTH_CHANNEL = "officemap-auth"; // 다른 탭에서 로그아웃하면 이 탭도 바로 로그인 화면으로
 
-/** 다른 탭에 로그아웃을 알린다 (LogoutButton이 부른다) */
-export function announceLogout() {
+/** 다른 탭에 로그아웃을 알린다 (LogoutButton이 부른다). 직원 화면·관리자 페이지 로그인은 따로라 같은 쪽 탭만 반응한다 */
+export function announceLogout(kind: "user" | "admin") {
   try {
     const channel = new BroadcastChannel(AUTH_CHANNEL);
-    channel.postMessage("logout");
+    channel.postMessage(`logout:${kind}`);
     channel.close();
   } catch {
     // BroadcastChannel이 없는 브라우저: 그 탭은 다음 확인 때 알게 된다
@@ -100,7 +100,7 @@ export default function SessionWatch({ kind }: { kind: "user" | "admin" }) {
     let channel: BroadcastChannel | null = null;
     try {
       channel = new BroadcastChannel(AUTH_CHANNEL);
-      channel.onmessage = (event) => event.data === "logout" && goLogin("logout");
+      channel.onmessage = (event) => event.data === `logout:${kind}` && goLogin("logout");
     } catch {
       channel = null;
     }
