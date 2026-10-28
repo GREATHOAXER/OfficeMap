@@ -1,19 +1,13 @@
 // 층 도면을 그림 한 장(SVG)으로: 팀 이사 도우미의 미니 도면, PNG·PDF 내보내기가 같이 쓴다.
 // 좌표는 미터 (SVG 한 칸 = 1 m). 화면 데이터(비율 좌표)는 도면 크기를 곱해 바꾼다.
-// 내보낸 그림은 화면의 CSS를 쓸 수 없어서 팀 구역 색을 여기 직접 적는다 (globals.css의 --t0~--t4와 같은 값)
+// 내보낸 그림은 화면의 CSS를 쓸 수 없어서 팀 구역 색은 lib/zoneColors.ts의 값(직접 고른 색 포함)을 직접 쓴다
 
 import type { PlanEditorData, PlanGeometry, PlanStyle, Rect, SeatingData, ShapeStyle } from "./api";
 import { cellCenter, DESK, lineOf, SPACE_KINDS, seatDims } from "./planGeometry";
+import { zoneColor } from "./zoneColors";
 import { zoneRects } from "./zoneShape";
 
-export const TEAM_COLORS: Record<string, { line: string; fill: string }> = {
-  t0: { line: "#6e6e69", fill: "#efefec" },
-  t1: { line: "#3b5b92", fill: "#e3eaf6" },
-  t2: { line: "#9a5b1e", fill: "#f7e9d7" },
-  t3: { line: "#4c7a34", fill: "#e5f0dc" },
-  t4: { line: "#6e4a86", fill: "#eee4f4" },
-};
-export const teamColor = (key: string | null | undefined) => TEAM_COLORS[key ?? "t0"] ?? TEAM_COLORS.t0;
+export const teamColor = zoneColor;
 
 /** free: 빈 고정석, taken: 앉은 사람 있음, flex: 자율석, off: 사용 중지, target: 고른 자리(이사 도우미), new: 새 책상 */
 export type SeatState = "free" | "taken" | "flex" | "off" | "target" | "new";
@@ -27,7 +21,7 @@ export type DrawingSeat = {
   rotation: number; // 의자 방향. 0 = 아래, 90 = 오른쪽, 180 = 위, 270 = 왼쪽
   code: string;
   name: string | null; // 앉은 사람 (이름 표시를 켤 때)
-  color: string; // 팀 구역 색 키 (t0~t4)
+  color: string; // 팀 구역 색 키 (t0~t11 또는 #rrggbb)
   state: SeatState;
 };
 

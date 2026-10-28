@@ -11,6 +11,7 @@ import { baseSeatFont, compactAt, isVertical, minPlanWidth, seatBox, seatFont } 
 import { useTouchPan } from "@/lib/useTouchPan";
 import { zonePieces } from "@/lib/zoneShape";
 import styles from "./seating.module.css";
+import { zoneColorVars } from "@/lib/zoneColors";
 
 // 직원 화면 도면과 같은 크기·좌표 (FloorPlan.tsx)
 const pct = (v: number) => `${(v * 100).toFixed(3)}%`;
@@ -198,7 +199,7 @@ export default function SeatingCanvas(props: Props) {
             className={`${office.zone} ${focusZones && !focusZones.has(zone.id) ? styles.dim : ""}`}
             data-color={zone.color_key}
             data-shared={zone.department === null}
-            style={rectStyle(rect)}
+            style={{ ...rectStyle(rect), ...zoneColorVars(zone.color_key) }}
           />
         ))}
         {/* 이름표는 모든 구역을 칠한 뒤에 그려서 다른 구역 조각에 가려지지 않게 */}
@@ -209,7 +210,7 @@ export default function SeatingCanvas(props: Props) {
               key={`tag-${zone.id}`}
               className={`${office.zoneTag} ${focusZones && !focusZones.has(zone.id) ? styles.dim : ""}`}
               data-color={zone.color_key}
-              style={{ left: pct(rect.x), top: pct(rect.y) }}
+              style={{ left: pct(rect.x), top: pct(rect.y), ...zoneColorVars(zone.color_key) }}
             >
               {zone.name} · {zone.code}
               {!zone.editable && !plain && " · 잠김"}
@@ -265,6 +266,7 @@ export default function SeatingCanvas(props: Props) {
                 width: pct(seat.w ?? seatSize.w),
                 height: pct(seat.h ?? seatSize.h),
                 fontSize: `${seatFont(boxOf(seat), text, false, baseFont).toFixed(3)}cqw`,
+                ...zoneColorVars(zone?.color_key),
               }}
               title={view.conflict && !plain ? `${seat.code} · ${view.conflict}` : `${seat.code} · ${text}`}
               aria-label={label}

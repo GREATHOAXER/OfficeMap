@@ -9,6 +9,7 @@ import { NO_STATUS_LABEL, PRESENCE_LABEL, PRESENCE_ORDER, presenceMessage } from
 import { hhmm, roomStatusText } from "@/lib/rooms";
 import { useNow } from "@/lib/useNow";
 import styles from "./office.module.css";
+import { zoneColorVars } from "@/lib/zoneColors";
 
 type Props = {
   map: FloorMap;
@@ -27,7 +28,12 @@ export default function SeatPanel({ map, seat, myEmpNo, onClear }: Props) {
   const mine = occupant?.emp_no === myEmpNo;
 
   return (
-    <section className={styles.card} aria-labelledby="seat-title" data-color={zone?.color_key ?? "t0"}>
+    <section
+      className={styles.card}
+      aria-labelledby="seat-title"
+      data-color={zone?.color_key ?? "t0"}
+      style={zoneColorVars(zone?.color_key)}
+    >
       <button type="button" className={styles.cardClose} aria-label="선택 해제" onClick={onClear}>
         <CloseIcon size={18} />
       </button>

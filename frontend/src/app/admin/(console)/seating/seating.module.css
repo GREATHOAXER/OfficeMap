@@ -120,15 +120,43 @@
   padding: 0 10px;
 }
 
+/* 글 사이·제목 옆의 작은 동작 (고치기·닫기·그만두기·다시 저장 …): 밑줄 글자가 아니라 작은 테두리 단추 */
 .linkButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
   margin-left: 4px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--link);
-  font-size: inherit;
-  text-decoration: underline;
+  padding: 0 10px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  vertical-align: middle;
   cursor: pointer;
+}
+
+.linkButton:hover:not(:disabled) {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.linkButton:disabled {
+  border-color: var(--border);
+  color: var(--muted);
+  cursor: default;
+}
+
+/* 구역 목록 줄의 "고치기": 오른쪽 끝에 */
+.zoneEdit {
+  flex: none;
+  margin-left: auto;
 }
 
 .infoBar {
@@ -1113,30 +1141,84 @@
 }
 
 .colors {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  min-width: 0;
   margin: 0;
   padding: 0;
   border: 0;
   font-size: 13px;
 }
 
-.colors legend {
-  margin-bottom: 4px;
-  padding: 0;
+.colorsLabel {
+  display: block;
+  margin-bottom: 6px;
   font-size: 12px;
   color: var(--muted);
 }
 
-.colors label {
-  display: flex;
-  align-items: center;
+/* 색 고르기: 테두리 단추 모양 칸을 여러 줄로 (기본 12색 + 직접 고르기) */
+.colorGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
   gap: 6px;
 }
 
-.colors .muted {
-  font-size: 11.5px;
+.colorOption {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.colorOption[data-checked] {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+  font-weight: 600;
+}
+
+.colorOption input[type="radio"] {
+  margin: 0;
+  accent-color: var(--ink);
+}
+
+.colorUsed {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.colorInput {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1.5px solid var(--tc);
+  border-radius: 4px;
+  background: var(--tf);
+  cursor: pointer;
+}
+
+.colorInput::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.colorInput::-webkit-color-swatch {
+  border: 0;
+  border-radius: 2px;
+}
+
+.colorInput::-moz-color-swatch {
+  border: 0;
+  border-radius: 2px;
+}
+
+.colors .hint {
+  margin: 6px 0 0;
 }
 
 .footLeft {

@@ -51,6 +51,7 @@ import SiteFloorPicker from "../SiteFloorPicker";
 import SeatingCanvas, { type SeatView } from "./SeatingCanvas";
 import ZoneDialog, { type ZoneDialogState } from "./ZoneDialog";
 import styles from "./seating.module.css";
+import { zoneColorVars } from "@/lib/zoneColors";
 
 type Tool = "move" | "swap" | "clear" | "zone";
 /** 눌러서 옮기기: 집어 든 사람(미배치 칸·옮기기 버튼) 또는 교환할 첫 좌석 */
@@ -1033,6 +1034,7 @@ export default function SeatingEditor({ admin, initial, notice, reviewId = null 
             <li
               key={z.id}
               data-color={z.color_key}
+              style={zoneColorVars(z.color_key)}
               data-locked={(!z.editable && !choosable) || undefined}
               data-chosen={(choosable && zoneTarget === z.id) || undefined}
             >
@@ -1052,7 +1054,7 @@ export default function SeatingEditor({ admin, initial, notice, reviewId = null 
               {perms.mode === "FLOOR" && !choosingZone && !readOnly ? (
                 <button
                   type="button"
-                  className={styles.linkButton}
+                  className={`${styles.linkButton} ${styles.zoneEdit}`}
                   onClick={() => setZoneDialog({ mode: "edit", zone: z })}
                   aria-label={`${z.name} ${z.code}구역 고치기`}
                 >

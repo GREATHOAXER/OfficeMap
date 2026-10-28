@@ -3,15 +3,10 @@
 import { useState } from "react";
 import Dialog from "@/components/Dialog";
 import type { DepartmentChoice, SeatingZone } from "@/lib/api";
+import { isCustomColor, ZONE_PALETTE, zoneColorVars } from "@/lib/zoneColors";
 import styles from "./seating.module.css";
 
-const COLORS = [
-  { key: "t1", label: "파랑" },
-  { key: "t2", label: "갈색" },
-  { key: "t3", label: "초록" },
-  { key: "t4", label: "보라" },
-  { key: "t0", label: "회색 (공용)" },
-] as const;
+const CUSTOM_DEFAULT = "#2f7d5b"; // "직접 고르기"를 처음 눌렀을 때의 색
 const CODES = "ABCDEFGHIJKLMNOPQRSTUVWXY".split("");
 
 export type ZoneDialogState = { mode: "create" } | { mode: "edit"; zone: SeatingZone };
@@ -53,8 +48,12 @@ export default function ZoneDialog(props: Props) {
   const [name, setName] = useState(editing?.name_custom ? editing.name : "");
   const [code, setCode] = useState(editing?.code ?? CODES.find((c) => !others.some((z) => z.code === c)) ?? "");
   const [color, setColor] = useState<string>(
-    editing?.color_key ?? COLORS.find((c) => c.key !== "t0" && !usedColors.has(c.key))?.key ?? "t1",
+    editing?.color_key ?? ZONE_PALETTE.find((c) => c.key !== "t0" && !usedColors.has(c.key))?.key ?? "t1",
   );
+  // 직접 고른 색: 기본 색으로 바꿨다가 다시 "직접 고르기"를 눌러도 고른 색이 남아 있게 따로 둔다
+  const [customHex, setCustomHex] = useState(isCustomColor(editing?.color_key) ? editing.color_key : CUSTOM_DEFAULT);
+  const custom = isCustomColor(color);
+  const sameColor = others.filter((z) => z.color_key.toLowerCase() === color.toLowerCase()).map((z) => z.name);
   const [view, setView] = useState<"form" | "delete">("form");
   const [mergeInto, setMergeInto] = useState("");
   const [unassign, setUnassign] = useState(false);
@@ -310,19 +309,57 @@ export default function ZoneDialog(props: Props) {
           />
           {codeClash && <span className={styles.conflictText}>{codeClash.name}이 쓰고 있어요</span>}
         </label>
+        {/* legend는 화면 낭독기용만: fieldset 안을 grid로 놓고 legend를 보이면 Safari에서 칸이 어긋난다 */}
         <fieldset className={styles.colors}>
-          <legend>도면 색</legend>
-          {COLORS.map((c) => {
-            const usedBy = others.filter((z) => z.color_key === c.key).map((z) => z.name);
-            return (
-              <label key={c.key} data-color={c.key}>
-                <input type="radio" name="color" checked={color === c.key} onChange={() => setColor(c.key)} />
-                <span className={styles.swatch} aria-hidden="true" />
-                {c.label}
-                {usedBy.length > 0 && <span className={styles.muted}>· {usedBy.join(", ")}</span>}
-              </label>
-            );
-          })}
+          <legend className="visually-hidden">도면 색</legend>
+          <span className={styles.colorsLabel} aria-hidden="true">
+            도면 색
+          </span>
+          <div className={styles.colorGrid}>
+            {ZONE_PALETTE.map((c) => {
+              const usedBy = others.filter((z) => z.color_key === c.key).map((z) => z.name);
+              return (
+                <label
+                  key={c.key}
+                  className={styles.colorOption}
+                  data-color={c.key}
+                  data-checked={color === c.key || undefined}
+                  title={usedBy.length ? `쓰는 구역: ${usedBy.join(", ")}` : undefined}
+                >
+                  <input type="radio" name="color" checked={color === c.key} onChange={() => setColor(c.key)} />
+                  <span className={styles.swatch} aria-hidden="true" />
+                  {c.label}
+                  {usedBy.length > 0 && <span className={styles.colorUsed}>쓰는 중</span>}
+                </label>
+              );
+            })}
+            <label
+              className={styles.colorOption}
+              data-color={customHex}
+              style={zoneColorVars(customHex)}
+              data-checked={custom || undefined}
+            >
+              <input type="radio" name="color" checked={custom} onChange={() => setColor(customHex)} />
+              <input
+                type="color"
+                className={styles.colorInput}
+                aria-label="직접 고를 색"
+                value={customHex}
+                onChange={(e) => {
+                  setCustomHex(e.target.value);
+                  setColor(e.target.value);
+                }}
+              />
+              직접 고르기
+            </label>
+          </div>
+          <p className={styles.hint}>
+            {sameColor.length > 0
+              ? `같은 색을 쓰는 구역: ${sameColor.join(", ")} (도면에서 구분이 어려울 수 있어요)`
+              : custom
+                ? "너무 밝은 색은 구역 이름표의 흰 글자가 보이게 테두리·이름표만 조금 진하게 그려요."
+                : "같은 층의 다른 구역과 다른 색을 고르면 도면에서 구분하기 쉬워요."}
+          </p>
         </fieldset>
         {!editing && (
           <p className={styles.hint}>

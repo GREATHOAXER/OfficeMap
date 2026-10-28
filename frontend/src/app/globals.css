@@ -33,6 +33,20 @@
   --t4-fill: #eee4f4;
   --t0: #6e6e69;
   --t0-fill: #efefec;
+  --t5: #b0303a;
+  --t5-fill: #f8e3e4;
+  --t6: #17766f;
+  --t6-fill: #dcefed;
+  --t7: #b45309;
+  --t7-fill: #fbe9d9;
+  --t8: #a8336f;
+  --t8-fill: #f7e2ed;
+  --t9: #5f6b12;
+  --t9-fill: #ecefd9;
+  --t10: #1f6a99;
+  --t10-fill: #dcebf5;
+  --t11: #866300;
+  --t11-fill: #f5edd3;
 
   --radius: 8px;
   /* 기기 글꼴: macOS·iOS, Windows, Android·리눅스 순 (웹 글꼴을 받지 않는다) */
@@ -130,7 +144,8 @@ a:hover {
   font-family: var(--font-code);
 }
 
-/* 팀 구역 색: data-color="t1" 을 붙이면 --tc(선), --tf(채움)로 쓸 수 있다 */
+/* 팀 구역 색: data-color="t1" 을 붙이면 --tc(선), --tf(채움)로 쓸 수 있다.
+   관리자가 직접 고른 색(#rrggbb)은 화면이 style로 --tc·--tf를 넣는다 (lib/zoneColors.ts zoneColorVars) */
 [data-color="t0"] {
   --tc: var(--t0);
   --tf: var(--t0-fill);
@@ -150,6 +165,34 @@ a:hover {
 [data-color="t4"] {
   --tc: var(--t4);
   --tf: var(--t4-fill);
+}
+[data-color="t5"] {
+  --tc: var(--t5);
+  --tf: var(--t5-fill);
+}
+[data-color="t6"] {
+  --tc: var(--t6);
+  --tf: var(--t6-fill);
+}
+[data-color="t7"] {
+  --tc: var(--t7);
+  --tf: var(--t7-fill);
+}
+[data-color="t8"] {
+  --tc: var(--t8);
+  --tf: var(--t8-fill);
+}
+[data-color="t9"] {
+  --tc: var(--t9);
+  --tf: var(--t9-fill);
+}
+[data-color="t10"] {
+  --tc: var(--t10);
+  --tf: var(--t10-fill);
+}
+[data-color="t11"] {
+  --tc: var(--t11);
+  --tf: var(--t11-fill);
 }
 
 /* 재실 상태 표시. 색만으로 구분하지 않도록 모양이 다르다:

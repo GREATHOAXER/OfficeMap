@@ -879,13 +879,14 @@ def discard_change_set(floor_id: int, admin: CurrentAdmin) -> None:
 # 좌석을 구역에 넣고 빼는 것(경계)은 작업 묶음의 MOVE_ZONE 항목으로 한다. 구역 없애기는 점검을 거쳐 한 번에
 
 
-ColorKey = Literal["t0", "t1", "t2", "t3", "t4"]
+# 구역 색: 기본 색 t0~t11 (화면 lib/zoneColors.ts) 또는 관리자가 직접 고른 색 #rrggbb
+COLOR_KEY_PATTERN = r"^(t(?:[0-9]|1[01])|#[0-9a-fA-F]{6})$"
 
 
 class ZoneIn(BaseModel):
     code: str = Field(pattern=r"^[A-Z][A-Z0-9]?$")  # 층 안에서 겹치지 않는 짧은 이름 (A, B, Z, S1 …)
     department_id: int | None = None  # 공용 구역이면 없음
-    color_key: ColorKey
+    color_key: str = Field(pattern=COLOR_KEY_PATTERN)
     name: str | None = Field(default=None, max_length=100)  # 비우면 부서 이름을 따라간다
 
 
