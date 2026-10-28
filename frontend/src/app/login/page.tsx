@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { fetchLoginInfo, fetchMe } from "@/lib/api";
 import { safeNext } from "@/lib/loginRedirect";
+import ForgetLoginReason from "./ForgetLoginReason";
 import FloorIllustration from "./FloorIllustration";
 import LoginForm from "./LoginForm";
 import styles from "./login.module.css";
@@ -60,6 +61,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
               {notice}
             </p>
           )}
+          <ForgetLoginReason me="/api/auth/me" />
 
           <LoginForm
             ssoEnabled={process.env.SSO_ENABLED === "true"}

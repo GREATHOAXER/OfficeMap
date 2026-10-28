@@ -5,6 +5,7 @@ import styles from "@/app/login/login.module.css";
 import { fetchAdmin, fetchLoginInfo, fetchMe } from "@/lib/api";
 import { safeNext } from "@/lib/loginRedirect";
 import AdminLoginForm from "./AdminLoginForm";
+import ForgetLoginReason from "@/app/login/ForgetLoginReason";
 import own from "./adminLogin.module.css";
 import Logo from "@/components/Logo";
 
@@ -56,6 +57,7 @@ export default async function AdminLoginPage({ searchParams }: PageProps<"/admin
               {notice}
             </p>
           )}
+          <ForgetLoginReason me="/api/admin/auth/me" />
           {user && !notice && (
             <p className={styles.notice}>
               직원 화면에 {user.name} {user.rank ?? ""} 계정으로 로그인되어 있어요. 관리자 비밀번호만 입력하세요.
