@@ -110,7 +110,7 @@ export default function AdminLoginForm({ supportContact, maxFailedCount, next, k
           ref={passwordRef}
           name="password"
           type="password"
-          placeholder="직원 화면 비밀번호와 다릅니다"
+          placeholder="비밀번호 입력"
           autoComplete="current-password"
           maxLength={128}
           aria-invalid={passwordError || undefined}
@@ -127,7 +127,7 @@ export default function AdminLoginForm({ supportContact, maxFailedCount, next, k
       )}
 
       <span id="admin-login-rule" className={styles.formRule}>
-        관리자 비밀번호를 {maxFailedCount}회 연속 틀리면 관리자 계정이 잠깁니다 (직원 화면 로그인은 그대로)
+        관리자 비밀번호를 {maxFailedCount}회 연속 틀리면 관리자 계정이 잠깁니다
       </span>
 
       <button type="submit" className={styles.primaryButton} disabled={submitting}>
