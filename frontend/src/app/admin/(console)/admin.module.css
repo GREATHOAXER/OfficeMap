@@ -955,3 +955,69 @@
   gap: 6px;
   margin-left: auto;
 }
+
+/* 휴대폰(아이폰 13 폭 390px 등)에서는 작은 글자를 한 단계 키운다 (칸이 좁아도 줄을 바꿔 잘리지 않게) */
+@media (max-width: 720px) {
+  .scopeTag,
+  .mineTag {
+    font-size: 12px;
+  }
+
+  .accountTag {
+    font-size: 12.5px;
+  }
+
+  .roleBadge,
+  .statNote,
+  .chip,
+  .subLine,
+  .levels li > .mono,
+  .table td[data-label]::before,
+  .actingTag,
+  .countTag,
+  .statLink {
+    font-size: 13px;
+  }
+
+  .pickList label > .held {
+    font-size: 13.5px;
+  }
+
+  .readyNote,
+  .btn,
+  .myScope > span:not(.muted),
+  .myScope > .muted,
+  .stats li,
+  .siteHead,
+  .table thead th,
+  .team,
+  .plan,
+  .updated,
+  .sectionHead,
+  .levels li,
+  .foot,
+  .errorDigest,
+  .addLink,
+  .approvalEmpty,
+  .approvalResult,
+  .approvalHead .muted,
+  .approvalSummary,
+  .approvalConfirm p,
+  .rejectField,
+  .approvalError,
+  .unseatedCount {
+    font-size: 14px;
+  }
+
+  .myScope,
+  .table th,
+  .table td,
+  .errorBox code,
+  .pickList label,
+  .picked,
+  .approval,
+  .rejectField textarea,
+  .unseatedList li {
+    font-size: 15px;
+  }
+}

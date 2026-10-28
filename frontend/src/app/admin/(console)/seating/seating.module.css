@@ -1224,3 +1224,76 @@
 .footLeft {
   margin-right: auto;
 }
+
+/* 휴대폰(아이폰 13 폭 390px 등)에서는 작은 글자를 한 단계 키운다 (칸이 좁아도 줄을 바꿔 잘리지 않게) */
+@media (max-width: 720px) {
+  .zoneName span,
+  .zoneRight,
+  .personName span,
+  .hits button span,
+  .legendChanged,
+  .legendConflict,
+  .legendLocked,
+  .statusChip,
+  .colorUsed {
+    font-size: 13px;
+  }
+
+  .changes .muted,
+  .conflictText,
+  .requests .muted {
+    font-size: 13.5px;
+  }
+
+  .roleChip,
+  .status,
+  .btn,
+  .linkButton,
+  .notice,
+  .hint,
+  .muted,
+  .empty,
+  .tool,
+  .tools .toolPending,
+  .zoneList li,
+  .pickNote,
+  .check,
+  .legend,
+  .field,
+  .noteField,
+  .modes legend,
+  .when legend,
+  .fieldError,
+  .lockNote,
+  .conflictNote,
+  .requestSummary,
+  .rejectNote,
+  .colorsLabel {
+    font-size: 14px;
+  }
+
+  .modeBar {
+    font-size: 14.5px;
+  }
+
+  .infoBar,
+  .cardTitle,
+  .personName,
+  .searchField input,
+  .hits button,
+  .crumb,
+  .zoom button,
+  .select,
+  .modes,
+  .when,
+  .dateInput,
+  .noteField input,
+  .noteField textarea,
+  .changes li,
+  .requests li,
+  .toast,
+  .textInput,
+  .colors {
+    font-size: 15px;
+  }
+}

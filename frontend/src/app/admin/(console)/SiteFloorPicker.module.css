@@ -118,3 +118,19 @@
   border-radius: 8px;
   box-shadow: 0 10px 28px rgba(28, 28, 28, 0.18);
 }
+
+/* 휴대폰(아이폰 13 폭 390px 등)에서는 작은 글자를 한 단계 키운다 (칸이 좁아도 줄을 바꿔 잘리지 않게) */
+@media (max-width: 720px) {
+  .note {
+    font-size: 13px;
+  }
+
+  .colHead {
+    font-size: 13.5px;
+  }
+
+  .item,
+  .menuButton {
+    font-size: 15px;
+  }
+}

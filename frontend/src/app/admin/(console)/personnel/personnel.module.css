@@ -287,3 +287,37 @@
   font-size: 12px;
   color: var(--muted);
 }
+
+/* 휴대폰(아이폰 13 폭 390px 등)에서는 작은 글자를 한 단계 키운다 (칸이 좁아도 줄을 바꿔 잘리지 않게) */
+@media (max-width: 720px) {
+  .templateFile {
+    font-size: 12px;
+  }
+
+  .chip {
+    font-size: 13px;
+  }
+
+  .table thead th {
+    font-size: 13.5px;
+  }
+
+  .drop span,
+  .counts,
+  .filters button,
+  .message,
+  .templateText span {
+    font-size: 14px;
+  }
+
+  .table {
+    font-size: 14.5px;
+  }
+
+  .drop,
+  .counts strong,
+  .historyHead,
+  .templateText {
+    font-size: 15px;
+  }
+}

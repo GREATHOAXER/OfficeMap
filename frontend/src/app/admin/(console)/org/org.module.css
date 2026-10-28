@@ -626,3 +626,45 @@
 .sortButton[data-active] .sortMark {
   color: var(--ink);
 }
+
+/* 휴대폰(아이폰 13 폭 390px 등)에서는 작은 글자를 한 단계 키운다 (칸이 좁아도 줄을 바꿔 잘리지 않게) */
+@media (max-width: 720px) {
+  .sortMark {
+    font-size: 12px;
+  }
+
+  .badge {
+    font-size: 13px;
+  }
+
+  .cascadeHead {
+    font-size: 13.5px;
+  }
+
+  .finderMeta,
+  .finderNote,
+  .fold,
+  .count,
+  .path,
+  .renameButton,
+  .deptTitle :global(.mono),
+  .table th,
+  .cascadeLabel {
+    font-size: 14px;
+  }
+
+  .warn {
+    font-size: 14.5px;
+  }
+
+  .finderField input,
+  .finderList li,
+  .nodeName,
+  .membersHead h3,
+  .table,
+  .pickList label,
+  .cascadePath,
+  .cascadeItem {
+    font-size: 15px;
+  }
+}
