@@ -45,11 +45,10 @@ export default function SiteFloorPicker({
             <li key={id}>
               <button
                 type="button"
-                className={styles.item}
+                className={`${styles.item} ${styles.siteItem}`}
                 aria-pressed={id === shownSite}
                 onClick={() => setViewSite(id)}
               >
-                <BuildingIcon size={15} />
                 <span className={styles.label}>{name}</span>
                 <span className={styles.note}>{floors.filter((f) => f.site_id === id).length}개 층</span>
               </button>

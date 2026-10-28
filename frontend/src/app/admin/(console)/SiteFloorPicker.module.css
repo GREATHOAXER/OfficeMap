@@ -84,6 +84,19 @@
   color: var(--muted-on-dark);
 }
 
+/* 사업장: 이름 아래 층 수 */
+.siteItem {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.siteItem .note {
+  margin-left: 0;
+}
+
 /* 머리줄의 "사업장 · 층 ▾" 단추와 펼친 목록 (SiteFloorMenu) */
 .menu {
   position: relative;
