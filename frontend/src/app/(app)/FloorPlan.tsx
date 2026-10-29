@@ -15,7 +15,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import Avatar from "@/components/Avatar";
-import { CloseIcon } from "@/components/icons";
+import { ChevronDownIcon, CloseIcon } from "@/components/icons";
 import type { FloorMap, Occupant, Rect, Room, Seat, ShapeStyle, Zone } from "@/lib/api";
 import { agoText } from "@/lib/dates";
 import {
@@ -38,6 +38,8 @@ import { zoneColorVars } from "@/lib/zoneColors";
 
 const HOVER_DELAY_MS = 700; // 자리에 마우스를 이만큼(0.7초) 올려 두면 정보 카드가 뜬다
 const DRAG_THRESHOLD_PX = 5; // 이보다 적게 움직이면 끌기가 아니라 누르기
+const TAP_SLOP_PX = 10; // 손가락이 이보다 적게 움직이고 떨어지면 누르기 (더 움직이면 스크롤·끌기)
+const SCROLL_SETTLE_MS = 300; // 스크롤이 이만큼 안에 있었으면 그때 누른 손가락은 관성 스크롤을 멈추려는 것
 
 export const ZOOM_MIN = 0.5;
 export const ZOOM_MAX = 3;
@@ -68,8 +70,10 @@ type Props = {
   /** 눌러서 고정한 정보 카드 (좁은 화면에서는 오른쪽 패널 대신 이걸 띄운다) */
   pinnedSeatId: number | null;
   onUnpin: () => void;
-  /** 휴대폰: 도면 아래 자리 카드가 화면에 보이는 동안은 아래 시트를 띄우지 않는다 (같은 사람이 겹쳐 두 번 보이지 않게) */
+  /** 휴대폰: 도면 아래 자리 카드가 화면에 보이는 동안은 아래 시트를 내려 숨긴다 (같은 사람이 겹쳐 두 번 보이지 않게) */
   hideSheet?: boolean;
+  /** 휴대폰 시트의 "아래에서 상세 보기": 도면 아래 자리 카드로 내려간다 */
+  onShowDetail?: () => void;
 };
 
 /** 그려진 도면 폭(px)에서 이름 글자가 너무 작아 읽을 수 없는 자리(돌린 책상·이름이 긴 자리)는 이름을 숨기고 재실 표시만 둔다.
@@ -92,7 +96,7 @@ function reportScale(scale: { px: number; widthM: number; report?: (px: number) 
 
 export default function FloorPlan(props: Props) {
   const { map, myEmpNo, zoom, onZoomChange, focusZoneId, visibleStatuses, selectedSeatId, onSelectSeat } = props;
-  const { pinnedSeatId, onUnpin, onFitZoom, onScale, hideSheet = false } = props;
+  const { pinnedSeatId, onUnpin, onFitZoom, onScale, hideSheet = false, onShowDetail } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
   const planRef = useRef<HTMLDivElement>(null);
   const [hoverSeatId, setHoverSeatId] = useState<number | null>(null);
@@ -186,21 +190,53 @@ export default function FloorPlan(props: Props) {
     reportScale(scaleRef.current, width);
   }, [map]);
 
-  // 고정한 정보 카드: Esc나 카드·자리 밖을 누르면 닫는다
+  // 고정한 정보 카드: Esc나 카드·자리·자리 상세 패널 밖을 눌렀다 떼면 닫는다.
+  // 손가락이 닿자마자 닫지 않는다: 휴대폰에서 카드를 띄운 채 화면을 밀어 스크롤하면 카드와 선택이 같이 사라졌다.
+  // 밀기·두 손가락 확대·관성 스크롤 멈추기는 누르기가 아니다 (브라우저가 스크롤을 맡으면 pointercancel이 오고, 아니어도 움직인 거리로 가린다).
+  // click 대신 pointer 이벤트로 직접 본다: iPhone Safari는 누를 수 없는 곳(도면의 빈 바닥 등)에서는 click을 보내지 않는다
   useEffect(() => {
     if (pinnedSeatId === null) return;
+    const keep = `.${styles.popover}, .${styles.sheet}, .${styles.seat}, .${styles.side}`;
+    let fingers = 0; // 화면에 닿아 있는 손가락(누른 마우스 단추) 수
+    let tap: { id: number; x: number; y: number } | null = null;
+    let scrolledAt = -Infinity;
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") onUnpin();
     }
+    function onScroll(event: Event) {
+      scrolledAt = event.timeStamp;
+    }
     function onPointerDown(event: PointerEvent) {
+      // 첫 손가락(마우스)은 새로 센다: 창 밖에서 뗀 단추처럼 떼는 것을 못 받아도 수가 쌓이지 않게
+      fingers = event.isPrimary ? 1 : fingers + 1;
       const target = event.target as Element;
-      if (!target.closest(`.${styles.popover}, .${styles.sheet}, .${styles.seat}`)) onUnpin();
+      tap =
+        fingers > 1 || event.timeStamp - scrolledAt < SCROLL_SETTLE_MS || target.closest(keep)
+          ? null
+          : { id: event.pointerId, x: event.clientX, y: event.clientY };
+    }
+    function onPointerUp(event: PointerEvent) {
+      fingers = Math.max(0, fingers - 1); // 카드를 띄운 그 누르기는 여기서 처음 떨어진다
+      if (tap?.id !== event.pointerId) return;
+      const moved = Math.hypot(event.clientX - tap.x, event.clientY - tap.y);
+      tap = null;
+      if (moved < TAP_SLOP_PX) onUnpin();
+    }
+    function onPointerCancel(event: PointerEvent) {
+      fingers = Math.max(0, fingers - 1);
+      if (tap?.id === event.pointerId) tap = null;
     }
     document.addEventListener("keydown", onKeyDown);
-    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("pointerup", onPointerUp, true);
+    document.addEventListener("pointercancel", onPointerCancel, true);
+    window.addEventListener("scroll", onScroll, true); // 도면 영역 안 스크롤도 (scroll은 거품처럼 올라오지 않아 capture로)
     return () => {
       document.removeEventListener("keydown", onKeyDown);
-      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("pointerup", onPointerUp, true);
+      document.removeEventListener("pointercancel", onPointerCancel, true);
+      window.removeEventListener("scroll", onScroll, true);
     };
   }, [pinnedSeatId, onUnpin]);
 
@@ -381,9 +417,10 @@ export default function FloorPlan(props: Props) {
   }
   const geometry = plan.geometry ?? {};
   const zones = new Map(map.zones.map((z) => [z.id, z]));
-  // 고정한 카드가 먼저. 마우스를 올려 띄운 카드는 그 자리가 고정 카드가 아닐 때만
+  // 고정한 카드가 먼저. 마우스를 올려 띄운 카드는 그 자리가 고정 카드가 아닐 때만.
+  // 빈 자리는 휴대폰 시트로만 (눌렀는데 화면에 아무것도 안 뜨지 않게). 마우스를 올린 빈 자리는 카드를 띄우지 않는다
   const cardSeatId = pinnedSeatId ?? hoverSeatId;
-  const cardSeat = map.seats.find((s) => s.id === cardSeatId && s.occupant);
+  const cardSeat = map.seats.find((s) => s.id === cardSeatId && (s.occupant || s.id === pinnedSeatId));
   // Tab이 머무는 자리: 마지막으로 머문 자리 → 고른 자리 → 내 자리 → 왼쪽 위 자리
   const has = (id: number | null | undefined) => id != null && map.seats.some((s) => s.id === id);
   const tabSeatId = has(focusSeatId)
@@ -476,6 +513,7 @@ export default function FloorPlan(props: Props) {
             pinned={cardSeat.id === pinnedSeatId}
             hideSheet={hideSheet}
             onClose={onUnpin}
+            onShowDetail={onShowDetail}
           />
         )}
       </div>
@@ -613,6 +651,7 @@ type CardProps = {
   pinned: boolean;
   hideSheet: boolean;
   onClose: () => void;
+  onShowDetail?: () => void;
 };
 
 const CARD_GAP = 10; // 자리와 카드 사이
@@ -622,13 +661,13 @@ const CARD_SKILLS = 4; // 카드에 보여 줄 업무 키워드 수 (나머지�
 /**
  * 자리 위(모자라면 아래)에 뜨는 사람 정보 카드. 글자 크기는 배율과 상관없이 같다.
  * 화면(body)에 띄우고 자리 위치에 맞춰 놓아서, 도면 영역 가장자리나 화면 끝에서 잘리지 않는다 (넘치면 안쪽으로 민다).
- * 휴대폰에서 눌러 고정한 카드는 화면 아래에서 올라오는 시트로 띄운다 (도면 아래 자리 카드가 보이는 동안은 띄우지 않는다)
+ * 휴대폰에서 눌러 고정한 자리는 화면 아래 작은 시트로 띄운다 (SeatSheet)
  */
-function SeatCard({ seat, zone, floorName, pinned, hideSheet, onClose }: CardProps) {
+function SeatCard({ seat, zone, floorName, pinned, hideSheet, onClose, onShowDetail }: CardProps) {
   const phone = useMediaQuery("(max-width: 720px)");
   const sheet = pinned && phone;
   const cardRef = useRef<HTMLDivElement>(null);
-  const occupant = seat.occupant!;
+  const { occupant } = seat;
 
   // 자리 옆에 놓는다. 도면을 스크롤·확대하거나 창 크기가 바뀌면 다시 맞추고, 자리가 도면 영역 밖으로 나가면 숨긴다
   useLayoutEffect(() => {
@@ -673,9 +712,30 @@ function SeatCard({ seat, zone, floorName, pinned, hideSheet, onClose }: CardPro
     };
   }, [seat.id, sheet]);
 
+  if (sheet) {
+    return createPortal(
+      <SeatSheet
+        seat={seat}
+        zone={zone}
+        floorName={floorName}
+        hidden={hideSheet}
+        onClose={onClose}
+        onShowDetail={onShowDetail}
+      />,
+      document.body,
+    );
+  }
+  if (!occupant) return null;
   const more = occupant.skills.length - CARD_SKILLS;
-  const body = (
-    <>
+  return createPortal(
+    <div
+      ref={cardRef}
+      className={styles.popover}
+      data-pinned={pinned}
+      style={{ visibility: "hidden" }}
+      role={pinned ? "dialog" : "tooltip"}
+      aria-label={`${occupant.name} 정보`}
+    >
       <div className={styles.popoverHead}>
         {occupant.photo && (
           <span className={styles.popoverAvatar} aria-hidden="true">
@@ -711,28 +771,115 @@ function SeatCard({ seat, zone, floorName, pinned, hideSheet, onClose }: CardPro
         {occupant.extension && ` · 내선 ${occupant.extension}`}
         {occupant.kind === "DAILY" && " · 오늘만 이 자리"}
       </span>
-    </>
-  );
-
-  if (sheet && hideSheet) return null;
-  return createPortal(
-    sheet ? (
-      <div className={styles.sheet} role="dialog" aria-label={`${occupant.name} 정보`}>
-        {body}
-      </div>
-    ) : (
-      <div
-        ref={cardRef}
-        className={styles.popover}
-        data-pinned={pinned}
-        style={{ visibility: "hidden" }}
-        role={pinned ? "dialog" : "tooltip"}
-        aria-label={`${occupant.name} 정보`}
-      >
-        {body}
-      </div>
-    ),
+    </div>,
     document.body,
+  );
+}
+
+type SheetProps = {
+  seat: Seat;
+  zone: Zone | undefined;
+  floorName: string;
+  /** 도면 아래 자리 카드가 화면에 들어와 있으면 아래로 내려 숨긴다 (다시 도면으로 올라가면 올라온다) */
+  hidden: boolean;
+  onClose: () => void;
+  onShowDetail?: () => void;
+};
+
+/**
+ * 휴대폰에서 누른 자리: 화면 아래에 작게 띄우는 요약 (누가·어느 팀·지금 상태·자리와 내선).
+ * 하는 일·이메일 같은 자세한 정보는 도면 아래 카드에 있어서 "아래에서 상세 보기"로 그리로 내려 보낸다.
+ * 시트는 그대로 두고 화면을 밀어도 사라지지 않는다. 닫기: ✕, Esc, 도면의 빈 곳 누르기
+ */
+function SeatSheet({ seat, zone, floorName, hidden, onClose, onShowDetail }: SheetProps) {
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const shownRef = useRef(hidden); // 이 자리로 시트를 처음 띄울 때 한 번만 (다시 올라올 때마다 화면을 옮기지 않게)
+  // 누른 자리가 시트에 가려지면 페이지를 그만큼 올린다 (어느 자리를 눌렀는지 보이게).
+  // 검색으로 고른 자리는 도면 가운데로 옮기는 중이라 그 스크롤이 끝난 뒤에 본다
+  useEffect(() => {
+    if (shownRef.current) return;
+    shownRef.current = true;
+    const timer = setTimeout(() => {
+      const sheet = sheetRef.current;
+      const seatEl = document.querySelector<HTMLElement>(`[data-seat-id="${seat.id}"]`);
+      if (!sheet || !seatEl) return;
+      const covered = seatEl.getBoundingClientRect().bottom - (sheet.getBoundingClientRect().top - CARD_GAP);
+      if (covered > 0) window.scrollBy({ top: covered, behavior: "smooth" });
+    }, 350); // 시트가 다 올라온 뒤 (.sheet 애니메이션 0.22초)
+    return () => clearTimeout(timer);
+  }, [seat.id]);
+  const { occupant } = seat;
+  const presence = occupant?.presence;
+  const period = presence ? presencePeriod(presence) : null;
+  const message = presence ? presenceMessage(presence) : null;
+  const title = occupant
+    ? occupant.name
+    : seat.status === "OUT_OF_SERVICE"
+      ? "사용 중지 좌석"
+      : seat.seat_type === "FLEX"
+        ? "빈 자율석"
+        : "빈 자리";
+  return (
+    <div
+      ref={sheetRef}
+      className={styles.sheet}
+      role="dialog"
+      aria-label={`${title} 정보`}
+      data-hidden={hidden}
+      // 숨은 동안은 누르거나 Tab으로 들어오지 못하게 (화면 읽기 프로그램에도 안 보인다)
+      inert={hidden}
+    >
+      <div className={styles.popoverHead}>
+        {occupant?.photo && (
+          <span className={styles.popoverAvatar} aria-hidden="true">
+            <Avatar name={occupant.name} photo={occupant.photo} size={32} />
+          </span>
+        )}
+        <strong className={styles.sheetName}>
+          {title}
+          {occupant && <span> {occupant.rank}</span>}
+          {occupant?.display_name && <span className={styles.popoverMuted}> · {occupant.display_name}</span>}
+        </strong>
+        <button type="button" className={styles.popoverClose} aria-label="닫기" onClick={onClose}>
+          <CloseIcon size={16} />
+        </button>
+      </div>
+      <span className={styles.sheetLine}>
+        <span
+          className={styles.popoverTeam}
+          data-color={zone?.color_key ?? "t0"}
+          style={zoneColorVars(zone?.color_key)}
+        >
+          <span className={styles.swatch} aria-hidden="true" />
+          {occupant?.department ?? (zone ? `${zone.name} 구역` : "구역 없음")}
+        </span>
+        {occupant && (
+          <span className={styles.sheetStatus}>
+            {presence ? (
+              <>
+                <span className="mk" data-status={presence.status} aria-hidden="true" />
+                <strong>{PRESENCE_LABEL[presence.status]}</strong>
+                {period && ` · ${period}`}
+                {message && ` · ${message}`}
+              </>
+            ) : (
+              <span className={styles.popoverMuted}>{NO_STATUS_LABEL}</span>
+            )}
+          </span>
+        )}
+      </span>
+      <span className={`mono ${styles.popoverMuted}`}>
+        {floorName} {seat.code}
+        {occupant?.extension && ` · 내선 ${occupant.extension}`}
+        {occupant?.kind === "DAILY" && " · 오늘만 이 자리"}
+      </span>
+      {onShowDetail && (
+        <button type="button" className={styles.sheetMore} onClick={onShowDetail}>
+          아래에서 상세 보기
+          <ChevronDownIcon size={14} />
+        </button>
+      )}
+    </div>
   );
 }
 

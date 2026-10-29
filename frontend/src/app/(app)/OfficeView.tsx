@@ -21,6 +21,8 @@ import { zoneColorVars } from "@/lib/zoneColors";
 // 도면(.main)과 오른쪽 패널(.side)의 최소 폭 (office.module.css flex-basis와 같게)
 const MAIN_MIN_PX = 560;
 const SIDE_MIN_PX = 280;
+// 휴대폰 아래 시트가 차지하는 높이 (시트 + 아래 여백 + iPhone 홈 막대, office.module.css .sheet)
+const SHEET_ROOM_PX = 190;
 
 type Props = {
   floors: FloorSummary[];
@@ -249,19 +251,25 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
     wasAiOpen.current = aiOpen;
   }, [aiOpen]);
 
-  // 휴대폰: 자리를 누르면 화면 아래 시트가 뜨고, 도면 아래(패널 자리)에도 같은 사람 카드가 있다.
-  // 스크롤해서 그 카드가 화면에 들어오면 시트를 숨겨 둘이 겹치지 않게 한다 (다시 도면으로 올라가면 시트가 돌아온다)
+  // 휴대폰: 자리를 누르면 화면 아래 작은 시트가 뜨고, 도면 아래(패널 자리)에 같은 사람의 자세한 카드가 있다.
+  // 스크롤해서 그 카드가 시트 위로 올라오면 시트를 내려 숨겨 둘이 겹치지 않게 한다 (다시 도면으로 올라가면 시트가 돌아온다).
+  // 화면 아래 시트 높이만큼은 보이는 것으로 치지 않는다: 도면을 줄이면 카드 윗줄 몇 px만 화면 끝에 걸치는데,
+  // 그때 시트를 숨기면 누른 사람의 정보가 어디에도 안 보였다
   const [sideInView, setSideInView] = useState(false);
   useEffect(() => {
     const side = sideRef.current;
     if (!side || !stacked) return;
-    const observer = new IntersectionObserver(([entry]) => setSideInView(entry.isIntersecting));
+    const observer = new IntersectionObserver(([entry]) => setSideInView(entry.isIntersecting), {
+      rootMargin: `0px 0px -${SHEET_ROOM_PX}px 0px`,
+    });
     observer.observe(side);
     return () => {
       observer.disconnect();
       setSideInView(false);
     };
   }, [stacked]);
+  // 시트의 "아래에서 상세 보기": 도면 아래 자세한 카드로 내려간다 (휴대폰 위쪽 메뉴 막대에 가리지 않게 .side scroll-margin-top)
+  const showDetail = useCallback(() => sideRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }), []);
 
   const selectedSeat = map.seats.find((s) => s.id === selectedSeatId) ?? null;
   const personShown = selectedSeat !== null || noSeatHit !== null;
@@ -487,6 +495,7 @@ export default function OfficeView({ floors, myFloorId, teamFloorId, myEmpNo, my
               pinnedSeatId={pinnedSeatId}
               onUnpin={unpin}
               hideSheet={stacked && sideInView}
+              onShowDetail={showDetail}
             />
           </div>
 

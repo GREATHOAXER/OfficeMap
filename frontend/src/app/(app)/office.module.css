@@ -1485,7 +1485,8 @@
   }
 }
 
-/* 휴대폰에서 눌러 고정한 자리 정보: 화면 아래에서 올라오는 시트 */
+/* 휴대폰에서 누른 자리의 작은 요약: 화면 아래에서 올라오는 시트 (FloorPlan.tsx SeatSheet).
+   도면 아래 자세한 카드가 화면에 들어오면 아래로 내려 숨고, 다시 도면으로 올라가면 올라온다 (data-hidden, OfficeView가 정함) */
 .sheet {
   position: fixed;
   left: calc(12px + env(safe-area-inset-left));
@@ -1494,8 +1495,8 @@
   z-index: 40;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 14px 16px;
+  gap: 4px;
+  padding: 10px 14px 0;
   border: 1.5px solid var(--ink);
   border-radius: 12px;
   background: var(--surface);
@@ -1503,6 +1504,90 @@
   font-size: 14px;
   color: var(--ink); /* 데스크톱 카드와 같이 이름은 진하게 (흐린 글은 칸마다 따로 정함) */
   overflow-wrap: anywhere;
+  transition:
+    transform 0.22s ease,
+    opacity 0.22s ease,
+    visibility 0s;
+  animation: sheetIn 0.22s ease;
+}
+
+.sheet[data-hidden="true"] {
+  transform: translateY(calc(100% + 16px + env(safe-area-inset-bottom)));
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    transform 0.22s ease,
+    opacity 0.22s ease,
+    visibility 0s 0.22s; /* 다 내려간 뒤에 숨긴다 */
+}
+
+@keyframes sheetIn {
+  from {
+    transform: translateY(calc(100% + 16px));
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet,
+  .sheet[data-hidden="true"] {
+    transition: none;
+    animation: none;
+  }
+}
+
+.sheetName {
+  min-width: 0;
+}
+
+/* 팀 · 재실 상태를 한 줄에. 상태 메시지가 길면 끝을 줄인다 (전부는 아래 자세한 카드에) */
+.sheetLine {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.sheetLine .popoverTeam {
+  flex: none;
+}
+
+.sheetStatus {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+
+.sheetStatus .mk {
+  flex: none;
+}
+
+/* "아래에서 상세 보기 ⌄": 시트 맨 아래 한 줄 전체가 누르는 곳 (엄지로 누르기 쉽게 높이 40px) */
+.sheetMore {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 40px;
+  margin: 4px -14px 0;
+  border: 0;
+  border-top: 1px solid var(--divider);
+  border-radius: 0 0 11px 11px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sheetMore:active {
+  background: var(--bg);
 }
 
 .freshness {
@@ -2215,9 +2300,8 @@
 
   .side {
     position: static;
+    scroll-margin-top: 64px; /* "아래에서 상세 보기"로 내려왔을 때 위쪽 메뉴 막대(52px)에 카드 윗줄이 가리지 않게 */
   }
-
-
 
   .hint {
     margin-left: 0;
