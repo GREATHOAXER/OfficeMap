@@ -136,7 +136,7 @@ export default function BackgroundDialog({
         </div>
         <div className={styles.numbers}>
           <label>
-            폭 (m)
+            가로 (m)
             <input
               type="number"
               inputMode="decimal"
@@ -153,7 +153,7 @@ export default function BackgroundDialog({
             />
           </label>
           <label>
-            높이 (m)
+            세로 (m)
             <input
               type="number"
               inputMode="decimal"
@@ -172,7 +172,7 @@ export default function BackgroundDialog({
         </div>
         {!ok && (
           <p className={ui.conflictText} role="alert">
-            왼쪽·위는 숫자로, 폭·높이는 0.5~{MAX_SIZE * 2} m 사이로 넣어 주세요
+            왼쪽·위는 숫자로, 가로·세로는 0.5~{MAX_SIZE * 2} m 사이로 넣어 주세요
           </p>
         )}
         <label className={ui.check}>

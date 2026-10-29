@@ -117,7 +117,7 @@ CREATE UNIQUE INDEX seats_floor_code_idx ON seats (floor_id, code) WHERE status 
 CREATE UNIQUE INDEX seats_floor_element_idx ON seats (floor_id, plan_element_key)
     WHERE status <> 'REMOVED' AND plan_element_key IS NOT NULL;
 
--- 구역 모양 자동 계산(좌석이 바뀌면 그 층 구역 모양을 다시 계산하는 트리거)은 15_zone_shapes.sql
+-- 구역 모양 자동 계산(좌석이 바뀌면 그 층 구역 모양을 다시 계산하는 트리거)은 16_zone_plan_obstacles.sql
 
 -- 조직도 변화 → 구역 -------------------------------------------------------------
 -- 부서 이름이 바뀌면 구역 이름도 따라 바꾼다 (관리자가 별칭을 정한 구역은 그대로)

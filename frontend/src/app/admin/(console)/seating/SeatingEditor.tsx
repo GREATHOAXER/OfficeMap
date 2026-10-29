@@ -25,7 +25,7 @@ import { placeOf } from "../place";
 import { openEventStream } from "@/lib/eventStream";
 import { drawingFromSeating } from "@/lib/floorDrawing";
 import { useNow } from "@/lib/useNow";
-import { autoZoneRects, zoneRects } from "@/lib/zoneShape";
+import { autoZoneRects, planObstacles, zoneRects } from "@/lib/zoneShape";
 import { adminExpiredUrl } from "@/lib/loginRedirect";
 import {
   baseMode,
@@ -212,7 +212,7 @@ export default function SeatingEditor({ admin, initial, notice, reviewId = null 
   const readOnly = preview || pending || !!review;
   // 구역 경계를 바꾸면 반영 전에 바뀔 모양을 미리 계산해서 그린다 (서버도 같은 방법으로 저장한다)
   const zoneMoved = Object.keys(shown.zones).length > 0;
-  // 이웃 구역의 좌석도 모양에 영향을 주므로(서로 침범하지 않게 나눈다) 층 전체를 한 번에 계산한다
+  // 이웃 구역의 좌석과 도면 요소(벽·회의실 등)도 모양에 영향을 주므로(침범하지 않게 자른다) 층 전체를 한 번에 계산한다
   const autoShapes = useMemo(() => {
     if (!zoneMoved) return null;
     const seats = data.seats.flatMap((seat) => {
@@ -220,8 +220,8 @@ export default function SeatingEditor({ admin, initial, notice, reviewId = null 
       return zoneId === null ? [] : [{ ...seat, zoneId }];
     });
     const size = { width_m: data.plan?.width_m ?? 50, height_m: data.plan?.height_m ?? 30 };
-    return autoZoneRects(seats, size);
-  }, [zoneMoved, data.seats, data.plan, layout]);
+    return autoZoneRects(seats, size, planObstacles(data.plan?.geometry, data.rooms, size));
+  }, [zoneMoved, data.seats, data.plan, data.rooms, layout]);
   const rectsOf = useCallback(
     (zone: SeatingZone) => (autoShapes ? (autoShapes.get(zone.id) ?? []) : zoneRects(zone.shape)),
     [autoShapes],

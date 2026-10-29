@@ -116,7 +116,7 @@ function Summary(props: Props) {
           <legend>도면 크기 (m)</legend>
           <div className={styles.numbers}>
             <Num
-              label="폭"
+              label="가로"
               value={width}
               min={MIN_SIZE}
               max={MAX_SIZE}
@@ -124,7 +124,7 @@ function Summary(props: Props) {
               onChange={(w) => onResize({ width: w, height })}
             />
             <Num
-              label="높이"
+              label="세로"
               value={height}
               min={MIN_SIZE}
               max={MAX_SIZE}
@@ -147,7 +147,7 @@ function Summary(props: Props) {
             <legend>새 책상 기본 크기 (m)</legend>
             <div className={styles.numbers}>
               <Num
-                label="책상 폭"
+                label="책상 가로"
                 value={desk.w}
                 min={DESK_RANGE.min}
                 max={DESK_RANGE.max}
@@ -155,7 +155,7 @@ function Summary(props: Props) {
                 onChange={(w) => setDesk({ ...desk, w })}
               />
               <Num
-                label="책상 깊이"
+                label="책상 세로"
                 value={desk.h}
                 min={DESK_RANGE.min}
                 max={DESK_RANGE.max}
@@ -275,8 +275,8 @@ function Properties({
             <Num label="y (m)" value={el.y} onChange={(y) => set({ y }, "y")} />
             {el.type !== "desk_group" && (
               <>
-                <Num label="폭 (m)" value={el.w} min={0.1} onChange={(w) => set({ w }, "w")} />
-                <Num label="높이 (m)" value={el.h} min={0.1} onChange={(h) => set({ h }, "h")} />
+                <Num label="가로 (m)" value={el.w} min={0.1} onChange={(w) => set({ w }, "w")} />
+                <Num label="세로 (m)" value={el.h} min={0.1} onChange={(h) => set({ h }, "h")} />
               </>
             )}
           </div>
@@ -576,8 +576,11 @@ function DeskShapeFields({
   onChange: (groups: DeskGroup[], key?: string) => void;
 }) {
   const first = groups[0];
-  const d = deskDims(first);
   const base = geometry.desk ?? DESK;
+  // 책상 가로·세로는 도면에서 보이는 대로: 90도 돌린 묶음은 책상의 두 변(desk_w·desk_h)이 바뀌어 보인다
+  const turned = (g: DeskGroup) => g.rotation === 90 || g.rotation === 270;
+  const across = (g: DeskGroup) => (turned(g) ? deskDims(g).h : deskDims(g).w);
+  const down = (g: DeskGroup) => (turned(g) ? deskDims(g).w : deskDims(g).h);
   const isBase = groups.every((g) => {
     const dd = deskDims(g);
     return dd.w === base.w && dd.h === base.h;
@@ -616,28 +619,32 @@ function DeskShapeFields({
         <legend>책상 하나 크기 (m)</legend>
         <div className={styles.numbers}>
           <Num
-            label="책상 폭"
-            value={d.w}
+            label="책상 가로"
+            value={across(first)}
             min={DESK_RANGE.min}
             max={DESK_RANGE.max}
             step={0.05}
-            onChange={(w) =>
+            onChange={(v) =>
               onChange(
-                groups.map((g) => ({ ...g, desk_w: w, desk_h: deskDims(g).h })),
-                "desk-w",
+                groups.map((g) =>
+                  turned(g) ? { ...g, desk_w: deskDims(g).w, desk_h: v } : { ...g, desk_w: v, desk_h: deskDims(g).h },
+                ),
+                "desk-across",
               )
             }
           />
           <Num
-            label="책상 깊이"
-            value={d.h}
+            label="책상 세로"
+            value={down(first)}
             min={DESK_RANGE.min}
             max={DESK_RANGE.max}
             step={0.05}
-            onChange={(h) =>
+            onChange={(v) =>
               onChange(
-                groups.map((g) => ({ ...g, desk_w: deskDims(g).w, desk_h: h })),
-                "desk-h",
+                groups.map((g) =>
+                  turned(g) ? { ...g, desk_w: v, desk_h: deskDims(g).h } : { ...g, desk_w: deskDims(g).w, desk_h: v },
+                ),
+                "desk-down",
               )
             }
           />
@@ -650,7 +657,7 @@ function DeskShapeFields({
               className={ui.linkButton}
               onClick={() => onChange(groups.map((g) => ({ ...g, desk_w: base.w, desk_h: base.h })))}
             >
-              기본 크기({base.w} × {base.h})로
+              기본 크기({turned(first) ? `${base.h} × ${base.w}` : `${base.w} × ${base.h}`})로
             </button>
           )}
         </p>

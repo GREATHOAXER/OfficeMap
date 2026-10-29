@@ -26,7 +26,7 @@ SELECT (22000000 + gen.k)::text,
               '나은', '승우', '다인', '재원', '서윤', '규민', '하율', '지환', '아린', '정우'])[1 + (gen.k * 13) % 20],
        d.id,
        (ARRAY['사원', '사원', '대리', '대리', '과장', '차장', '부장'])[1 + gen.k % 7],
-       'dev' || gen.k || '@example.com',
+       'dev' || gen.k || '@officemap.site',
        (6000 + gen.k)::text,
        date '2016-03-02' + (gen.k * 41 % 3500)::int
 FROM gen

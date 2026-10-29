@@ -926,7 +926,7 @@ export default function ImportWizard({ mode, data, onClose, onExpired, onCreated
                         max={6}
                         step={0.1}
                         value={set.desk.w}
-                        aria-label="책상 폭 (m)"
+                        aria-label="책상 가로 (m)"
                         onChange={(e) => updateSet({ desk: { ...set.desk, w: e.target.value } })}
                       />
                       ×
@@ -938,7 +938,7 @@ export default function ImportWizard({ mode, data, onClose, onExpired, onCreated
                         max={6}
                         step={0.1}
                         value={set.desk.h}
-                        aria-label="책상 깊이 (m)"
+                        aria-label="책상 세로 (m)"
                         onChange={(e) => updateSet({ desk: { ...set.desk, h: e.target.value } })}
                       />
                       m

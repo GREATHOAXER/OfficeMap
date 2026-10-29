@@ -67,16 +67,16 @@ JOIN departments p ON p.dept_code = v.parent_code;
 INSERT INTO employees (emp_no, name, department_id, rank_name, position_name, email, extension, hired_on)
 SELECT v.emp_no, v.name, d.id, v.rank_name, v.position_name, v.email, v.extension, v.hired_on::date
 FROM (VALUES
-    ('20090001', '한도윤', 'D110', '부장', '팀장', 'doyun.han@example.com',   '1001', '2009-03-02'),  -- 전사 관리자
-    ('20120002', '강지아', 'D110', '차장', NULL,   'jia.kang@example.com',    '1002', '2012-01-02'),  -- 사업장 관리자. 고정석 없이 자율석 사용
-    ('20100009', '윤하은', 'D110', '차장', NULL,   'haeun.yoon@example.com',  '1003', '2010-03-02'),  -- 10F 비서석
-    ('20130003', '정민호', 'D210', '차장', NULL,   'minho.jung@example.com',  '4001', '2013-07-01'),  -- 7F 층 관리자
-    ('20170008', '김민준', 'D210', '과장', NULL,   'mj.kim@example.com',      '4002', '2017-01-02'),
-    ('20150004', '오서연', 'D120', '과장', NULL,   'seoyeon.oh@example.com',  '3001', '2015-01-05'),  -- 재무팀 B구역 관리자
-    ('20190005', '조시우', 'D120', '대리', NULL,   'siwoo.cho@example.com',   '3002', '2019-07-01'),  -- 법인카드 정산 정담당
-    ('20260006', '이서연', 'D120', '사원', NULL,   'seoyeon.lee@example.com', '3003', '2026-10-01'),  -- 신규 입사, 아직 고정석 없음
-    ('20180010', '한도현', 'D120', '대리', NULL,   'dohyun.han@example.com',  '3004', '2018-01-02'),  -- 파견 복귀, 아직 고정석 없음
-    ('20200007', '김민준', 'D130', '대리', NULL,   'minjun.kim@example.com',  '3101', '2020-01-02')
+    ('20090001', '한도윤', 'D110', '부장', '팀장', 'doyun.han@officemap.site',   '1001', '2009-03-02'),  -- 전사 관리자
+    ('20120002', '강지아', 'D110', '차장', NULL,   'jia.kang@officemap.site',    '1002', '2012-01-02'),  -- 사업장 관리자. 고정석 없이 자율석 사용
+    ('20100009', '윤하은', 'D110', '차장', NULL,   'haeun.yoon@officemap.site',  '1003', '2010-03-02'),  -- 10F 비서석
+    ('20130003', '정민호', 'D210', '차장', NULL,   'minho.jung@officemap.site',  '4001', '2013-07-01'),  -- 7F 층 관리자
+    ('20170008', '김민준', 'D210', '과장', NULL,   'mj.kim@officemap.site',      '4002', '2017-01-02'),
+    ('20150004', '오서연', 'D120', '과장', NULL,   'seoyeon.oh@officemap.site',  '3001', '2015-01-05'),  -- 재무팀 B구역 관리자
+    ('20190005', '조시우', 'D120', '대리', NULL,   'siwoo.cho@officemap.site',   '3002', '2019-07-01'),  -- 법인카드 정산 정담당
+    ('20260006', '이서연', 'D120', '사원', NULL,   'seoyeon.lee@officemap.site', '3003', '2026-10-01'),  -- 신규 입사, 아직 고정석 없음
+    ('20180010', '한도현', 'D120', '대리', NULL,   'dohyun.han@officemap.site',  '3004', '2018-01-02'),  -- 파견 복귀, 아직 고정석 없음
+    ('20200007', '김민준', 'D130', '대리', NULL,   'minjun.kim@officemap.site',  '3101', '2020-01-02')
 ) AS v(emp_no, name, dept_code, rank_name, position_name, email, extension, hired_on)
 JOIN departments d ON d.dept_code = v.dept_code;
 
@@ -97,7 +97,7 @@ SELECT (21000000 + gen.k)::text,
               '우진', '예린', '선우', '지아', '연우', '윤서', '민재', '수빈', '현준', '가은'])[1 + (gen.k / 15 + gen.k * 2) % 30],
        d.id,
        (ARRAY['사원', '대리', '대리', '과장', '과장', '차장', '부장'])[1 + gen.k % 7],
-       'user' || gen.k || '@example.com',
+       'user' || gen.k || '@officemap.site',
        (5000 + gen.k)::text,
        date '2010-01-04' + (gen.k * 37 % 5000)::int
 FROM gen

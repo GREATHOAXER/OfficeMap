@@ -55,7 +55,7 @@ export default function ResizeDialog({ width, height, onClose, onApply }: Props)
         </p>
         <div className={styles.numbers}>
           <label>
-            폭 (m)
+            가로 (m)
             <input
               type="number"
               inputMode="decimal"
@@ -72,7 +72,7 @@ export default function ResizeDialog({ width, height, onClose, onApply }: Props)
             />
           </label>
           <label>
-            높이 (m)
+            세로 (m)
             <input
               type="number"
               inputMode="decimal"
