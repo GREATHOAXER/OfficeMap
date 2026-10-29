@@ -126,7 +126,7 @@ export default function StartScreen({ admin, data, setData, reload, showToast, g
             </p>
             <div className={styles.numbers}>
               <label>
-                사무실 폭 (m)
+                사무실 가로 (m)
                 <input
                   type="number"
                   inputMode="decimal"
@@ -139,7 +139,7 @@ export default function StartScreen({ admin, data, setData, reload, showToast, g
                 />
               </label>
               <label>
-                사무실 높이 (m)
+                사무실 세로 (m)
                 <input
                   type="number"
                   inputMode="decimal"
