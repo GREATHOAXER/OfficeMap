@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronDownIcon, CloseIcon } from "@/components/icons";
 import type { MyPresenceInfo } from "@/lib/api";
 import { PRESENCE_LABEL } from "@/lib/presence";
@@ -21,6 +21,16 @@ export default function MyStatus({ info }: { info: MyPresenceInfo }) {
     if (open) panelRef.current?.querySelector<HTMLInputElement>('input[type="radio"]:checked')?.focus();
     else if (wasOpen.current) buttonRef.current?.focus();
     wasOpen.current = open;
+  }, [open]);
+
+  // 패널이 화면 아래로 넘치지 않게: 패널 위쪽 위치를 CSS에 넘겨 높이를 그 아래 남은 만큼으로 (고르는 칸만 안에서 스크롤)
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (!open || !panel) return;
+    const fit = () => panel.style.setProperty("--panel-top", `${Math.max(0, panel.getBoundingClientRect().top)}px`);
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
   }, [open]);
 
   // 패널 밖을 누르면 닫는다 (자동 로그아웃 알림의 "계속 사용"을 누른 것은 빼고: 고르던 상태가 날아가지 않게)
