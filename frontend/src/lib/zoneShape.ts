@@ -1,7 +1,7 @@
-// 팀 구역 모양. 서버(db/schema/15_zone_shapes.sql 의 zone_floor_shapes)와 같은 방법으로 좌석을 감싸는 사각형을 만든다.
+// 팀 구역 모양. 서버(db/schema/16_zone_shapes.sql 의 zone_shapes_of_floor)와 같은 방법으로 좌석을 감싸는 사각형을 만든다.
 // 배치 화면에서 좌석을 다른 구역으로 옮길 때 반영 전에 바뀔 모양을 미리 그리는 데 쓴다
 
-import type { Rect, ZoneShape } from "./api";
+import type { FloorMap, Rect, ZoneShape } from "./api";
 import { seatRatio } from "./planGeometry";
 
 // 여백 (m). 도면 크기로 나눠 비율로 쓴다. 위쪽은 의자 자리까지 조금 넉넉하게
@@ -10,7 +10,9 @@ const NEAR_Y = 1.5;
 const PAD_X = 0.5;
 const PAD_TOP = 1.5;
 const PAD_BOTTOM = 0.9;
-const GAP = 0.2; // 두 구역이 맞닿는 곳에 남기는 틈 (가운데 선에서 양쪽으로 반씩)
+const GAP = 0.2; // 두 구역이 맞닿는 곳에 남기는 틈 (가운데 선에서 양쪽으로 반씩). 벽·회의실 같은 도면 요소와는 반만
+const WALL_T = 0.3; // 벽(사각형) 기본 굵기 (m). 화면 DEFAULT_LINE.wall과 같다
+const PILLAR = { w: 0.015, h: 0.025 }; // 크기가 없는 기둥 (목업 도면, 비율)
 const EPS = 1e-9;
 const TOUCH = 1e-6; // m. 이보다 적게 겹치면 맞닿은 것 (소수 오차)
 
@@ -24,7 +26,7 @@ export function zoneRects(shape: ZoneShape | null | undefined): Rect[] {
 /** 구역에 든 좌석 (중심점, 크기가 없으면 기본 책상) */
 export type ZoneSeat = { id: number; zoneId: number; x: number; y: number; w?: number | null; h?: number | null };
 
-type Box = { x0: number; y0: number; x1: number; y1: number };
+export type Box = { x0: number; y0: number; x1: number; y1: number };
 const hits = (a: Box, b: Box) => a.x0 < b.x1 - EPS && b.x0 < a.x1 - EPS && a.y0 < b.y1 - EPS && b.y0 < a.y1 - EPS;
 const union = (a: Box, b: Box): Box => ({
   x0: Math.min(a.x0, b.x0),
@@ -33,16 +35,70 @@ const union = (a: Box, b: Box): Box => ({
   y1: Math.max(a.y1, b.y1),
 });
 
+type PlanView = NonNullable<NonNullable<FloorMap["plan"]>["geometry"]>;
+
+/**
+ * 구역이 덮으면 안 되는 도면 요소 (도면 대비 비율의 사각형): 벽(사각형은 네 변을 굵기만큼, 선 벽은 가로·세로 선만),
+ * 기둥·공용 공간·출입구, 회의실. 서버 zone_plan_obstacles와 같다
+ */
+export function planObstacles(
+  geometry: PlanView | null | undefined,
+  rooms: { shape: Rect | null }[],
+  size: { width_m: number; height_m: number },
+): Box[] {
+  const W = size.width_m;
+  const H = size.height_m;
+  const box = (r: Rect): Box => ({ x0: r.x, y0: r.y, x1: r.x + r.w, y1: r.y + r.h });
+  const out: Box[] = rooms.flatMap((room) => (room.shape ? [box(room.shape)] : []));
+  if (!geometry) return out;
+  for (const wall of geometry.walls ?? []) {
+    // 테두리는 사각형 안쪽에 그린다. 굵기(m)는 가로·세로 같다
+    const t = (wall.line ?? WALL_T / W) * W;
+    const tx = Math.min(t / W, wall.w);
+    const ty = Math.min(t / H, wall.h);
+    const { x0, y0, x1, y1 } = box(wall);
+    out.push(
+      { x0, y0, x1, y1: y0 + ty },
+      { x0, y0: y1 - ty, x1, y1 },
+      { x0, y0, x1: x0 + tx, y1 },
+      { x0: x1 - tx, y0, x1, y1 },
+    );
+  }
+  for (const l of geometry.lines ?? []) {
+    if (l.x1 !== l.x2 && l.y1 !== l.y2) continue; // 비스듬한 선은 뺀다
+    const hx = (l.line * W) / 2 / W;
+    const hy = (l.line * W) / 2 / H;
+    out.push({
+      x0: Math.min(l.x1, l.x2) - hx,
+      y0: Math.min(l.y1, l.y2) - hy,
+      x1: Math.max(l.x1, l.x2) + hx,
+      y1: Math.max(l.y1, l.y2) + hy,
+    });
+  }
+  for (const p of geometry.pillars ?? []) {
+    const w = p.w ?? PILLAR.w;
+    const h = p.h ?? PILLAR.h;
+    out.push({ x0: p.x - w / 2, y0: p.y - h / 2, x1: p.x + w / 2, y1: p.y + h / 2 });
+  }
+  for (const r of [...(geometry.spaces ?? []), ...(geometry.entrances ?? [])]) out.push(box(r));
+  return out;
+}
+
 /**
  * 한 층의 구역 모양을 모두 한 번에 계산한다 (구역 id → 사각형들, 위에서 아래·왼쪽에서 오른쪽 순). 크기는 도면 크기(m).
- * 다른 구역을 침범하지 않게:
- *  1) 같은 구역 좌석 중 가까운 것끼리 한 덩어리로 묶되, 묶은 사각형이 다른 구역 좌석에 걸리면 묶지 않는다
- *     (다른 팀 좌석을 사이에 둔 두 좌석은 따로 그린다)
+ * 다른 구역과 도면 요소(obstacles: 벽·회의실·공간·기둥·출입구, planObstacles)를 침범하지 않고 도면 밖으로 나가지 않게:
+ *  1) 같은 구역 좌석 중 가까운 것끼리 한 덩어리로 묶되, 묶은 사각형이 다른 구역 좌석이나 도면 요소에 걸리면 묶지 않는다
+ *     (다른 팀 좌석·기둥·벽을 사이에 둔 두 좌석은 따로 그린다. 좌석이 원래 걸쳐 있던 요소는 셈하지 않는다)
  *  2) 덩어리마다 좌석을 감싸고 여백을 둔다
- *  3) 다른 구역 덩어리와 여백이 겹치면 두 덩어리 사이 가운데에서 나눈다(틈 GAP). 자기 좌석은 끝까지 덮는다.
- *     나누는 방향: 두 덩어리가 위아래로 놓였으면 가로로, 옆으로 놓였으면 세로로 (대각선이면 더 멀리 떨어진 쪽)
+ *  3) 여백이 도면 요소에 걸리면 그 요소 앞(틈 GAP 반)에서 자른다. 다른 구역 덩어리와 겹치면 두 덩어리 사이 가운데에서
+ *     나눈다(틈 GAP). 어느 경우든 자기 좌석은 끝까지 덮는다.
+ *     자르는 방향: 위아래로 놓였으면 위·아래 변을, 옆으로 놓였으면 옆 변을 (대각선이면 더 멀리 떨어진 쪽)
  */
-export function autoZoneRects(seats: ZoneSeat[], size: { width_m: number; height_m: number }): Map<number, Rect[]> {
+export function autoZoneRects(
+  seats: ZoneSeat[],
+  size: { width_m: number; height_m: number },
+  obstacles: Box[] = [],
+): Map<number, Rect[]> {
   const W = size.width_m;
   const H = size.height_m;
   const base = seatRatio(W, H);
@@ -80,6 +136,7 @@ export function autoZoneRects(seats: ZoneSeat[], size: { width_m: number; height
     const merged = union(boxOf[a], boxOf[b]);
     const zoneId = list[i].zoneId;
     if (list.some((s) => s.zoneId !== zoneId && hits(merged, s.box))) continue;
+    if (obstacles.some((o) => hits(merged, o) && !hits(boxOf[a], o) && !hits(boxOf[b], o))) continue;
     const root = Math.min(a, b);
     parent[Math.max(a, b)] = root;
     boxOf[root] = merged;
@@ -101,16 +158,37 @@ export function autoZoneRects(seats: ZoneSeat[], size: { width_m: number; height
     })
     .sort((p, q) => p.zoneId - q.zoneId || p.core.y0 - q.core.y0 || p.core.x0 - q.core.x0);
 
-  // 3) 다른 구역과 겹치는 여백을 가운데에서 나눈다 (처음 여백끼리 비교하므로 순서와 상관없이 같은 결과)
+  // 위아래(가로로 자름)로 놓였나: 겹치는 길이(m)가 가로로 더 길면. 둘 다 겹치면 null (나눌 수 없다)
+  const stacked = (a: Box, b: Box) => {
+    const xo = (Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * W;
+    const yo = (Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0)) * H;
+    return xo > TOUCH && yo > TOUCH ? null : xo > yo;
+  };
+
+  // 3) 도면 요소에 걸린 여백은 그 요소 앞에서 자른다
+  for (const piece of pieces) {
+    for (const o of obstacles) {
+      if (!hits(piece.rect, o)) continue;
+      const vertical = stacked(piece.core, o);
+      if (vertical === null) continue; // 좌석이 원래 걸쳐 있는 요소
+      const { core, lim } = piece;
+      if (vertical) {
+        if (o.y0 + o.y1 <= core.y0 + core.y1) lim.y0 = Math.max(lim.y0, o.y1 + GAP / 2 / H);
+        else lim.y1 = Math.min(lim.y1, o.y0 - GAP / 2 / H);
+      } else if (o.x0 + o.x1 <= core.x0 + core.x1) lim.x0 = Math.max(lim.x0, o.x1 + GAP / 2 / W);
+      else lim.x1 = Math.min(lim.x1, o.x0 - GAP / 2 / W);
+    }
+  }
+
+  // 다른 구역과 겹치는 여백을 가운데에서 나눈다 (처음 여백끼리 비교하므로 순서와 상관없이 같은 결과)
   for (let p = 0; p < pieces.length; p++) {
     for (let q = p + 1; q < pieces.length; q++) {
       const a = pieces[p];
       const b = pieces[q];
       if (a.zoneId === b.zoneId || !hits(a.rect, b.rect)) continue;
-      const xo = (Math.min(a.core.x1, b.core.x1) - Math.max(a.core.x0, b.core.x0)) * W;
-      const yo = (Math.min(a.core.y1, b.core.y1) - Math.max(a.core.y0, b.core.y0)) * H;
-      if (xo > TOUCH && yo > TOUCH) continue; // 좌석끼리 겹친다: 나눌 수 없다 (맞닿은 것은 겹친 것이 아니다)
-      if (xo > yo) {
+      const vertical = stacked(a.core, b.core);
+      if (vertical === null) continue; // 좌석끼리 겹친다: 나눌 수 없다 (맞닿은 것은 겹친 것이 아니다)
+      if (vertical) {
         const [top, bottom] = a.core.y0 + a.core.y1 <= b.core.y0 + b.core.y1 ? [a, b] : [b, a];
         const mid = (top.core.y1 + bottom.core.y0) / 2;
         top.lim.y1 = Math.min(top.lim.y1, mid - GAP / 2 / H);

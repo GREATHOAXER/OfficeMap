@@ -1211,7 +1211,7 @@ def _publish(
         """,
         (actor, note, plan_id),
     )
-    conn.execute("SELECT refresh_floor_zone_shapes(%s)", (floor_id,))
+    conn.execute("SELECT refresh_zone_shapes_of_floor(%s)", (floor_id,))
 
     # 7) 기록과 알림: 자리가 없어진 사람(새 자리 또는 미배치), 좌석 번호가 바뀐 사람
     moved_to = {emp: cells[key]["code"] for emp, key in moves}

@@ -82,7 +82,7 @@ def _clean(value: str | None) -> str | None:
 def _check_email(value: str | None) -> str | None:
     value = _clean(value)
     if value is not None and not EMAIL_RE.match(value):
-        raise ValueError("이메일 형식이 아니에요 (예: hong@kftc.or.kr)")
+        raise ValueError("이메일 형식이 아니에요 (예: hong@officemap.site)")
     return value
 
 
