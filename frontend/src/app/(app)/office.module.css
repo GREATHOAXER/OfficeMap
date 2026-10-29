@@ -335,7 +335,7 @@
   color: var(--muted);
 }
 
-/* 높이는 화면에서 패널 위쪽(--panel-top, MyStatus가 잰다) 아래로 남은 만큼까지. 넘치면 고르는 칸만 안에서 스크롤 */
+/* 높이는 560px까지(화면이 낮으면 패널 위쪽 --panel-top 아래로 남은 만큼, MyStatus가 잰다). 고르는 칸만 안에서 스크롤 */
 .statusPanel {
   position: absolute;
   top: calc(100% + 8px);
@@ -345,7 +345,7 @@
   flex-direction: column;
   width: 340px;
   max-width: calc(100vw - 32px);
-  max-height: calc(100dvh - var(--panel-top, 120px) - 16px);
+  max-height: min(560px, calc(100dvh - var(--panel-top, 120px) - 16px));
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
