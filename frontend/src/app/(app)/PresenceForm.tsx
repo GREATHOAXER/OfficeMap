@@ -172,78 +172,81 @@ export default function PresenceForm({ info, heading, headingId, onSaved }: Prop
     <form onSubmit={onSubmit} className={styles.statusForm}>
       <h2 id={headingId}>{heading}</h2>
 
-      <fieldset className={styles.statusOptions}>
-        <legend className="visually-hidden">상태</legend>
-        {GROUPS.map((group) => (
-          <div key={group.label} className={styles.statusGroup} role="group" aria-label={group.label}>
-            <span className={styles.statusGroupLabel} aria-hidden="true">
-              {group.label}
-            </span>
-            {group.statuses.map((status) => (
-              <label key={status} className={styles.statusOption}>
+      {/* 고르는 칸은 이 안에서 스크롤 (머리글 오른쪽 위 메뉴로 띄울 때 화면보다 길면). 제목·안내·저장 단추는 늘 보인다 */}
+      <div className={styles.statusBody}>
+        <fieldset className={styles.statusOptions}>
+          <legend className="visually-hidden">상태</legend>
+          {GROUPS.map((group) => (
+            <div key={group.label} className={styles.statusGroup} role="group" aria-label={group.label}>
+              <span className={styles.statusGroupLabel} aria-hidden="true">
+                {group.label}
+              </span>
+              {group.statuses.map((status) => (
+                <label key={status} className={styles.statusOption}>
+                  <input
+                    type="radio"
+                    name={`${name}-status`}
+                    value={status}
+                    checked={draft.status === status}
+                    onChange={() => pickStatus(status)}
+                  />
+                  <span className="mk" data-status={status} aria-hidden="true" />
+                  <span className={styles.statusOptionText}>
+                    <span className={styles.statusOptionLabel}>{PRESENCE_LABEL[status]}</span>
+                    <span className={styles.statusOptionHint}>{PRESENCE_HINT[status]}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          ))}
+        </fieldset>
+
+        <label className={styles.statusField}>
+          상태 메시지 (선택)
+          <input
+            value={draft.message}
+            maxLength={100}
+            placeholder={PRESENCE_PLACEHOLDER[draft.status ?? "AVAILABLE"]}
+            onChange={(event) => setDraft((d) => ({ ...d, message: event.target.value }))}
+          />
+        </label>
+
+        <fieldset className={styles.durations}>
+          {/* 보이는 이름은 span: Safari는 fieldset의 legend 아래에 빈 줄을 더 그린다 */}
+          <legend className="visually-hidden">자동 해제</legend>
+          <span className={styles.durationsLabel} aria-hidden="true">
+            자동 해제
+          </span>
+          <div>
+            {durations.map((option) => (
+              <label key={option.value}>
                 <input
                   type="radio"
-                  name={`${name}-status`}
-                  value={status}
-                  checked={draft.status === status}
-                  onChange={() => pickStatus(status)}
+                  name={`${name}-duration`}
+                  value={option.value}
+                  checked={draft.duration === option.value}
+                  onChange={() => setDraft((d) => ({ ...d, duration: option.value }))}
                 />
-                <span className="mk" data-status={status} aria-hidden="true" />
-                <span className={styles.statusOptionText}>
-                  <span className={styles.statusOptionLabel}>{PRESENCE_LABEL[status]}</span>
-                  <span className={styles.statusOptionHint}>{PRESENCE_HINT[status]}</span>
-                </span>
+                <span>{option.label}</span>
               </label>
             ))}
           </div>
-        ))}
-      </fieldset>
+        </fieldset>
 
-      <label className={styles.statusField}>
-        상태 메시지 (선택)
-        <input
-          value={draft.message}
-          maxLength={100}
-          placeholder={PRESENCE_PLACEHOLDER[draft.status ?? "AVAILABLE"]}
-          onChange={(event) => setDraft((d) => ({ ...d, message: event.target.value }))}
-        />
-      </label>
-
-      <fieldset className={styles.durations}>
-        {/* 보이는 이름은 span: Safari는 fieldset의 legend 아래에 빈 줄을 더 그린다 */}
-        <legend className="visually-hidden">자동 해제</legend>
-        <span className={styles.durationsLabel} aria-hidden="true">
-          자동 해제
-        </span>
-        <div>
-          {durations.map((option) => (
-            <label key={option.value}>
-              <input
-                type="radio"
-                name={`${name}-duration`}
-                value={option.value}
-                checked={draft.duration === option.value}
-                onChange={() => setDraft((d) => ({ ...d, duration: option.value }))}
-              />
-              <span>{option.label}</span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
-
-      {draft.duration === "UNTIL_DATE" && (
-        <div className={styles.untilRow}>
-          <span className={styles.durationsLabel}>마지막 날</span>
-          <DatePicker
-            label="마지막 날"
-            value={draft.until}
-            today={today}
-            min={today}
-            max={addDays(today, MAX_UNTIL_DAYS)}
-            onChange={(iso) => setDraft((d) => ({ ...d, until: iso }))}
-          />
-        </div>
-      )}
+        {draft.duration === "UNTIL_DATE" && (
+          <div className={styles.untilRow}>
+            <span className={styles.durationsLabel}>마지막 날</span>
+            <DatePicker
+              label="마지막 날"
+              value={draft.until}
+              today={today}
+              min={today}
+              max={addDays(today, MAX_UNTIL_DAYS)}
+              onChange={(iso) => setDraft((d) => ({ ...d, until: iso }))}
+            />
+          </div>
+        )}
+      </div>
       {preview && (
         <p className={styles.statusNote} aria-live="polite">
           저장하면 {preview}.

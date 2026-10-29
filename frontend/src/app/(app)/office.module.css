@@ -335,17 +335,36 @@
   color: var(--muted);
 }
 
+/* 높이는 화면에서 패널 위쪽(--panel-top, MyStatus가 잰다) 아래로 남은 만큼까지. 넘치면 고르는 칸만 안에서 스크롤 */
 .statusPanel {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
   z-index: 30;
+  display: flex;
+  flex-direction: column;
   width: 340px;
   max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - var(--panel-top, 120px) - 16px);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
+}
+
+.statusPanel .statusForm {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.statusPanel .statusBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0 -16px;
+  padding: 4px 16px;
+  border-block: 1px solid var(--divider);
 }
 
 .statusBackdrop {
@@ -354,6 +373,12 @@
 
 .statusForm {
   padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.statusBody {
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -1172,21 +1197,45 @@
   color: var(--muted);
 }
 
-/* 구역은 이름 없이 색으로만 알아본다 (팀 칩이 범례): 테두리를 조금 굵게 */
-.zone {
+/* 팀 구역 (PlanShapes.ZoneArea): 조각을 칠하고 바깥 테두리만 긋는다. 이름 없이 색으로 알아본다 (팀 칩이 범례).
+   묶음은 도면 전체를 덮으므로 누르는 것은 칠한 곳만 (이름이 뜨게). 테두리 굵기 --edge, 고른 구역은 굵게 */
+.zoneArea {
+  --edge: 2px;
   position: absolute;
-  border: 2px solid var(--tc);
-  background: var(--tf);
-  border-radius: 6px;
+  inset: 0;
+  pointer-events: none;
   transition: opacity 0.15s;
 }
 
-.zone[data-shared="true"] {
-  border-style: dashed;
+.zoneArea[data-focus] {
+  --edge: 5px;
 }
 
-.zoneFocus {
-  box-shadow: 0 0 0 3px var(--tc);
+.zoneFill {
+  position: absolute;
+  background: var(--tf);
+  pointer-events: auto;
+}
+
+.zoneEdge {
+  position: absolute;
+  border: 0 solid var(--tc);
+  transform: translateY(calc(var(--edge) / -2));
+}
+
+.zoneEdge[data-dir="h"] {
+  height: 0;
+  border-top-width: var(--edge);
+}
+
+.zoneEdge[data-dir="v"] {
+  width: 0;
+  border-left-width: var(--edge);
+  transform: translateX(calc(var(--edge) / -2));
+}
+
+.zoneArea[data-shared="true"] .zoneEdge {
+  border-style: dashed;
 }
 
 .dim {
@@ -1650,13 +1699,16 @@
   overflow-wrap: anywhere;
 }
 
+/* 이름 옆 "내 자리" 같은 표시: 한 덩어리로 (자리가 모자라면 글자 중간이 아니라 통째로 다음 줄로) */
 .tag {
+  display: inline-block;
   margin-left: 6px;
   font-size: 11px;
   padding: 1px 6px;
   border-radius: 4px;
   background: var(--info-bg);
   color: var(--link-hover);
+  white-space: nowrap;
 }
 
 .roomList {
@@ -2216,7 +2268,9 @@
   overflow: hidden;
 }
 
+/* 별명도 한 덩어리로 (한 줄보다 길 때만 그 안에서 줄을 바꾼다) */
 .personAlias {
+  display: inline-block;
   margin-left: 6px;
   font-size: 13px;
   font-weight: 400;

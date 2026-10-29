@@ -3,7 +3,7 @@
 import { forwardRef } from "react";
 import { type DrawingSeat, type DrawingStyle, type FloorDrawing, teamColor } from "@/lib/floorDrawing";
 import { DEFAULT_LINE, DESK } from "@/lib/planGeometry";
-import { zonePieces } from "@/lib/zoneShape";
+import { zoneOutline } from "@/lib/zoneShape";
 
 // 내보낸 그림에서도 같은 모양이 나오게 글꼴·색을 속성으로 직접 적는다 (CSS를 쓰지 않는다)
 const FONT = "-apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', 'Noto Sans CJK KR', sans-serif";
@@ -78,19 +78,25 @@ const FloorSvg = forwardRef<SVGSVGElement, Props>(function FloorSvg(props, ref) 
             <line x1={0} y1={0} x2={0} y2={0.6} stroke="#d4d4d0" strokeWidth={0.08} />
           </pattern>
         </defs>
-        {/* 큰 조각부터: 다른 구역 안에 들어간 작은 조각이 가려지지 않게 (화면과 같다) */}
-        {zonePieces(d.zones, (z) => z.rects).map(({ zone: z, rect: r }, i) => (
-          <rect
-            key={`zone-${z.id}-${i}`}
-            x={r.x}
-            y={r.y}
-            width={r.w}
-            height={r.h}
-            rx={0.25}
-            fill={teamColor(z.color).fill}
-            stroke={teamColor(z.color).line}
-            strokeWidth={0.06}
-          />
+        {/* 구역: 조각을 칠하고 바깥 테두리만 (화면과 같다. 맞닿거나 겹친 조각 사이에 선이 생기지 않게) */}
+        {d.zones.map((z) => (
+          <g key={`zone-${z.id}`}>
+            {z.rects.map((r, i) => (
+              <rect key={i} x={r.x} y={r.y} width={r.w} height={r.h} fill={teamColor(z.color).fill} />
+            ))}
+            {zoneOutline(z.rects).map((e, i) => (
+              <line
+                key={`edge-${i}`}
+                x1={e.x}
+                y1={e.y}
+                x2={e.dir === "h" ? e.x + e.len : e.x}
+                y2={e.dir === "h" ? e.y : e.y + e.len}
+                stroke={teamColor(z.color).line}
+                strokeWidth={0.08}
+                strokeLinecap="square"
+              />
+            ))}
+          </g>
         ))}
         {d.spaces.map((s, i) => (
           <g key={`space-${i}`}>

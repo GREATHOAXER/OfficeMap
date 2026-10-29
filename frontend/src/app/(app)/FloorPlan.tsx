@@ -31,9 +31,9 @@ import { useMediaQuery } from "@/lib/useMediaQuery";
 import { seatRatio } from "@/lib/planGeometry";
 import { baseSeatFont, compactAt, minPlanWidth, type SeatBox, seatBox, seatFont } from "@/lib/seatLabel";
 import { useNow } from "@/lib/useNow";
-import { zonePieces, zoneRects } from "@/lib/zoneShape";
+import { zoneRects } from "@/lib/zoneShape";
 import styles from "./office.module.css";
-import PlanShapes, { fitLabelStyle, lineStyle } from "./PlanShapes";
+import PlanShapes, { fitLabelStyle, lineStyle, ZoneArea } from "./PlanShapes";
 import { zoneColorVars } from "@/lib/zoneColors";
 
 const HOVER_DELAY_MS = 700; // 자리에 마우스를 이만큼(0.7초) 올려 두면 정보 카드가 뜬다
@@ -381,7 +381,6 @@ export default function FloorPlan(props: Props) {
   }
   const geometry = plan.geometry ?? {};
   const zones = new Map(map.zones.map((z) => [z.id, z]));
-  const pieces = zonePieces(map.zones, (zone) => zoneRects(zone.shape));
   // 고정한 카드가 먼저. 마우스를 올려 띄운 카드는 그 자리가 고정 카드가 아닐 때만
   const cardSeatId = pinnedSeatId ?? hoverSeatId;
   const cardSeat = map.seats.find((s) => s.id === cardSeatId && s.occupant);
@@ -438,16 +437,14 @@ export default function FloorPlan(props: Props) {
           (room) => room.shape && <RoomBox key={room.id} room={room} shape={room.shape} floorId={map.floor.id} />,
         )}
         {/* 구역은 색으로만 그린다: 이름은 위 팀 칩(범례)과 마우스를 올렸을 때. 좁은 조각·겹친 조각에서 이름표가 가려졌다 */}
-        {pieces.map(({ zone, rect }, i) => (
-          <div
-            key={`${zone.id}-${i}`}
-            className={`${styles.zone} ${focusZoneId && focusZoneId !== zone.id ? styles.dim : ""} ${
-              focusZoneId === zone.id ? styles.zoneFocus : ""
-            }`}
-            data-color={zone.color_key}
-            data-shared={zone.department === null}
-            style={{ ...rectStyle(rect), ...zoneColorVars(zone.color_key) }}
+        {map.zones.map((zone) => (
+          <ZoneArea
+            key={zone.id}
+            zone={zone}
+            rects={zoneRects(zone.shape)}
             title={`${zone.name} · ${zone.code}구역`}
+            className={focusZoneId && focusZoneId !== zone.id ? styles.dim : undefined}
+            focused={focusZoneId === zone.id}
           />
         ))}
         {map.seats.map((seat) => (

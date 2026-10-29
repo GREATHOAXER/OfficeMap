@@ -2,14 +2,13 @@
 
 import { type CSSProperties, type DragEvent, type PointerEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import office from "@/app/(app)/office.module.css";
-import PlanShapes, { labelStyle, lineStyle } from "@/app/(app)/PlanShapes";
+import PlanShapes, { labelStyle, lineStyle, ZoneArea } from "@/app/(app)/PlanShapes";
 import type { Rect, SeatingData, SeatingSeat, SeatingZone } from "@/lib/api";
 import { shortDate } from "@/lib/dates";
 import { seatRatio } from "@/lib/planGeometry";
 import type { Layout, Person } from "@/lib/seating";
 import { baseSeatFont, compactAt, isVertical, minPlanWidth, seatBox, seatFont } from "@/lib/seatLabel";
 import { useTouchPan } from "@/lib/useTouchPan";
-import { zonePieces } from "@/lib/zoneShape";
 import styles from "./seating.module.css";
 import { zoneColorVars } from "@/lib/zoneColors";
 
@@ -192,7 +191,6 @@ export default function SeatingCanvas(props: Props) {
     return <p className={office.noPlan}>{data.floor.name}에 게시된 도면이 아직 없어요. 도면을 먼저 게시하세요.</p>;
   const geometry = plan.geometry ?? {};
   const zones = new Map(data.zones.map((z) => [z.id, z]));
-  const pieces = zonePieces(data.zones, rectsOf);
 
   // 팀 구역 지정: 도면 위를 끌어서 네모 안 좌석을 한 번에 고른다 (조금만 움직이면 좌석 누르기)
   const ratio = (event: PointerEvent) => {
@@ -269,14 +267,13 @@ export default function SeatingCanvas(props: Props) {
             ),
         )}
         {/* 구역은 색으로만 (직원 화면과 같다). 이름은 도면 위 색 범례 줄(SeatingEditor)과 마우스를 올렸을 때 */}
-        {pieces.map(({ zone, rect }, i) => (
-          <div
-            key={`${zone.id}-${i}`}
-            className={`${office.zone} ${focusZones && !focusZones.has(zone.id) ? styles.dim : ""}`}
-            data-color={zone.color_key}
-            data-shared={zone.department === null}
-            style={{ ...rectStyle(rect), ...zoneColorVars(zone.color_key) }}
+        {data.zones.map((zone) => (
+          <ZoneArea
+            key={zone.id}
+            zone={zone}
+            rects={rectsOf(zone)}
             title={`${zone.name} · ${zone.code}구역${!zone.editable && !plain ? " · 잠김" : ""}`}
+            className={focusZones && !focusZones.has(zone.id) ? styles.dim : undefined}
           />
         ))}
         {data.seats.map((seat) => {

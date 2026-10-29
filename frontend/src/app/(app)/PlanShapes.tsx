@@ -1,10 +1,12 @@
 import type { CSSProperties } from "react";
 import type { FloorMap, Rect, ShapeStyle } from "@/lib/api";
 import { DEFAULT_LINE, SPACE_KINDS } from "@/lib/planGeometry";
+import { zoneColorVars } from "@/lib/zoneColors";
+import { zoneOutline } from "@/lib/zoneShape";
 import styles from "./office.module.css";
 
 // 직원 화면 도면(FloorPlan)과 관리자 배치 화면(SeatingCanvas)이 같이 그리는 도면 바탕:
-// 벽(사각형·선), 공간, 출입구, 기둥, 축척 막대. 좌표는 도면 너비·높이 대비 비율(0~1)
+// 벽(사각형·선), 공간, 출입구, 기둥, 축척 막대, 팀 구역. 좌표는 도면 너비·높이 대비 비율(0~1)
 
 type Geometry = NonNullable<NonNullable<FloorMap["plan"]>["geometry"]>;
 
@@ -145,6 +147,51 @@ export default function PlanShapes({ geometry, width_m, height_m }: Props) {
         );
       })}
     </>
+  );
+}
+
+/**
+ * 팀 구역 한 곳: 조각(사각형)들을 칠하고 바깥 테두리만 긋는다 (맞닿거나 겹친 조각 사이에 선이 생기지 않게).
+ * 흐리게·강조는 구역 전체에 한 번 (겹친 조각이 더 진해지지 않게). 구역끼리는 겹치지 않게 모양을 계산한다 (lib/zoneShape.ts)
+ */
+export function ZoneArea({
+  zone,
+  rects,
+  title,
+  className,
+  focused,
+}: {
+  zone: { color_key: string; department: string | null };
+  rects: Rect[];
+  title: string;
+  className?: string;
+  focused?: boolean;
+}) {
+  return (
+    <div
+      className={`${styles.zoneArea} ${className ?? ""}`}
+      data-color={zone.color_key}
+      data-shared={zone.department === null}
+      data-focus={focused || undefined}
+      style={zoneColorVars(zone.color_key)}
+    >
+      {rects.map((r, i) => (
+        <div key={i} className={styles.zoneFill} style={rectStyle(r)} title={title} />
+      ))}
+      {/* 선은 경계 한가운데에, 양 끝을 선 굵기 반씩 늘려 모서리가 비지 않게 */}
+      {zoneOutline(rects).map((e, i) => (
+        <span
+          key={`edge-${i}`}
+          className={styles.zoneEdge}
+          data-dir={e.dir}
+          style={
+            e.dir === "h"
+              ? { left: `calc(${pct(e.x)} - var(--edge) / 2)`, top: pct(e.y), width: `calc(${pct(e.len)} + var(--edge))` }
+              : { left: pct(e.x), top: `calc(${pct(e.y)} - var(--edge) / 2)`, height: `calc(${pct(e.len)} + var(--edge))` }
+          }
+        />
+      ))}
+    </div>
   );
 }
 
