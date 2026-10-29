@@ -63,6 +63,5 @@ Vibe Coding Project @ KFTC
 
 ## 문서
 
-- [시작하기 · 둘러보기](docs/getting-started.md): 로컬 실행, 목업 계정, 관리자 기능 둘러보기
 - [설계: 도면 편집 · 좌석 배치 편집](docs/design/floor-plan-and-seating.md)
 - [AWS에 올리기](docs/deploy-aws.md) · [CI/CD](docs/cicd.md) · [AI 도우미](docs/ai.md) · [Claude 접근 권한](docs/claude-access.md)

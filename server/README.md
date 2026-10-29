@@ -1,7 +1,5 @@
 # OfficeMap API 서버 (FastAPI)
 
-실행 방법은 [docs/getting-started.md](../docs/getting-started.md)의 "2. API 서버"를 보세요.
-
 ```
 app/
   main.py          FastAPI 앱, /api/health
