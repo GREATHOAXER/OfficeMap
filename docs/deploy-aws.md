@@ -215,7 +215,7 @@ dig +short A officemap.example.com   # <서버 IP>가 나오면 됨 (몇 분)
 cd ~/OfficeMap/deploy
 nano .env
 #   SITE_ADDRESS=officemap.example.com        (여러 개면 쉼표: SITE_ADDRESS=example.com, www.example.com)
-#   COOKIE_SECURE=true
+#   COOKIE_SECURE=true                        (HTTPS로 접속하면 저절로 켜지지만, 적어 두면 HTTP로는 쿠키를 아예 보내지 않음)
 docker compose up -d
 docker compose logs -f caddy   # "certificate obtained successfully"가 나오면 Ctrl+C
 ```
@@ -232,7 +232,7 @@ docker compose logs -f caddy   # "certificate obtained successfully"가 나오�
 | caddy 로그 `Timeout during connect (likely firewall problem)` · `connection refused` | 6-3 보안 그룹에 80·443이 0.0.0.0/0으로 열렸는지 |
 | caddy 로그 `rateLimited` · `too many` | 실패를 여러 번 반복해 발급처가 잠시 막음. 원인을 고친 뒤 한 시간쯤 기다리면 Caddy가 저절로 다시 시도합니다 |
 | 브라우저 "안전하지 않음" 경고 | IP나 `.env`에 없는 이름으로 접속함. 인증서 발급 전이면 위 로그부터 |
-| 로그인해도 로그인 화면으로 돌아옴 | HTTPS인데 `COOKIE_SECURE=false`이거나, HTTP인데 `true` |
+| 로그인해도 로그인 화면으로 돌아옴 | HTTP로 접속하는데 `COOKIE_SECURE=true` (HTTPS로 접속하면 로그인 쿠키는 이 값과 상관없이 HTTPS 전용으로 저절로 바뀝니다) |
 
 인증서는 `caddy-data` 볼륨에 있습니다. `docker compose down -v`는 이 볼륨까지 지워 인증서를 새로 받게 되니 쓰지 마세요
 (그냥 `down`은 괜찮습니다).

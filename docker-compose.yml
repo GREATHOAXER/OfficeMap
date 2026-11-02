@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: officemap
       POSTGRES_PASSWORD: officemap
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432" # 이 PC에서만 (같은 망의 다른 PC가 기본 비밀번호로 붙지 못하게)
     volumes:
       - officemap-db:/var/lib/postgresql/data
 

@@ -3,6 +3,7 @@
 #   web     eslint → 타입 검사 → next build
 #   docker  PR에서만: 두 도커 이미지가 빌드되는지 (올리지는 않음)
 # 설명: docs/cicd.md
+# 외부 액션은 태그 대신 커밋 SHA로 고정한다 (태그가 다른 코드로 옮겨져도 배포 권한으로 돌지 않게). 올릴 때는 SHA와 뒤의 버전 주석을 같이 바꾼다
 name: CI
 
 on:
@@ -45,10 +46,10 @@ jobs:
       run:
         working-directory: server
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ inputs.ref }}
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.13" # server/Dockerfile과 같게
           cache: pip
@@ -102,10 +103,10 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ inputs.ref }}
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22 # frontend/Dockerfile과 같게
           cache: npm
@@ -124,10 +125,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - name: API 서버 이미지
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: server/Dockerfile
@@ -136,7 +137,7 @@ jobs:
           cache-from: type=gha,scope=ci-backend
           cache-to: type=gha,scope=ci-backend,mode=max
       - name: 화면 이미지
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: frontend
           push: false

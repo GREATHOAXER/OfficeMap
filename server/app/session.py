@@ -79,6 +79,12 @@ def session_end_reason(conn: Connection, token: str) -> str | None:
     return "max" if row["over"] else "expired"
 
 
+def cookie_secure(request: Request) -> bool:
+    """로그인 쿠키에 Secure(HTTPS로만 보냄)를 붙일지. COOKIE_SECURE=true이거나 HTTPS로 들어온 요청이면 붙인다.
+    배포에서는 앞단 Caddy가 원래 주소 방식을 알려 준다 (uvicorn --proxy-headers). HTTP로 여는 서버는 그대로 로그인된다"""
+    return settings.cookie_secure or request.url.scheme == "https"
+
+
 def end_sessions(request: Request, cookie_name: str) -> Response:
     """이 브라우저에서 한쪽 로그인만 끝낸다 (직원 화면 로그아웃은 직원 세션, 관리자 페이지 로그아웃은 관리자 세션).
 

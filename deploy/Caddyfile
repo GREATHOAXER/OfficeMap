@@ -4,6 +4,24 @@
 {$SITE_ADDRESS::80} {
 	encode zstd gzip
 
+	# 브라우저 보안 헤더 (모든 응답). 화면 동작은 그대로다:
+	#   HSTS: HTTPS로 한 번 연 브라우저는 1년 동안 http로 열지 않는다 (HTTP로만 받는 서버에서는 브라우저가 무시한다)
+	#   nosniff: 사진·파일을 선언한 종류로만 읽는다 (이미지를 스크립트·HTML로 해석하지 않게)
+	#   frame-ancestors·X-Frame-Options: 다른 사이트가 이 화면을 iframe에 넣어 속여 누르게 하지 못하게 (클릭재킹)
+	#   base-uri·object-src·form-action: 주입된 <base>·<object>·다른 곳으로 보내는 <form>을 막는다
+	#     (스크립트 출처는 묶지 않는다: Next.js가 페이지에 넣는 인라인 스크립트가 있어서)
+	#   Referrer-Policy: 다른 사이트로 나갈 때 주소의 경로·검색어(?seat= 등)를 보내지 않는다
+	#   Permissions-Policy: 쓰지 않는 카메라·마이크·위치 등의 권한을 아무도 못 쓰게
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+		-Server
+	}
+
 	handle /api/* {
 		reverse_proxy backend:8000 {
 			# 실시간 알림(SSE)을 모아 두지 않고 바로 보낸다

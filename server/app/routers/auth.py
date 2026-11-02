@@ -14,6 +14,7 @@ from app.security import hash_password, new_session_token, verify_password
 from app.session import (
     IS_ADMIN_SQL,
     CurrentUserAllowTemporary,
+    cookie_secure,
     end_sessions,
     load_session,
     session_end_reason,
@@ -130,7 +131,7 @@ def login(body: LoginRequest, request: Request) -> JSONResponse:
         max_age=settings.session_max_hours * 3600,
         httponly=True,
         samesite="lax",
-        secure=settings.cookie_secure,
+        secure=cookie_secure(request),
         path="/",
     )
     return response
