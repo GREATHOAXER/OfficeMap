@@ -25,7 +25,7 @@ from app.config import settings
 from app.db import get_setting, pool
 from app.routers.auth import PasswordChange, client_info, error_response, password_problems
 from app.security import hash_password, new_session_token, verify_password
-from app.session import end_sessions
+from app.session import cookie_secure, end_sessions
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -132,7 +132,7 @@ def admin_login(body: AdminLoginRequest, request: Request) -> JSONResponse:
         max_age=settings.admin_session_max_hours * 3600,
         httponly=True,
         samesite="strict",  # 관리자 페이지는 다른 사이트에서 넘어오는 요청에 쿠키를 아예 보내지 않는다
-        secure=settings.cookie_secure,
+        secure=cookie_secure(request),
         path="/",
     )
     return response

@@ -223,6 +223,12 @@ def create_grant(body: NewGrantIn, admin: CurrentAdmin, request: Request) -> dic
         ).fetchone()
         if person is None:
             raise HTTPException(status_code=404, detail={"code": "EMPLOYEE_NOT_FOUND"})
+        dormant = (
+            conn.execute(
+                "SELECT 1 FROM admin_grants WHERE employee_id = %s AND revoked_at IS NULL LIMIT 1", (person["id"],)
+            ).fetchone()
+            is None
+        )
         grant_id = _insert(conn, person["id"], target, admin["employee_id"])
         password = None
         if conn.execute("SELECT 1 FROM admin_accounts WHERE employee_id = %s", (person["id"],)).fetchone() is None:
@@ -233,6 +239,26 @@ def create_grant(body: NewGrantIn, admin: CurrentAdmin, request: Request) -> dic
                 VALUES (%s, %s, true, %s)
                 """,
                 (person["id"], hash_password(password), admin["employee_id"]),
+            )
+        elif dormant:
+            # 권한이 모두 회수돼 쉬던 계정을 다시 쓴다: 예전 비밀번호는 버리고 새 임시 비밀번호로.
+            # 쉬는 동안 그 계정의 비밀번호를 (아래 단계 권한을 주고 초기화해) 알아 둔 사람이 이 권한으로 들어오지 못하게
+            password = _temp_password()
+            conn.execute(
+                """
+                UPDATE admin_accounts
+                SET password_hash = %s, must_change_password = true, failed_login_count = 0, locked_at = NULL,
+                    updated_at = now()
+                WHERE employee_id = %s
+                """,
+                (hash_password(password), person["id"]),
+            )
+            conn.execute(
+                """
+                UPDATE user_sessions SET revoked_at = now(), revoked_reason = 'PASSWORD_RESET'
+                WHERE employee_id = %s AND kind = 'ADMIN' AND revoked_at IS NULL
+                """,
+                (person["id"],),
             )
         _audit(
             conn,

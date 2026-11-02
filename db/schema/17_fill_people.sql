@@ -3,8 +3,9 @@
 -- 이미 적어 둔 한 줄 소개·하는 일과 지금 걸려 있는 재실 상태는 그대로 두고, 업무 키워드가 5개보다 적으면 채운다.
 -- 내용은 부서 이름으로 업무 종류를 골라(보안·데이터·AI·개발·디지털·IT·결제·고객·인사·재무·기획·총무·법무·홍보·사업·운영,
 -- 맞는 것이 없으면 부서 이름으로 일반적인 업무) 사람마다 조금씩 다르게 만든다. 재실 상태는 직접 바꿀 때까지 유지한다.
--- 이 파일을 넣을 때(init_db --upgrade, 자동 배포) 한 번 돌리고, 목업(db/seed/04_fill_people.sql)도 마지막에 부른다.
--- 다시 돌려도 빈 것만 채운다: SELECT fill_demo_people();
+-- 목업(db/seed/04_fill_people.sql)이 마지막에 부른다. 이 파일은 함수만 만든다: 자동 배포(init_db --upgrade)가
+-- 실제 직원 데이터(이메일 등)를 바꾸지 않게. 데모 서버에서 손으로 돌릴 때(빈 것만 채운다): SELECT fill_demo_people();
+-- (처음 넣은 버전은 이 파일을 넣을 때 한 번 돌렸다. 이미 넣은 DB는 그대로)
 
 CREATE OR REPLACE FUNCTION fill_demo_people() RETURNS text
 LANGUAGE plpgsql AS $$
@@ -193,4 +194,3 @@ BEGIN
     RETURN format('이메일 %s명, 프로필 %s명, 재실 상태 %s명 채움', n_mail, n_profile, n_presence);
 END $$;
 
-SELECT fill_demo_people();

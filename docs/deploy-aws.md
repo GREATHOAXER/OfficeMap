@@ -118,7 +118,7 @@ DATABASE_URL=postgresql://officemap:<마스터 암호>@<RDS 엔드포인트>:543
 cd ~/OfficeMap/deploy
 docker compose build              # 이미지 빌드 (처음엔 5~10분)
 docker compose run --rm backend python -m scripts.check_db   # DB 접속 점검: 끝에 "DB 접속 정상"이 나와야 함
-docker compose run --rm backend python -m scripts.init_db    # 테이블 + 목업 데이터 (처음 한 번)
+docker compose run --rm backend python -m scripts.init_db    # 테이블 + 목업 데이터 (처음 한 번. APP_ENV=production이면 --no-seed로 테이블만)
 docker compose up -d              # 띄우기
 docker compose ps                 # backend가 (healthy), 나머지 Up이면 정상
 ```
@@ -215,7 +215,7 @@ dig +short A officemap.example.com   # <서버 IP>가 나오면 됨 (몇 분)
 cd ~/OfficeMap/deploy
 nano .env
 #   SITE_ADDRESS=officemap.example.com        (여러 개면 쉼표: SITE_ADDRESS=example.com, www.example.com)
-#   COOKIE_SECURE=true
+#   COOKIE_SECURE=true                        (HTTPS로 접속하면 저절로 켜지지만, 적어 두면 HTTP로는 쿠키를 아예 보내지 않음)
 docker compose up -d
 docker compose logs -f caddy   # "certificate obtained successfully"가 나오면 Ctrl+C
 ```
@@ -232,7 +232,7 @@ docker compose logs -f caddy   # "certificate obtained successfully"가 나오�
 | caddy 로그 `Timeout during connect (likely firewall problem)` · `connection refused` | 6-3 보안 그룹에 80·443이 0.0.0.0/0으로 열렸는지 |
 | caddy 로그 `rateLimited` · `too many` | 실패를 여러 번 반복해 발급처가 잠시 막음. 원인을 고친 뒤 한 시간쯤 기다리면 Caddy가 저절로 다시 시도합니다 |
 | 브라우저 "안전하지 않음" 경고 | IP나 `.env`에 없는 이름으로 접속함. 인증서 발급 전이면 위 로그부터 |
-| 로그인해도 로그인 화면으로 돌아옴 | HTTPS인데 `COOKIE_SECURE=false`이거나, HTTP인데 `true` |
+| 로그인해도 로그인 화면으로 돌아옴 | HTTP로 접속하는데 `COOKIE_SECURE=true` (HTTPS로 접속하면 로그인 쿠키는 이 값과 상관없이 HTTPS 전용으로 저절로 바뀝니다) |
 
 인증서는 `caddy-data` 볼륨에 있습니다. `docker compose down -v`는 이 볼륨까지 지워 인증서를 새로 받게 되니 쓰지 마세요
 (그냥 `down`은 괜찮습니다).
@@ -256,7 +256,9 @@ docker compose logs -f caddy   # "certificate obtained successfully"가 나오�
 
 1. **마이그레이션 도구**: 지금 `init_db --upgrade`는 새로 생긴 테이블·컬럼·함수만 넣습니다. 컬럼 형식·제약을 바꾸거나
    데이터를 옮기는 변경이 생기면 버전 번호로 관리하는 도구(Alembic 등)를 들여옵니다.
-2. **`APP_ENV=production`**: `.env`에서 바꾸면 `init_db --reset`이 막힙니다.
+2. **`APP_ENV=production`**: `.env`에서 바꾸면 `init_db --reset`이 막히고, 목업 데이터(저장소에 적힌 비밀번호로 로그인되는
+   직원·관리자 계정)도 넣지 않습니다 (`init_db --no-seed`로 테이블만). 최종 관리자 `admin`의 처음 비밀번호(`officemapking`)는
+   저장소에 적혀 있으니 서버를 띄우면 바로 관리자 페이지 계정 메뉴의 "관리자 비밀번호 변경"으로 바꿉니다.
 3. **앱 전용 DB 계정**: 마스터 계정 대신 읽기·쓰기만 되는 계정으로 접속합니다.
 4. **접속 범위**: 사내망에서만 열기(ALB + VPN 등), 정보보호팀 검토.
 5. **이미지 빌드를 서버 밖으로**: GitHub Actions에서 빌드해 ECR(이미지 저장소)에 올리고, 서버는 받기만 합니다 → [docs/cicd.md](cicd.md)

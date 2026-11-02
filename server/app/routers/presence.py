@@ -4,6 +4,8 @@
 """
 
 import datetime as dt
+import json
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -146,11 +148,55 @@ def clear_my_presence(user: CurrentUser) -> Response:
     return Response(status_code=204)
 
 
-def _session_alive(token: str | None) -> bool:
+def _viewer(token: str | None) -> dict[str, Any] | None:
+    """알림을 받을 직원: 로그인이 살아 있고 임시 비밀번호 상태가 아닐 때.
+    임시 비밀번호로는 다른 API처럼 알림도 못 받는다"""
     if not token:
-        return False
+        return None
     with pool.connection() as conn:
-        return load_session(conn, token, touch=False) is not None
+        user = load_session(conn, token, touch=False)
+    return user if user is not None and not user["must_change_password"] else None
+
+
+def _session_alive(token: str | None) -> bool:
+    return _viewer(token) is not None
+
+
+def _only_my_seat(emp_no: str) -> Callable[[str, str], str]:
+    """좌석 알림의 emp_no(고정석이 바뀐 사람)는 받는 사람 자신일 때만 남긴다. 화면은 "내 자리가 바뀌었어요"에만 쓰고,
+    남의 것은 날짜를 정해 둔 자리 이동이 반영 전에 모두에게 새는 것뿐이다"""
+
+    def rewrite(event: str, data: str) -> str:
+        if event != "floor":
+            return data
+        try:
+            change = json.loads(data)
+        except ValueError:
+            return data
+        if not isinstance(change, dict) or change.get("emp_no") in (None, emp_no):
+            return data
+        return json.dumps({**change, "emp_no": None}, ensure_ascii=False)
+
+    return rewrite
+
+
+MAX_STREAMS_PER_LOGIN = 10  # 한 로그인(브라우저)이 동시에 여는 알림 연결 (탭마다 하나). 이 서버 프로세스 기준
+_streams: dict[str, int] = {}
+
+
+async def _counted(token: str, events: AsyncGenerator[str, None]) -> AsyncIterator[str]:
+    """보내기 시작할 때 이 로그인의 연결 수를 세고, 끝나면 줄인다 (시작도 못 하고 끊긴 연결은 세지 않는다)"""
+    _streams[token] = _streams.get(token, 0) + 1
+    try:
+        async for chunk in events:
+            yield chunk
+    finally:
+        left = _streams.get(token, 1) - 1
+        if left > 0:
+            _streams[token] = left
+        else:
+            _streams.pop(token, None)
+        await events.aclose()  # 알림 구독도 바로 푼다
 
 
 @router.get("/stream")
@@ -165,10 +211,19 @@ async def presence_stream(request: Request) -> StreamingResponse:
     연결이 열려 있는 것만으로는 자동 로그아웃 시간을 늘리지 않는다.
     """
     token = request.cookies.get(settings.session_cookie_name)
-    if not await run_in_threadpool(_session_alive, token):
+    viewer = await run_in_threadpool(_viewer, token)
+    if not token or viewer is None:
         raise HTTPException(status_code=401, detail={"code": "NOT_LOGGED_IN"})
+    # 한 로그인으로 연결을 끝없이 열어 서버를 붙잡지 못하게
+    if _streams.get(token, 0) >= MAX_STREAMS_PER_LOGIN:
+        raise HTTPException(status_code=429, detail={"code": "TOO_MANY_STREAMS"})
     return StreamingResponse(
-        hub.events(frozenset({"presence", "floor"}), lambda: _session_alive(token)),
+        _counted(
+            token,
+            hub.events(
+                frozenset({"presence", "floor"}), lambda: _session_alive(token), _only_my_seat(viewer["emp_no"])
+            ),
+        ),
         media_type="text/event-stream",
         headers=SSE_HEADERS,
     )

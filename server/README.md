@@ -2,10 +2,11 @@
 
 ```
 app/
-  main.py          FastAPI 앱, /api/health
+  main.py          FastAPI 앱, /api/health. 자동 API 문서(/docs)는 APP_ENV=development일 때만
   config.py        환경 변수 (.env)
   db.py            PostgreSQL 연결 풀, app_settings 읽기
   security.py      비밀번호 해시(bcrypt), 세션 토큰
+  uploads.py       그림 올리기(사진·밑그림) 본문을 한도까지만 읽기 (Content-Length 없이 보내도)
   session.py       로그인 확인. 로그인이 필요한 API는 CurrentUser 인자를 받는다
   admin_auth.py    관리자 로그인 확인 (CurrentAdmin), 권한 단계·누가 누구의 권한을 다루나 (can_manage)
   plan_geometry.py 도면 모양(JSON v1, 미터) 검사·변환, 책상 칸 위치 계산
@@ -24,7 +25,8 @@ app/
   realtime.py      재실 상태 변경을 DB에서 받아(LISTEN) 열린 화면마다 나눠 주기
   db_check.py      DB 접속 오류를 고칠 곳으로 바꾸기 (서버를 켤 때 로그, scripts/check_db.py)
 scripts/
-  init_db.py       db/schema + db/seed 실행 (--reset 모두 다시, --only 파일… 데이터는 두고 고른 스키마 파일만)
+  init_db.py       db/schema + db/seed 실행 (--reset 모두 다시, --only 파일… 데이터는 두고 고른 스키마 파일만).
+                   APP_ENV=production이면 목업(알려진 비밀번호의 계정)은 넣지 않는다 (--no-seed)
   check_db.py      DB 접속 단계별 점검 (주소 → 포트 → 로그인 → 확장 기능 → 테이블), --create-db
   purge_history.py 보관 기간(5년)이 지난 이력 지우기 (--dry-run, --years)
   gen_dense_floor.py 목업 8F(사람이 많은 층, 68석) 도면·좌석 SQL 만들기 → db/seed/03_dense_floor.sql
@@ -35,7 +37,7 @@ scripts/
 | 요청 | 하는 일 |
 |---|---|
 | `GET /api/auth/login-info` | 로그인 화면의 공지, 문의처, 자동 로그아웃 시간(직원·관리자), 실패 허용 횟수 |
-| `POST /api/auth/login` | 사번·비밀번호 로그인. 성공하면 HttpOnly 쿠키로 세션 발급 |
+| `POST /api/auth/login` | 사번·비밀번호 로그인. 성공하면 HttpOnly 쿠키로 세션 발급 (HTTPS로 들어오면 Secure도) |
 | `GET /api/auth/me` | 쿠키로 로그인한 사람 확인. 30분 미사용, 퇴사·잠금이면 401. 401에는 끊긴 이유 `reason`(`expired`·`max`·`reset`·`changed`·`locked`·`inactive`·`logout`, `user_sessions.revoked_reason`에서) |
 | `GET /api/auth/session` | 자동 로그아웃까지 남은 초(`idle_left`). 확인만 하고 사용 시각은 늘리지 않음 (화면의 1분 전 알림용) |
 | `POST /api/auth/password` | 비밀번호 변경 `{"current_password", "new_password"}`. 다른 곳의 직원 세션은 끝냄. 현재 비밀번호를 틀리면 로그인 실패 횟수에 더하고 허용 횟수에 닿으면 잠금(423) |

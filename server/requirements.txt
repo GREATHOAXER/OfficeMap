@@ -3,5 +3,5 @@ uvicorn[standard]==0.54.0
 psycopg[binary]==3.3.6
 psycopg-pool==3.3.3
 bcrypt==5.0.0
-pydantic-settings==2.16.0
+pydantic-settings==2.16.2
 anthropic[bedrock]==2.3.0

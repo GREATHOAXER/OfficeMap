@@ -648,6 +648,8 @@ def apply_due_personnel() -> list[dict[str, Any]]:
                 ).fetchone()
                 if move is None:
                     continue  # 다른 서버가 하고 있거나 이미 했다
+                # 예약한 사람이 지금도 전사 관리자여야 반영한다 (그 사이 권한이 회수됐으면 실패로 남긴다)
+                _require_company({"grants": grants_of(conn, move["created_by"])})
                 items = conn.execute(
                     """
                     SELECT employee_id, line, from_department_id, to_department_id,

@@ -23,12 +23,14 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from psycopg import Connection, errors
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
 from app import plan_geometry as geo
-from app.admin_auth import CurrentAdmin
+from app.admin_auth import CurrentAdmin, grants_of
 from app.db import pool
 from app.routers.auth import client_info
 from app.routers.seating import LOCK_SEATING, _access, _effective_at, _floor, _json, _now
+from app.uploads import read_limited
 
 router = APIRouter(prefix="/api/admin", tags=["plans"])
 log = logging.getLogger(__name__)
@@ -581,14 +583,38 @@ async def put_background(
         (opacity, "opacity", 0.05, 1),
     ):
         _place_number(value, field, low, high)
-    data = await request.body()
-    if len(data) > MAX_BACKGROUND_BYTES:
+    # 이 층을 맡았는지 먼저 본다 (권한이 없으면 그림을 받지도 않는다). DB 일은 작업 스레드에서:
+    # async 함수 안에서 바로 하면 그동안 실시간 알림 등 다른 요청이 모두 멈춘다
+    await run_in_threadpool(_check_plan_floor, floor_id, admin)
+    data = await read_limited(request, MAX_BACKGROUND_BYTES)
+    if data is None:
         raise HTTPException(status_code=413, detail={"code": "IMAGE_TOO_BIG", "max": MAX_BACKGROUND_BYTES})
     if not any(data.startswith(m) for m in IMAGE_MAGIC[content_type]) or (
         content_type == "image/webp" and data[8:12] != b"WEBP"
     ):
         raise HTTPException(status_code=415, detail={"code": "IMAGE_TYPE"})
     source_name = (name or "").strip()[:200] or None
+    place = (x_m, y_m, w_m, h_m, opacity)
+    return await run_in_threadpool(
+        _save_background, floor_id, admin, data, content_type, place, source_name, client_info(request)[0]
+    )
+
+
+def _check_plan_floor(floor_id: int, admin: dict[str, Any]) -> None:
+    with pool.connection() as conn:
+        _plan_floor(conn, floor_id, admin)
+
+
+def _save_background(
+    floor_id: int,
+    admin: dict[str, Any],
+    data: bytes,
+    content_type: str,
+    place: tuple[float, float, float, float, float],
+    source_name: str | None,
+    ip: str | None,
+) -> dict[str, Any]:
+    x_m, y_m, w_m, h_m, opacity = place
     with pool.connection() as conn:
         _plan_floor(conn, floor_id, admin)
         conn.execute(
@@ -610,7 +636,7 @@ async def put_background(
             "PLAN_BACKGROUND_SET",
             floor_id,
             {"bytes": len(data), "type": content_type, "name": source_name, "w_m": w_m, "h_m": h_m},
-            client_info(request)[0],
+            ip,
         )
         return {"background": _background(conn, floor_id)}
 
@@ -1272,6 +1298,8 @@ def apply_due_plans() -> list[dict[str, Any]]:
                 if plan is None or plan["status"] != "SCHEDULED" or not plan["due"]:
                     continue  # 다른 서버가 하고 있거나 이미 했다
                 plan = {**plan, "floor": _floor(conn, plan["floor_id"])}
+                # 예약한 사람이 지금도 이 층을 맡고 있어야 게시한다 (그 사이 권한이 회수됐으면 실패로 돌린다)
+                _plan_access({"grants": grants_of(conn, plan["scheduled_by"])}, plan["floor"])
                 conn.execute("SELECT pg_advisory_xact_lock(%s, %s)", (LOCK_SEATING, plan["floor_id"]))
                 options = plan["publish_options"] or {}
                 people = {p["emp_no"]: p["to_key"] for p in options.get("people", []) if p.get("to_key")}

@@ -1,7 +1,7 @@
 """회의실 확인·예약(②) API: 하루 예약 현황표, 예약 만들기·취소, 내 예약."""
 
 import datetime as dt
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 import psycopg
 from fastapi import APIRouter, HTTPException, Query
@@ -18,6 +18,7 @@ router = APIRouter(prefix="/api", tags=["rooms"])
 KST = dt.timezone(dt.timedelta(hours=9), "KST")
 MAX_REPEAT_DAYS = 92  # 반복 예약은 석 달까지
 MAX_OCCURRENCES = 60
+MAX_DAYS_AHEAD = 365  # 오늘부터 1년 뒤까지만 예약 (회의실을 몇 년 뒤까지 미리 막아 두지 못하게)
 
 
 def _minutes(hhmm: str) -> int:
@@ -36,7 +37,10 @@ def _policy(conn: Connection) -> dict[str, int]:
 
 
 def _at(day: dt.date, minutes: int) -> dt.datetime:
-    return dt.datetime.combine(day, dt.time(), KST) + dt.timedelta(minutes=minutes)
+    try:
+        return dt.datetime.combine(day, dt.time(), KST) + dt.timedelta(minutes=minutes)
+    except OverflowError:  # 9999-12-31 24:00처럼 날짜 범위를 넘는 시각
+        raise _error(422, "INVALID_TIME") from None
 
 
 def _error(status: int, code: str, **extra: Any) -> HTTPException:
@@ -144,7 +148,8 @@ class ReservationIn(BaseModel):
     end_date: dt.date | None = None  # 끝나는 날짜. 없으면 시작 날짜 (여러 날에 걸친 예약은 다른 날)
     end_min: int = Field(ge=0, le=1440)
     title: str = Field(max_length=200)
-    attendees: list[str] = Field(default_factory=list, max_length=200)  # 참석자 사번 (예약한 사람 빼고)
+    # 참석자 사번 (예약한 사람 빼고)
+    attendees: list[Annotated[str, Field(max_length=20)]] = Field(default_factory=list, max_length=200)
     organizer_attends: bool = True  # 예약한 사람도 회의에 들어가나 (비서가 잡아 주기만 하면 False)
     repeat: Literal["NONE", "WEEKLY", "WEEKDAYS"] = "NONE"
     repeat_until: dt.date | None = None  # 반복할 때 마지막 날 (그날까지 포함)
@@ -152,6 +157,13 @@ class ReservationIn(BaseModel):
     notify: bool = True
     # 고칠 때: 폼을 채울 때 읽은 예약의 updated_at. 그 뒤에 다른 곳(다른 탭·창)에서 고쳤으면 덮어쓰지 않는다
     expected_updated_at: dt.datetime | None = None
+
+
+def _check_horizon(body: ReservationIn) -> None:
+    """예약 날짜(시작·끝·반복 마지막 날)는 오늘부터 MAX_DAYS_AHEAD일 안"""
+    limit = dt.datetime.now(KST).date() + dt.timedelta(days=MAX_DAYS_AHEAD)
+    if any(d is not None and d > limit for d in (body.date, body.end_date, body.repeat_until)):
+        raise _error(422, "TOO_FAR", max_days=MAX_DAYS_AHEAD)
 
 
 def _occurrences(body: ReservationIn) -> list[dt.date]:
@@ -236,6 +248,7 @@ def create_reservation(body: ReservationIn, user: CurrentUser) -> dict[str, Any]
     title = body.title.strip()
     if not title:
         raise _error(422, "TITLE_REQUIRED")
+    _check_horizon(body)
     span_days = ((body.end_date or body.date) - body.date).days
     if span_days < 0:
         raise _error(422, "INVALID_TIME")
@@ -356,6 +369,7 @@ def update_reservation(reservation_id: int, body: ReservationIn, user: CurrentUs
     title = body.title.strip()
     if not title:
         raise _error(422, "TITLE_REQUIRED")
+    _check_horizon(body)
     span_days = ((body.end_date or body.date) - body.date).days
     if span_days < 0:
         raise _error(422, "INVALID_TIME")

@@ -43,7 +43,15 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     pool.close()
 
 
-app = FastAPI(title="OfficeMap API", lifespan=lifespan)
+# 자동 API 문서(/docs, /redoc, /openapi.json)는 개발할 때만 연다. 배포 서버에서는 API 목록을 밖에 알려 주지 않는다
+_dev = settings.app_env == "development"
+app = FastAPI(
+    title="OfficeMap API",
+    lifespan=lifespan,
+    docs_url="/docs" if _dev else None,
+    redoc_url="/redoc" if _dev else None,
+    openapi_url="/openapi.json" if _dev else None,
+)
 app.include_router(auth.router)
 app.include_router(office.router)
 app.include_router(presence.router)

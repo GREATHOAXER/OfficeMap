@@ -79,6 +79,10 @@ main() {
     fail "새 버전($tag)이 정상으로 뜨지 않았어요. 위 로그를 보세요"
   fi
   set_env_value IMAGE_TAG "$tag"
+  # deploy/Caddyfile(보안 헤더 등)이 바뀌었으면 끊김 없이 다시 읽는다 (컨테이너를 다시 만들지 않으면 Caddy는 처음 읽은 설정을 쓴다).
+  # 새 설정에 문제가 있으면 Caddy가 지금 설정을 그대로 쓰고, 배포는 그대로 끝낸다
+  docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile > /dev/null 2>&1 ||
+    echo "주의: Caddy 설정(deploy/Caddyfile)을 다시 읽지 못해 지금 설정 그대로예요. docker compose logs caddy 를 보세요"
 
   # 이 앱의 옛 이미지는 지금 것과 직전 것(되돌리기용)만 남긴다
   docker images --format '{{.Repository}}:{{.Tag}}' --filter "reference=${prefix}officemap-*" |

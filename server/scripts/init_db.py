@@ -40,6 +40,13 @@ def main() -> None:
     args = parser.parse_args()
     if args.reset and settings.app_env == "production":
         raise SystemExit("APP_ENV=production인 서버에서는 --reset(모든 테이블 지우기)을 쓸 수 없습니다.")
+    seeding = not (args.no_seed or args.only or args.upgrade)
+    if seeding and settings.app_env == "production":
+        # 목업 직원·관리자는 저장소에 적힌 비밀번호로 로그인된다: 실제 데이터를 쓰는 서버에는 넣지 않는다
+        raise SystemExit(
+            "APP_ENV=production인 서버에는 목업 데이터(알려진 비밀번호의 직원·관리자 계정)를 넣지 않습니다.\n"
+            "테이블만 만들려면 --no-seed를 붙이세요."
+        )
     if sum(map(bool, (args.only, args.reset, args.upgrade))) > 1:
         raise SystemExit("--only, --reset, --upgrade는 하나만 쓸 수 있습니다.")
 
