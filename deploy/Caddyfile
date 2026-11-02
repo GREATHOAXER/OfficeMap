@@ -23,6 +23,10 @@
 	}
 
 	handle /api/* {
+		# 요청 본문은 10MB까지 (가장 큰 것이 도면 밑그림 8MB). 끝없이 큰 본문으로 API 서버 메모리를 채우지 못하게
+		request_body {
+			max_size 10MB
+		}
 		reverse_proxy backend:8000 {
 			# 실시간 알림(SSE)을 모아 두지 않고 바로 보낸다
 			flush_interval -1

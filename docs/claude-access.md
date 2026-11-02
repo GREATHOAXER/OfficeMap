@@ -36,12 +36,14 @@ CloudShell을 연 리전에서 서버를 찾습니다. 서버가 다른 리전�
 |---|---|
 | AWS 리소스 설정 보기 (AWS 관리형 `ViewOnlyAccess`: 목록·설정만) | 리소스 만들기·바꾸기·지우기 (보안 그룹, RDS, IAM, EC2 켜고 끄기 등) |
 | `officemap-app` 서버 **한 대에만** SSM 명령 (로그 보기, 점검 스크립트, 배포 확인) | 다른 서버에 명령 |
-| ECR 이미지, 이 프로젝트 IAM 역할(`officemap-*`) 설정 보기 | DB·S3 데이터, 비밀 값 읽기 |
+| ECR 이미지, 이 프로젝트 IAM 역할(`officemap-*`) 설정 보기 | AWS API로 DB·S3 데이터, 비밀 값 읽기 (서버 명령으로는 닿음: 아래) |
 | 비용 보기 (Cost Explorer) | 다른 IAM 사용자·역할 바꾸기 |
 | Bedrock Claude 호출 (AI 도우미 시험, 쓴 만큼 요금) | |
 
 권한은 [`deploy/aws/claude-operator-policy.json`](../deploy/aws/claude-operator-policy.json)에 있습니다. 서버 명령(SSM)은 서버에서 무엇이든
-돌릴 수 있는 권한이라, Claude는 서버를 바꾸는 명령(재시작, 배포, DB 변경 등)은 실행하기 전에 먼저 묻습니다.
+(관리자 권한으로) 돌릴 수 있는 권한입니다. 그래서 서버 안의 `deploy/.env`(DB 접속 주소와 비밀번호)를 읽고 DB 전체에 닿을 수 있고,
+서버의 IAM 역할도 쓸 수 있습니다. Claude는 서버를 바꾸는 명령(재시작, 배포, DB 변경 등)은 실행하기 전에 먼저 묻습니다.
+이 키는 운영 서버 관리자 권한과 같게 다루고, 쓰지 않을 때는 회수하세요(아래 `--remove`).
 
 | 할 일 | 방법 |
 |---|---|

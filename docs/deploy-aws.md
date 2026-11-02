@@ -118,7 +118,7 @@ DATABASE_URL=postgresql://officemap:<마스터 암호>@<RDS 엔드포인트>:543
 cd ~/OfficeMap/deploy
 docker compose build              # 이미지 빌드 (처음엔 5~10분)
 docker compose run --rm backend python -m scripts.check_db   # DB 접속 점검: 끝에 "DB 접속 정상"이 나와야 함
-docker compose run --rm backend python -m scripts.init_db    # 테이블 + 목업 데이터 (처음 한 번)
+docker compose run --rm backend python -m scripts.init_db    # 테이블 + 목업 데이터 (처음 한 번. APP_ENV=production이면 --no-seed로 테이블만)
 docker compose up -d              # 띄우기
 docker compose ps                 # backend가 (healthy), 나머지 Up이면 정상
 ```
@@ -256,7 +256,9 @@ docker compose logs -f caddy   # "certificate obtained successfully"가 나오�
 
 1. **마이그레이션 도구**: 지금 `init_db --upgrade`는 새로 생긴 테이블·컬럼·함수만 넣습니다. 컬럼 형식·제약을 바꾸거나
    데이터를 옮기는 변경이 생기면 버전 번호로 관리하는 도구(Alembic 등)를 들여옵니다.
-2. **`APP_ENV=production`**: `.env`에서 바꾸면 `init_db --reset`이 막힙니다.
+2. **`APP_ENV=production`**: `.env`에서 바꾸면 `init_db --reset`이 막히고, 목업 데이터(저장소에 적힌 비밀번호로 로그인되는
+   직원·관리자 계정)도 넣지 않습니다 (`init_db --no-seed`로 테이블만). 최종 관리자 `admin`의 처음 비밀번호(`officemapking`)는
+   저장소에 적혀 있으니 서버를 띄우면 바로 관리자 페이지 계정 메뉴의 "관리자 비밀번호 변경"으로 바꿉니다.
 3. **앱 전용 DB 계정**: 마스터 계정 대신 읽기·쓰기만 되는 계정으로 접속합니다.
 4. **접속 범위**: 사내망에서만 열기(ALB + VPN 등), 정보보호팀 검토.
 5. **이미지 빌드를 서버 밖으로**: GitHub Actions에서 빌드해 ECR(이미지 저장소)에 올리고, 서버는 받기만 합니다 → [docs/cicd.md](cicd.md)
