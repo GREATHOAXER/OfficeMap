@@ -9,10 +9,12 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field, field_validator
+from starlette.concurrency import run_in_threadpool
 
 from app.db import pool
 from app.routers.auth import client_info, photo_url
 from app.session import CurrentUser
+from app.uploads import read_limited
 
 router = APIRouter(tags=["profile"])
 
@@ -165,13 +167,18 @@ async def put_photo(user: CurrentUser, request: Request) -> dict[str, Any]:
     length = request.headers.get("content-length")
     if length and length.isdigit() and int(length) > MAX_PHOTO_BYTES:
         raise HTTPException(status_code=413, detail={"code": "PHOTO_TOO_BIG", "max": MAX_PHOTO_BYTES})
-    data = await request.body()
-    if len(data) > MAX_PHOTO_BYTES:
+    data = await read_limited(request, MAX_PHOTO_BYTES)
+    if data is None:
         raise HTTPException(status_code=413, detail={"code": "PHOTO_TOO_BIG", "max": MAX_PHOTO_BYTES})
     if not any(data.startswith(m) for m in MAGIC[content_type]) or (
         content_type == "image/webp" and data[8:12] != b"WEBP"
     ):
         raise HTTPException(status_code=415, detail={"code": "PHOTO_TYPE"})
+    # DB 일은 작업 스레드에서 (async 함수 안에서 바로 하면 그동안 실시간 알림 등 다른 요청이 모두 멈춘다)
+    return await run_in_threadpool(_save_photo, user, data, content_type, request)
+
+
+def _save_photo(user: dict[str, Any], data: bytes, content_type: str, request: Request) -> dict[str, Any]:
     with pool.connection() as conn:
         row = conn.execute(
             """

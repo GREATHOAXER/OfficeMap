@@ -17,12 +17,27 @@ export function loginUrl(base: "/login" | "/admin/login", next: string | null, r
   return query ? `${base}?${query}` : base;
 }
 
-/** 로그인 후 돌아갈 주소. 다른 사이트로 넘어가지 않게 이 사이트 안의 경로만 받는다 */
+/** 로그인 후 돌아갈 주소. 다른 사이트로 넘어가지 않게 이 사이트 안의 경로만 받는다.
+ *  브라우저는 주소의 탭·줄바꿈을 지우고 \를 /로 읽어서 "/\t/evil.com"도 //evil.com(다른 사이트)이 된다:
+ *  그런 글자가 있으면 받지 않고, 이 사이트 기준으로 풀어 본 주소가 다른 곳이면 받지 않는다 */
 export function safeNext(next: string | string[] | undefined, fallback: string) {
-  if (typeof next !== "string" || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/\\")) {
+  if (
+    typeof next !== "string" ||
+    !next.startsWith("/") ||
+    [...next].some((c) => c < " " || c === "\u007f" || c === "\\")
+  ) {
     return fallback;
   }
-  return next;
+  const base = "http://officemap.invalid";
+  let url: URL;
+  try {
+    url = new URL(next, base);
+  } catch {
+    return fallback;
+  }
+  const path = url.pathname + url.search + url.hash;
+  // "/..//evil.com"은 풀면 "//evil.com"(다른 사이트)이 된다
+  return url.origin === base && !path.startsWith("//") ? path : fallback;
 }
 
 /** 화면을 보다가 로그인이 끊겼을 때(브라우저에서) 보낼 로그인 주소: 지금 화면으로 돌아오게 한다 */

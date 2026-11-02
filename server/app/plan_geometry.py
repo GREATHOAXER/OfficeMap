@@ -52,6 +52,7 @@ STYLED = ("wall", "wall_line", "space", "room", "entrance")  # 선 굵기를 고
 LABELED = ("space", "room", "entrance")  # 글자 모양을 고를 수 있는 요소
 MAX_ELEMENTS = 2000
 MAX_CELLS = 20
+MAX_TOTAL_CELLS = 5000  # 한 층의 책상 칸 전체 (큰 층도 수백 석. 끝없이 큰 도면으로 검사·게시가 멈추지 않게)
 ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,50}$")
 
 
@@ -394,6 +395,9 @@ def validate(geometry: Any, width_m: float, height_m: float) -> dict[str, Any]:
     elements = geometry["elements"]
     if len(elements) > MAX_ELEMENTS:
         raise GeometryError("too many elements")
+    total_cells = sum(len(el["cells"]) for el in elements if isinstance(el, dict) and isinstance(el.get("cells"), list))
+    if total_cells > MAX_TOTAL_CELLS:
+        raise GeometryError("too many desk cells")
     ids: set[str] = set()
 
     def new_id(value: Any) -> None:
@@ -505,9 +509,12 @@ def problems(geometry: dict[str, Any], width_m: float, height_m: float) -> list[
         x, y, w, h = box_of(el)
         if x < -0.01 or y < -0.01 or x + w > width_m + 0.01 or y + h > height_m + 0.01:
             found.append({"code": "OUTSIDE", "element": el["id"]})
-    # 같은 요소가 여러 번 걸리면 한 번만
+    # 같은 요소가 여러 번 걸리면 한 번만 (순서는 처음 걸린 차례. 목록을 매번 훑으면 칸이 많을 때 매우 느리다)
     unique: list[dict[str, Any]] = []
+    seen: set[tuple[tuple[str, Any], ...]] = set()
     for p in found:
-        if p not in unique:
+        key = tuple(sorted(p.items()))
+        if key not in seen:
+            seen.add(key)
             unique.append(p)
     return unique

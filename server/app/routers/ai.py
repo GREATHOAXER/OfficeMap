@@ -23,6 +23,7 @@ from app.session import CurrentUser
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
 BUSY_MINUTES = 3  # 한 대화에 답을 만드는 중 표시. 서버가 중간에 꺼져도 이 시간이 지나면 풀린다
+MAX_PARALLEL = 2  # 한 사람이 동시에 답을 기다릴 수 있는 대화 수 (탭 두 개 정도)
 
 
 def _error(status: int, code: str, **extra: Any) -> HTTPException:
@@ -50,15 +51,25 @@ def chat(body: ChatIn, user: CurrentUser) -> StreamingResponse:
     if not question:
         raise _error(422, "EMPTY")
     with pool.connection() as conn:
-        sent = conn.execute(
+        # 한 사람의 질문은 한 번에 하나씩 확인한다. 질문은 답이 끝난 뒤에 저장되므로, 동시에 여러 개를 보내면
+        # 저장된 질문만 세어서는 한 시간 한도를 넘길 수 있다: 지금 답하는 중인 대화도 한 번씩 센다
+        conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended('ai-chat:' || %s::text, 0))", (user["employee_id"],)
+        )
+        count = conn.execute(
             """
-            SELECT count(*) AS n FROM ai_messages m JOIN ai_conversations c ON c.id = m.conversation_id
-            WHERE c.employee_id = %s AND m.role = 'USER' AND m.created_at > now() - interval '1 hour'
+            SELECT (SELECT count(*) FROM ai_messages m JOIN ai_conversations c ON c.id = m.conversation_id
+                    WHERE c.employee_id = %(emp)s AND m.role = 'USER'
+                      AND m.created_at > now() - interval '1 hour') AS sent,
+                   (SELECT count(*) FROM ai_conversations
+                    WHERE employee_id = %(emp)s AND busy_until > now()) AS busy
             """,
-            (user["employee_id"],),
-        ).fetchone()["n"]
-        if sent >= settings.ai_hourly_limit:
+            {"emp": user["employee_id"]},
+        ).fetchone()
+        if count["sent"] + count["busy"] >= settings.ai_hourly_limit:
             raise _error(429, "TOO_MANY", limit=settings.ai_hourly_limit)
+        if count["busy"] >= MAX_PARALLEL:
+            raise _error(409, "BUSY")
         if body.conversation_id is None:
             conversation_id = conn.execute(
                 "INSERT INTO ai_conversations (employee_id, source, model) VALUES (%s, %s, %s) RETURNING id",

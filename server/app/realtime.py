@@ -10,7 +10,7 @@ import asyncio
 import logging
 import signal
 import threading
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncGenerator, Callable, Iterator
 from contextlib import contextmanager
 
 import psycopg
@@ -132,8 +132,14 @@ class RealtimeHub:
             for sig, handler in previous.items():
                 signal.signal(sig, handler)
 
-    async def events(self, wanted: frozenset[str], session_alive: Callable[[], bool]) -> AsyncIterator[str]:
-        """SSE 본문. wanted 이벤트와 resync를 보내고, 로그인이 끝나면(session_alive가 False) 연결을 닫는다."""
+    async def events(
+        self,
+        wanted: frozenset[str],
+        session_alive: Callable[[], bool],
+        rewrite: Callable[[str, str], str] | None = None,
+    ) -> AsyncGenerator[str, None]:
+        """SSE 본문. wanted 이벤트와 resync를 보내고, 로그인이 끝나면(session_alive가 False) 연결을 닫는다.
+        rewrite(이벤트, data): 받는 사람에 맞춰 내용을 고친다 (없으면 그대로)."""
         sub = self.subscribe(wanted)
         loop = asyncio.get_running_loop()
         check_at = loop.time() + SESSION_CHECK_SECONDS
@@ -149,7 +155,8 @@ class RealtimeHub:
                 elif message[0] == CLOSE:
                     break
                 else:
-                    yield f"event: {message[0]}\ndata: {message[1]}\n\n"
+                    data = rewrite(message[0], message[1]) if rewrite else message[1]
+                    yield f"event: {message[0]}\ndata: {data}\n\n"
                 if loop.time() >= check_at:
                     if not await run_in_threadpool(session_alive):
                         break

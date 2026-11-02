@@ -77,6 +77,8 @@ export function reservationErrorText(detail: ReservationErrorDetail): string {
       return "반복 종료일을 확인하세요. 평일 반복은 기간 안에 평일이 있어야 해요.";
     case "REPEAT_TOO_LONG":
       return `반복 예약은 ${detail.max_days ?? 92}일 안에서만 할 수 있어요.`;
+    case "TOO_FAR":
+      return `오늘부터 ${detail.max_days ?? 365}일 뒤까지만 예약할 수 있어요.`;
     case "UNKNOWN_ATTENDEE":
       return "참석자 중 퇴사·휴직한 사람이 있어요. 다시 골라 주세요.";
     case "NO_ATTENDEES":

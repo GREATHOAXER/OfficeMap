@@ -81,7 +81,8 @@ def session_end_reason(conn: Connection, token: str) -> str | None:
 
 def cookie_secure(request: Request) -> bool:
     """로그인 쿠키에 Secure(HTTPS로만 보냄)를 붙일지. COOKIE_SECURE=true이거나 HTTPS로 들어온 요청이면 붙인다.
-    배포에서는 앞단 Caddy가 원래 주소 방식을 알려 준다 (uvicorn --proxy-headers). HTTP로 여는 서버는 그대로 로그인된다"""
+    배포에서는 앞단 Caddy가 원래 주소 방식을 알려 준다 (uvicorn --proxy-headers).
+    HTTP로 여는 서버는 그대로 로그인된다"""
     return settings.cookie_secure or request.url.scheme == "https"
 
 

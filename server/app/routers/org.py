@@ -18,7 +18,7 @@ from psycopg import Connection
 from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field, field_validator
 
-from app.admin_auth import CurrentAdmin, is_company_wide
+from app.admin_auth import CurrentAdmin, can_manage, grants_of, is_company_wide
 from app.db import pool
 from app.people_order import person_order
 from app.routers.auth import client_info
@@ -721,6 +721,12 @@ def update_employee(emp_no: str, body: EmployeeUpdate, admin: CurrentAdmin, requ
             raise HTTPException(status_code=404, detail={"code": "EMPLOYEE_NOT_FOUND"})
         if before["id"] == admin["employee_id"] and fields.get("status") == "RETIRED":
             raise HTTPException(status_code=422, detail={"code": "CANNOT_RETIRE_SELF"})
+        if fields.get("status") in ("LEAVE", "RETIRED"):
+            # 휴직·퇴사는 관리자 권한도 끊는다 (휴직은 관리자 로그인이 막히고 퇴사는 권한 회수).
+            # 내가 주거나 회수할 수 없는 권한(같은 단계·위 단계 관리자)을 가진 사람은 인사 정보로도 못 끊는다
+            # (전사 관리자끼리 서로 내보내지 못하게)
+            if not all(can_manage(admin["grants"], g) for g in grants_of(conn, before["id"])):
+                raise HTTPException(status_code=403, detail={"code": "NOT_IN_SCOPE"})
         if "department_id" in fields:
             if fields["department_id"] is None:
                 raise HTTPException(status_code=422, detail={"code": "DEPARTMENT_REQUIRED"})
